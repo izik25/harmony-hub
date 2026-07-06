@@ -7,13 +7,13 @@ export function BottomNav() {
   const { t } = useTranslation();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
-  const items = [
+  const items: Array<{ to: string; icon: typeof Home; label: string; center?: boolean }> = [
     { to: "/", icon: Home, label: t("nav.home") },
     { to: "/explore", icon: Search, label: t("nav.explore") },
     { to: "/record", icon: Plus, label: t("nav.record"), center: true },
     { to: "/competitions", icon: Trophy, label: t("nav.competitions") },
     { to: "/profile", icon: User, label: t("nav.profile") },
-  ] as const;
+  ];
 
   return (
     <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[520px] -translate-x-1/2 glass border-t border-border/60">
