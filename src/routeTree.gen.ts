@@ -9,8 +9,68 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WalletRouteImport } from './routes/wallet'
+import { Route as UploadRouteImport } from './routes/upload'
+import { Route as StudioRouteImport } from './routes/studio'
+import { Route as RecordRouteImport } from './routes/record'
+import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as LiveRouteImport } from './routes/live'
+import { Route as LabelHubRouteImport } from './routes/label-hub'
+import { Route as ExploreRouteImport } from './routes/explore'
+import { Route as CompetitionsRouteImport } from './routes/competitions'
 import { Route as IndexRouteImport } from './routes/index'
 
+const WalletRoute = WalletRouteImport.update({
+  id: '/wallet',
+  path: '/wallet',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UploadRoute = UploadRouteImport.update({
+  id: '/upload',
+  path: '/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StudioRoute = StudioRouteImport.update({
+  id: '/studio',
+  path: '/studio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecordRoute = RecordRouteImport.update({
+  id: '/record',
+  path: '/record',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LiveRoute = LiveRouteImport.update({
+  id: '/live',
+  path: '/live',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LabelHubRoute = LabelHubRouteImport.update({
+  id: '/label-hub',
+  path: '/label-hub',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExploreRoute = ExploreRouteImport.update({
+  id: '/explore',
+  path: '/explore',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompetitionsRoute = CompetitionsRouteImport.update({
+  id: '/competitions',
+  path: '/competitions',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -19,28 +79,172 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/competitions': typeof CompetitionsRoute
+  '/explore': typeof ExploreRoute
+  '/label-hub': typeof LabelHubRoute
+  '/live': typeof LiveRoute
+  '/notifications': typeof NotificationsRoute
+  '/profile': typeof ProfileRoute
+  '/record': typeof RecordRoute
+  '/studio': typeof StudioRoute
+  '/upload': typeof UploadRoute
+  '/wallet': typeof WalletRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/competitions': typeof CompetitionsRoute
+  '/explore': typeof ExploreRoute
+  '/label-hub': typeof LabelHubRoute
+  '/live': typeof LiveRoute
+  '/notifications': typeof NotificationsRoute
+  '/profile': typeof ProfileRoute
+  '/record': typeof RecordRoute
+  '/studio': typeof StudioRoute
+  '/upload': typeof UploadRoute
+  '/wallet': typeof WalletRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/competitions': typeof CompetitionsRoute
+  '/explore': typeof ExploreRoute
+  '/label-hub': typeof LabelHubRoute
+  '/live': typeof LiveRoute
+  '/notifications': typeof NotificationsRoute
+  '/profile': typeof ProfileRoute
+  '/record': typeof RecordRoute
+  '/studio': typeof StudioRoute
+  '/upload': typeof UploadRoute
+  '/wallet': typeof WalletRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/competitions'
+    | '/explore'
+    | '/label-hub'
+    | '/live'
+    | '/notifications'
+    | '/profile'
+    | '/record'
+    | '/studio'
+    | '/upload'
+    | '/wallet'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/competitions'
+    | '/explore'
+    | '/label-hub'
+    | '/live'
+    | '/notifications'
+    | '/profile'
+    | '/record'
+    | '/studio'
+    | '/upload'
+    | '/wallet'
+  id:
+    | '__root__'
+    | '/'
+    | '/competitions'
+    | '/explore'
+    | '/label-hub'
+    | '/live'
+    | '/notifications'
+    | '/profile'
+    | '/record'
+    | '/studio'
+    | '/upload'
+    | '/wallet'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CompetitionsRoute: typeof CompetitionsRoute
+  ExploreRoute: typeof ExploreRoute
+  LabelHubRoute: typeof LabelHubRoute
+  LiveRoute: typeof LiveRoute
+  NotificationsRoute: typeof NotificationsRoute
+  ProfileRoute: typeof ProfileRoute
+  RecordRoute: typeof RecordRoute
+  StudioRoute: typeof StudioRoute
+  UploadRoute: typeof UploadRoute
+  WalletRoute: typeof WalletRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/wallet': {
+      id: '/wallet'
+      path: '/wallet'
+      fullPath: '/wallet'
+      preLoaderRoute: typeof WalletRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/upload': {
+      id: '/upload'
+      path: '/upload'
+      fullPath: '/upload'
+      preLoaderRoute: typeof UploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/studio': {
+      id: '/studio'
+      path: '/studio'
+      fullPath: '/studio'
+      preLoaderRoute: typeof StudioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/record': {
+      id: '/record'
+      path: '/record'
+      fullPath: '/record'
+      preLoaderRoute: typeof RecordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/live': {
+      id: '/live'
+      path: '/live'
+      fullPath: '/live'
+      preLoaderRoute: typeof LiveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/label-hub': {
+      id: '/label-hub'
+      path: '/label-hub'
+      fullPath: '/label-hub'
+      preLoaderRoute: typeof LabelHubRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/explore': {
+      id: '/explore'
+      path: '/explore'
+      fullPath: '/explore'
+      preLoaderRoute: typeof ExploreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/competitions': {
+      id: '/competitions'
+      path: '/competitions'
+      fullPath: '/competitions'
+      preLoaderRoute: typeof CompetitionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -53,6 +257,16 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CompetitionsRoute: CompetitionsRoute,
+  ExploreRoute: ExploreRoute,
+  LabelHubRoute: LabelHubRoute,
+  LiveRoute: LiveRoute,
+  NotificationsRoute: NotificationsRoute,
+  ProfileRoute: ProfileRoute,
+  RecordRoute: RecordRoute,
+  StudioRoute: StudioRoute,
+  UploadRoute: UploadRoute,
+  WalletRoute: WalletRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
