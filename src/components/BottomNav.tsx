@@ -25,7 +25,7 @@ export function BottomNav() {
           if (it.center) {
             return (
               <li key={it.to} className="flex justify-center">
-                <Link to={it.to} aria-label={it.label} className="group -mt-6 block">
+                <Link to={it.to as "/"} aria-label={it.label} className="group -mt-6 block">
                   <motion.div
                     whileTap={{ scale: 0.92 }}
                     className="grid h-14 w-14 place-items-center rounded-2xl gradient-neon glow-pink"
