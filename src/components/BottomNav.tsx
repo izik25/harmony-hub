@@ -1,5 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Home, Search, Trophy, User, Plus } from "lucide-react";
+// Non-`to` typed as string because Link is used with mixed routes.
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 
