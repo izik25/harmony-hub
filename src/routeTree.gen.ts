@@ -9,61 +9,28 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as WalletRouteImport } from './routes/wallet'
-import { Route as UploadRouteImport } from './routes/upload'
-import { Route as StudioRouteImport } from './routes/studio'
-import { Route as RecordRouteImport } from './routes/record'
-import { Route as ProfileRouteImport } from './routes/profile'
-import { Route as NotificationsRouteImport } from './routes/notifications'
-import { Route as LiveRouteImport } from './routes/live'
-import { Route as LabelHubRouteImport } from './routes/label-hub'
-import { Route as ExploreRouteImport } from './routes/explore'
-import { Route as CompetitionsRouteImport } from './routes/competitions'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CompetitionsRouteImport } from './routes/competitions'
+import { Route as ExploreRouteImport } from './routes/explore'
+import { Route as LabelHubRouteImport } from './routes/label-hub'
+import { Route as LiveRouteImport } from './routes/live'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as MessagesRouteImport } from './routes/messages'
+import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as RecordRouteImport } from './routes/record'
+import { Route as SignupRouteImport } from './routes/signup'
+import { Route as StudioRouteImport } from './routes/studio'
+import { Route as UploadRouteImport } from './routes/upload'
+import { Route as WalletRouteImport } from './routes/wallet'
+import { Route as CompetitionsIdRouteImport } from './routes/competitions_.$id'
+import { Route as LiveRoomIdRouteImport } from './routes/live_.$roomId'
+import { Route as MessagesConversationIdRouteImport } from './routes/messages_.$conversationId'
+import { Route as ProfileHandleRouteImport } from './routes/profile_.$handle'
 
-const WalletRoute = WalletRouteImport.update({
-  id: '/wallet',
-  path: '/wallet',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const UploadRoute = UploadRouteImport.update({
-  id: '/upload',
-  path: '/upload',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const StudioRoute = StudioRouteImport.update({
-  id: '/studio',
-  path: '/studio',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RecordRoute = RecordRouteImport.update({
-  id: '/record',
-  path: '/record',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProfileRoute = ProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const NotificationsRoute = NotificationsRouteImport.update({
-  id: '/notifications',
-  path: '/notifications',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LiveRoute = LiveRouteImport.update({
-  id: '/live',
-  path: '/live',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LabelHubRoute = LabelHubRouteImport.update({
-  id: '/label-hub',
-  path: '/label-hub',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ExploreRoute = ExploreRouteImport.update({
-  id: '/explore',
-  path: '/explore',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CompetitionsRoute = CompetitionsRouteImport.update({
@@ -71,9 +38,84 @@ const CompetitionsRoute = CompetitionsRouteImport.update({
   path: '/competitions',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ExploreRoute = ExploreRouteImport.update({
+  id: '/explore',
+  path: '/explore',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LabelHubRoute = LabelHubRouteImport.update({
+  id: '/label-hub',
+  path: '/label-hub',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LiveRoute = LiveRouteImport.update({
+  id: '/live',
+  path: '/live',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MessagesRoute = MessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecordRoute = RecordRouteImport.update({
+  id: '/record',
+  path: '/record',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StudioRoute = StudioRouteImport.update({
+  id: '/studio',
+  path: '/studio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UploadRoute = UploadRouteImport.update({
+  id: '/upload',
+  path: '/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WalletRoute = WalletRouteImport.update({
+  id: '/wallet',
+  path: '/wallet',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompetitionsIdRoute = CompetitionsIdRouteImport.update({
+  id: '/competitions_/$id',
+  path: '/competitions/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LiveRoomIdRoute = LiveRoomIdRouteImport.update({
+  id: '/live_/$roomId',
+  path: '/live/$roomId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MessagesConversationIdRoute = MessagesConversationIdRouteImport.update({
+  id: '/messages_/$conversationId',
+  path: '/messages/$conversationId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileHandleRoute = ProfileHandleRouteImport.update({
+  id: '/profile_/$handle',
+  path: '/profile/$handle',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -83,12 +125,19 @@ export interface FileRoutesByFullPath {
   '/explore': typeof ExploreRoute
   '/label-hub': typeof LabelHubRoute
   '/live': typeof LiveRoute
+  '/login': typeof LoginRoute
+  '/messages': typeof MessagesRoute
   '/notifications': typeof NotificationsRoute
   '/profile': typeof ProfileRoute
   '/record': typeof RecordRoute
+  '/signup': typeof SignupRoute
   '/studio': typeof StudioRoute
   '/upload': typeof UploadRoute
   '/wallet': typeof WalletRoute
+  '/competitions/$id': typeof CompetitionsIdRoute
+  '/live/$roomId': typeof LiveRoomIdRoute
+  '/messages/$conversationId': typeof MessagesConversationIdRoute
+  '/profile/$handle': typeof ProfileHandleRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -96,12 +145,19 @@ export interface FileRoutesByTo {
   '/explore': typeof ExploreRoute
   '/label-hub': typeof LabelHubRoute
   '/live': typeof LiveRoute
+  '/login': typeof LoginRoute
+  '/messages': typeof MessagesRoute
   '/notifications': typeof NotificationsRoute
   '/profile': typeof ProfileRoute
   '/record': typeof RecordRoute
+  '/signup': typeof SignupRoute
   '/studio': typeof StudioRoute
   '/upload': typeof UploadRoute
   '/wallet': typeof WalletRoute
+  '/competitions/$id': typeof CompetitionsIdRoute
+  '/live/$roomId': typeof LiveRoomIdRoute
+  '/messages/$conversationId': typeof MessagesConversationIdRoute
+  '/profile/$handle': typeof ProfileHandleRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -110,12 +166,19 @@ export interface FileRoutesById {
   '/explore': typeof ExploreRoute
   '/label-hub': typeof LabelHubRoute
   '/live': typeof LiveRoute
+  '/login': typeof LoginRoute
+  '/messages': typeof MessagesRoute
   '/notifications': typeof NotificationsRoute
   '/profile': typeof ProfileRoute
   '/record': typeof RecordRoute
+  '/signup': typeof SignupRoute
   '/studio': typeof StudioRoute
   '/upload': typeof UploadRoute
   '/wallet': typeof WalletRoute
+  '/competitions_/$id': typeof CompetitionsIdRoute
+  '/live_/$roomId': typeof LiveRoomIdRoute
+  '/messages_/$conversationId': typeof MessagesConversationIdRoute
+  '/profile_/$handle': typeof ProfileHandleRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -125,12 +188,19 @@ export interface FileRouteTypes {
     | '/explore'
     | '/label-hub'
     | '/live'
+    | '/login'
+    | '/messages'
     | '/notifications'
     | '/profile'
     | '/record'
+    | '/signup'
     | '/studio'
     | '/upload'
     | '/wallet'
+    | '/competitions/$id'
+    | '/live/$roomId'
+    | '/messages/$conversationId'
+    | '/profile/$handle'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -138,12 +208,19 @@ export interface FileRouteTypes {
     | '/explore'
     | '/label-hub'
     | '/live'
+    | '/login'
+    | '/messages'
     | '/notifications'
     | '/profile'
     | '/record'
+    | '/signup'
     | '/studio'
     | '/upload'
     | '/wallet'
+    | '/competitions/$id'
+    | '/live/$roomId'
+    | '/messages/$conversationId'
+    | '/profile/$handle'
   id:
     | '__root__'
     | '/'
@@ -151,12 +228,19 @@ export interface FileRouteTypes {
     | '/explore'
     | '/label-hub'
     | '/live'
+    | '/login'
+    | '/messages'
     | '/notifications'
     | '/profile'
     | '/record'
+    | '/signup'
     | '/studio'
     | '/upload'
     | '/wallet'
+    | '/competitions_/$id'
+    | '/live_/$roomId'
+    | '/messages_/$conversationId'
+    | '/profile_/$handle'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -165,77 +249,28 @@ export interface RootRouteChildren {
   ExploreRoute: typeof ExploreRoute
   LabelHubRoute: typeof LabelHubRoute
   LiveRoute: typeof LiveRoute
+  LoginRoute: typeof LoginRoute
+  MessagesRoute: typeof MessagesRoute
   NotificationsRoute: typeof NotificationsRoute
   ProfileRoute: typeof ProfileRoute
   RecordRoute: typeof RecordRoute
+  SignupRoute: typeof SignupRoute
   StudioRoute: typeof StudioRoute
   UploadRoute: typeof UploadRoute
   WalletRoute: typeof WalletRoute
+  CompetitionsIdRoute: typeof CompetitionsIdRoute
+  LiveRoomIdRoute: typeof LiveRoomIdRoute
+  MessagesConversationIdRoute: typeof MessagesConversationIdRoute
+  ProfileHandleRoute: typeof ProfileHandleRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/wallet': {
-      id: '/wallet'
-      path: '/wallet'
-      fullPath: '/wallet'
-      preLoaderRoute: typeof WalletRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/upload': {
-      id: '/upload'
-      path: '/upload'
-      fullPath: '/upload'
-      preLoaderRoute: typeof UploadRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/studio': {
-      id: '/studio'
-      path: '/studio'
-      fullPath: '/studio'
-      preLoaderRoute: typeof StudioRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/record': {
-      id: '/record'
-      path: '/record'
-      fullPath: '/record'
-      preLoaderRoute: typeof RecordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/profile': {
-      id: '/profile'
-      path: '/profile'
-      fullPath: '/profile'
-      preLoaderRoute: typeof ProfileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/notifications': {
-      id: '/notifications'
-      path: '/notifications'
-      fullPath: '/notifications'
-      preLoaderRoute: typeof NotificationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/live': {
-      id: '/live'
-      path: '/live'
-      fullPath: '/live'
-      preLoaderRoute: typeof LiveRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/label-hub': {
-      id: '/label-hub'
-      path: '/label-hub'
-      fullPath: '/label-hub'
-      preLoaderRoute: typeof LabelHubRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/explore': {
-      id: '/explore'
-      path: '/explore'
-      fullPath: '/explore'
-      preLoaderRoute: typeof ExploreRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/competitions': {
@@ -245,11 +280,116 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CompetitionsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/explore': {
+      id: '/explore'
+      path: '/explore'
+      fullPath: '/explore'
+      preLoaderRoute: typeof ExploreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/label-hub': {
+      id: '/label-hub'
+      path: '/label-hub'
+      fullPath: '/label-hub'
+      preLoaderRoute: typeof LabelHubRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/live': {
+      id: '/live'
+      path: '/live'
+      fullPath: '/live'
+      preLoaderRoute: typeof LiveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/messages': {
+      id: '/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof MessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/record': {
+      id: '/record'
+      path: '/record'
+      fullPath: '/record'
+      preLoaderRoute: typeof RecordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/studio': {
+      id: '/studio'
+      path: '/studio'
+      fullPath: '/studio'
+      preLoaderRoute: typeof StudioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/upload': {
+      id: '/upload'
+      path: '/upload'
+      fullPath: '/upload'
+      preLoaderRoute: typeof UploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/wallet': {
+      id: '/wallet'
+      path: '/wallet'
+      fullPath: '/wallet'
+      preLoaderRoute: typeof WalletRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/competitions_/$id': {
+      id: '/competitions_/$id'
+      path: '/competitions/$id'
+      fullPath: '/competitions/$id'
+      preLoaderRoute: typeof CompetitionsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/live_/$roomId': {
+      id: '/live_/$roomId'
+      path: '/live/$roomId'
+      fullPath: '/live/$roomId'
+      preLoaderRoute: typeof LiveRoomIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/messages_/$conversationId': {
+      id: '/messages_/$conversationId'
+      path: '/messages/$conversationId'
+      fullPath: '/messages/$conversationId'
+      preLoaderRoute: typeof MessagesConversationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile_/$handle': {
+      id: '/profile_/$handle'
+      path: '/profile/$handle'
+      fullPath: '/profile/$handle'
+      preLoaderRoute: typeof ProfileHandleRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -261,12 +401,19 @@ const rootRouteChildren: RootRouteChildren = {
   ExploreRoute: ExploreRoute,
   LabelHubRoute: LabelHubRoute,
   LiveRoute: LiveRoute,
+  LoginRoute: LoginRoute,
+  MessagesRoute: MessagesRoute,
   NotificationsRoute: NotificationsRoute,
   ProfileRoute: ProfileRoute,
   RecordRoute: RecordRoute,
+  SignupRoute: SignupRoute,
   StudioRoute: StudioRoute,
   UploadRoute: UploadRoute,
   WalletRoute: WalletRoute,
+  CompetitionsIdRoute: CompetitionsIdRoute,
+  LiveRoomIdRoute: LiveRoomIdRoute,
+  MessagesConversationIdRoute: MessagesConversationIdRoute,
+  ProfileHandleRoute: ProfileHandleRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

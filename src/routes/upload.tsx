@@ -1,88 +1,303 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Upload, Music, Mic, Radio, Play, Globe, Lock } from "lucide-react";
-import { useState } from "react";
+import { Upload, Music, Mic, Radio, Play, Pause, Globe, Lock, CheckCircle2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
+import { getDraft, publishPost } from "@/functions/posts";
+import { uploadMedia } from "@/functions/uploads";
+import { translateServerError } from "@/lib/i18n";
+
+interface UploadSearch {
+  draftId?: string;
+  forCompetition?: number;
+}
 
 export const Route = createFileRoute("/upload")({
+  validateSearch: (search: Record<string, unknown>): UploadSearch => ({
+    draftId: typeof search.draftId === "string" ? search.draftId : undefined,
+    forCompetition: typeof search.forCompetition === "number" ? search.forCompetition : undefined,
+  }),
   component: UploadPage,
 });
 
 const types = [
-  { key: "cover", icon: Mic, label: "Cover" },
-  { key: "original", icon: Music, label: "Original" },
-  { key: "djset", icon: Radio, label: "DJ Set" },
-  { key: "teaser", icon: Play, label: "Teaser" },
+  { key: "cover", icon: Mic, labelKey: "feed.cover" },
+  { key: "original", icon: Music, labelKey: "feed.original" },
+  { key: "djset", icon: Radio, labelKey: "feed.djset" },
+  { key: "teaser", icon: Play, labelKey: "feed.teaser" },
 ] as const;
 
 function UploadPage() {
   const { t } = useTranslation();
-  const [type, setType] = useState<(typeof types)[number]["key"]>("cover");
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const search = Route.useSearch();
+  const draftId = search.draftId;
+
+  const { data: draft } = useQuery({
+    queryKey: ["draft", draftId],
+    queryFn: () => getDraft({ data: { id: draftId! } }),
+    enabled: !!draftId,
+  });
+
+  const [type, setType] = useState<(typeof types)[number]["key"] | "competition">(
+    search.forCompetition ? "competition" : "cover",
+  );
   const [visibility, setV] = useState<"public" | "private">("public");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("Pop");
+  const [tags, setTags] = useState("");
+  const [performer, setPerformer] = useState("");
+  const [writer, setWriter] = useState("");
+  const [composer, setComposer] = useState("");
+  const [producer, setProducer] = useState("");
+  const [pickedFile, setPickedFile] = useState<{ url: string; name: string } | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const uploadFileMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const { url } = await uploadMedia({ data: formData });
+      return { url, name: file.name };
+    },
+    onSuccess: (result) => setPickedFile(result),
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
+  });
+
+  const audioUrl = draftId ? draft?.audioUrl : pickedFile?.url;
+
+  const togglePreview = () => {
+    if (!audioUrl) return;
+    if (!audioRef.current) {
+      audioRef.current = new Audio(audioUrl);
+      audioRef.current.onended = () => setPlaying(false);
+    }
+    if (playing) {
+      audioRef.current.pause();
+      setPlaying(false);
+    } else {
+      audioRef.current.play();
+      setPlaying(true);
+    }
+  };
+
+  const publishMutation = useMutation({
+    mutationFn: () =>
+      publishPost({
+        data: {
+          draftId,
+          audioUrl: draftId ? undefined : pickedFile?.url,
+          type,
+          title: title.trim() || t("upload.untitled"),
+          songTitle: title.trim(),
+          category,
+          tags: tags.split(/\s+/).filter(Boolean),
+          credits: { performer, writer, composer, producer },
+          visibility,
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["feed"] });
+      toast.success(t("upload.publishedToast"));
+      navigate({ to: "/" });
+    },
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
+  });
+
+  const canPublish = !!audioUrl && title.trim().length > 0 && !publishMutation.isPending;
+
   return (
     <AppShell>
       <TopBar />
       <div className="px-4 pt-3 pb-6">
         <h1 className="font-display text-2xl font-bold">{t("upload.title")}</h1>
 
-        <div className="mt-4 rounded-3xl border-2 border-dashed border-border bg-card/40 p-6 text-center">
-          <Upload className="mx-auto h-8 w-8 text-muted-foreground" />
-          <p className="mt-2 text-sm font-semibold">Drag or tap to upload</p>
-          <p className="text-xs text-muted-foreground">MP4, MOV, WAV, MP3 · up to 512MB</p>
-          <button className="mt-3 rounded-full gradient-neon px-5 py-2 text-xs font-bold text-white glow-pink">Choose file</button>
-        </div>
+        {draftId ? (
+          <div className="mt-4 flex items-center gap-3 rounded-3xl border border-accent/40 bg-accent/5 p-4">
+            <CheckCircle2 className="h-6 w-6 shrink-0 text-accent" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold">{t("upload.recordedReady")}</p>
+              <p className="text-xs text-muted-foreground">{t("upload.fromRecordStudio")}</p>
+            </div>
+            <button
+              onClick={togglePreview}
+              className="grid h-10 w-10 place-items-center rounded-full glass"
+              disabled={!draft?.audioUrl}
+            >
+              {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            </button>
+          </div>
+        ) : pickedFile ? (
+          <div className="mt-4 flex items-center gap-3 rounded-3xl border border-accent/40 bg-accent/5 p-4">
+            <CheckCircle2 className="h-6 w-6 shrink-0 text-accent" />
+            <div className="flex-1">
+              <p className="line-clamp-1 text-sm font-semibold">{pickedFile.name}</p>
+              <p className="text-xs text-muted-foreground">{t("upload.uploadedLabel")}</p>
+            </div>
+            <button
+              onClick={togglePreview}
+              className="grid h-10 w-10 place-items-center rounded-full glass"
+            >
+              {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            </button>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-3xl border-2 border-dashed border-border bg-card/40 p-6 text-center">
+            <Upload className="mx-auto h-8 w-8 text-muted-foreground" />
+            <p className="mt-2 text-sm font-semibold">
+              {uploadFileMutation.isPending ? t("upload.uploading") : t("upload.tapToUpload")}
+            </p>
+            <p className="text-xs text-muted-foreground">{t("upload.fileTypes")}</p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*,video/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadFileMutation.mutate(file);
+              }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadFileMutation.isPending}
+              className="mt-3 rounded-full gradient-neon px-5 py-2 text-xs font-bold text-white glow-pink disabled:opacity-60"
+            >
+              {t("upload.chooseFile")}
+            </button>
+          </div>
+        )}
 
-        <p className="mt-5 mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t("upload.pickType")}</p>
+        <p className="mt-5 mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          {t("upload.pickType")}
+        </p>
         <div className="grid grid-cols-4 gap-2">
           {types.map((tp) => (
-            <button key={tp.key} onClick={() => setType(tp.key)}
+            <button
+              key={tp.key}
+              onClick={() => setType(tp.key)}
               className={`flex flex-col items-center gap-1 rounded-2xl border p-3 text-[11px] font-semibold ${
-                type === tp.key ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/60"
-              }`}>
-              <tp.icon className="h-4 w-4" /> {tp.label}
+                type === tp.key
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border bg-card/60"
+              }`}
+            >
+              <tp.icon className="h-4 w-4" /> {t(tp.labelKey)}
             </button>
           ))}
         </div>
+        {type === "competition" && (
+          <p className="mt-2 text-[11px] text-accent">{t("upload.competitionNote")}</p>
+        )}
 
         <div className="mt-5 space-y-3">
-          <Field label={t("upload.caption")}><input className="input" placeholder="Give it a catchy title" /></Field>
-          <Field label={t("upload.description")}><textarea rows={3} className="input" placeholder="Say something about your track" /></Field>
+          <Field label={t("upload.caption")}>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="input"
+              placeholder={t("upload.titlePlaceholder")}
+            />
+          </Field>
+          <Field label={t("upload.description")}>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="input"
+              placeholder={t("upload.descPlaceholder")}
+            />
+          </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t("upload.category")}>
-              <select className="input"><option>Pop</option><option>Hip-Hop</option><option>Electronic</option></select>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="input"
+              >
+                <option>Pop</option>
+                <option>Hip-Hop</option>
+                <option>Electronic</option>
+                <option>Rock</option>
+                <option>R&B</option>
+              </select>
             </Field>
-            <Field label={t("upload.tags")}><input className="input" placeholder="#neonpop #cover" /></Field>
+            <Field label={t("upload.tags")}>
+              <input
+                value={tags}
+                onChange={(e) => setTags(e.target.value)}
+                className="input"
+                placeholder={t("upload.tagsPlaceholder")}
+              />
+            </Field>
           </div>
 
           <fieldset className="rounded-2xl border border-border bg-card/40 p-3">
-            <legend className="px-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t("upload.credits")}</legend>
+            <legend className="px-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              {t("upload.credits")}
+            </legend>
             <div className="grid grid-cols-2 gap-2">
-              <input className="input" placeholder={t("upload.performer")} />
-              <input className="input" placeholder={t("upload.writer")} />
-              <input className="input" placeholder={t("upload.composer")} />
-              <input className="input" placeholder={t("upload.producer")} />
-              <input className="input col-span-2" placeholder={t("upload.arranger")} />
+              <input
+                value={performer}
+                onChange={(e) => setPerformer(e.target.value)}
+                className="input"
+                placeholder={t("upload.performer")}
+              />
+              <input
+                value={writer}
+                onChange={(e) => setWriter(e.target.value)}
+                className="input"
+                placeholder={t("upload.writer")}
+              />
+              <input
+                value={composer}
+                onChange={(e) => setComposer(e.target.value)}
+                className="input"
+                placeholder={t("upload.composer")}
+              />
+              <input
+                value={producer}
+                onChange={(e) => setProducer(e.target.value)}
+                className="input"
+                placeholder={t("upload.producer")}
+              />
             </div>
           </fieldset>
 
           <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t("upload.visibility")}</p>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              {t("upload.visibility")}
+            </p>
             <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => setV("public")}
-                className={`flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold ${visibility === "public" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/60"}`}>
+              <button
+                onClick={() => setV("public")}
+                className={`flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold ${visibility === "public" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/60"}`}
+              >
                 <Globe className="h-4 w-4" /> {t("upload.public")}
               </button>
-              <button onClick={() => setV("private")}
-                className={`flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold ${visibility === "private" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/60"}`}>
+              <button
+                onClick={() => setV("private")}
+                className={`flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold ${visibility === "private" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/60"}`}
+              >
                 <Lock className="h-4 w-4" /> {t("upload.private")}
               </button>
             </div>
           </div>
         </div>
 
-        <button className="mt-6 w-full rounded-full gradient-neon py-3 text-sm font-bold text-white glow-pink">
-          {t("common.publish")}
+        <button
+          onClick={() => publishMutation.mutate()}
+          disabled={!canPublish}
+          className="mt-6 w-full rounded-full gradient-neon py-3 text-sm font-bold text-white glow-pink disabled:opacity-50"
+        >
+          {publishMutation.isPending ? t("upload.publishing") : t("common.publish")}
         </button>
       </div>
 

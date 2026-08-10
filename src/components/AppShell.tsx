@@ -4,7 +4,13 @@ import { useTranslation } from "react-i18next";
 import { isRTL, setLanguage } from "@/lib/i18n";
 import { BottomNav } from "./BottomNav";
 
-export function AppShell({ children, hideNav = false }: { children: ReactNode; hideNav?: boolean }) {
+export function AppShell({
+  children,
+  hideNav = false,
+}: {
+  children: ReactNode;
+  hideNav?: boolean;
+}) {
   const { i18n } = useTranslation();
 
   useEffect(() => {

@@ -1,22 +1,203 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Mic, Music2, Wand2, Sliders, Save, Send, Play, Square } from "lucide-react";
-import { motion } from "framer-motion";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
+import {
+  Mic,
+  Music2,
+  Wand2,
+  Sliders,
+  Save,
+  Send,
+  Play,
+  Pause,
+  Square,
+  Search,
+  X,
+} from "lucide-react";
+import i18n, { translateServerError } from "@/lib/i18n";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { uploadMedia } from "@/functions/uploads";
+import { createDraft } from "@/functions/posts";
+import { listKaraokeTracks } from "@/functions/karaoke";
 
 export const Route = createFileRoute("/record")({
   component: RecordPage,
 });
 
+type KaraokeTrack = Awaited<ReturnType<typeof listKaraokeTracks>>[number];
+
+const BAR_COUNT = 48;
+
+function useMicLevels(active: boolean) {
+  const [levels, setLevels] = useState<number[]>(() => Array(BAR_COUNT).fill(6));
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!active) return;
+    let ctx: AudioContext | undefined;
+    let cancelled = false;
+
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        ctx = new AudioContext();
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 128;
+        source.connect(analyser);
+        analyserRef.current = analyser;
+
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        const tick = () => {
+          analyser.getByteFrequencyData(data);
+          const bucket = Math.floor(data.length / BAR_COUNT) || 1;
+          const next = Array.from({ length: BAR_COUNT }, (_, i) => {
+            const v = data[i * bucket] ?? 0;
+            return 6 + (v / 255) * 60;
+          });
+          setLevels(next);
+          rafRef.current = requestAnimationFrame(tick);
+        };
+        tick();
+      })
+      .catch(() => toast.error(i18n.t("record.micDenied")));
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      ctx?.close();
+      setLevels(Array(BAR_COUNT).fill(6));
+    };
+  }, [active]);
+
+  return { levels, stream: streamRef };
+}
+
 function RecordPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [recording, setRecording] = useState(false);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [seconds, setSeconds] = useState(0);
   const [autotune, setAutotune] = useState(60);
   const [pitch, setPitch] = useState(0);
   const [speed, setSpeed] = useState(100);
   const [reverb, setReverb] = useState(30);
+  const [karaokeOpen, setKaraokeOpen] = useState(false);
+  const [selectedTrack, setSelectedTrack] = useState<KaraokeTrack | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Array<BlobPart>>([]);
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const { levels, stream } = useMicLevels(recording);
+
+  useEffect(() => {
+    if (recording) {
+      setSeconds(0);
+      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+    } else {
+      clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [recording]);
+
+  useEffect(() => {
+    // Wait for the mic stream to be ready (from useMicLevels) before starting MediaRecorder.
+    if (!recording) return;
+    let cancelled = false;
+    const waitForStream = setInterval(() => {
+      if (cancelled) return clearInterval(waitForStream);
+      if (stream.current) {
+        clearInterval(waitForStream);
+        chunksRef.current = [];
+        const recorder = new MediaRecorder(stream.current);
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) chunksRef.current.push(e.data);
+        };
+        recorder.onstop = () => {
+          setRecordedBlob(new Blob(chunksRef.current, { type: "audio/webm" }));
+        };
+        recorder.start();
+        mediaRecorderRef.current = recorder;
+      }
+    }, 100);
+    return () => {
+      cancelled = true;
+      clearInterval(waitForStream);
+    };
+  }, [recording, stream]);
+
+  const toggleRecording = () => {
+    if (recording) {
+      mediaRecorderRef.current?.stop();
+      videoRef.current?.pause();
+      setRecording(false);
+    } else {
+      setRecordedBlob(null);
+      if (videoRef.current) {
+        videoRef.current.currentTime = 0;
+        videoRef.current.play().catch(() => {});
+      }
+      setRecording(true);
+    }
+  };
+
+  const togglePreview = () => {
+    if (!recordedBlob) return;
+    if (!audioElRef.current) {
+      audioElRef.current = new Audio(URL.createObjectURL(recordedBlob));
+      audioElRef.current.onended = () => setPlaying(false);
+    }
+    if (playing) {
+      audioElRef.current.pause();
+      setPlaying(false);
+    } else {
+      audioElRef.current.play();
+      setPlaying(true);
+    }
+  };
+
+  const finishMutation = useMutation({
+    mutationFn: async (next: "studio" | "upload" | "upload-comp") => {
+      if (!recordedBlob) throw new Error(i18n.t("record.recordFirst"));
+      const formData = new FormData();
+      formData.append("file", recordedBlob, `recording-${Date.now()}.webm`);
+      const { url } = await uploadMedia({ data: formData });
+      const draft = await createDraft({
+        data: {
+          audioUrl: url,
+          title: selectedTrack
+            ? [selectedTrack.artist, selectedTrack.title].filter(Boolean).join(" — ")
+            : undefined,
+        },
+      });
+      return { draft, next };
+    },
+    onSuccess: ({ draft, next }) => {
+      if (next === "studio") navigate({ to: "/studio", search: { draftId: draft.id } });
+      else if (next === "upload") navigate({ to: "/upload", search: { draftId: draft.id } });
+      else navigate({ to: "/upload", search: { draftId: draft.id, forCompetition: 1 } });
+    },
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
+  });
+
+  const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const ss = String(seconds % 60).padStart(2, "0");
 
   return (
     <AppShell>
@@ -24,111 +205,295 @@ function RecordPage() {
       <div className="px-4 pt-3 pb-6">
         <div className="flex items-center justify-between">
           <h1 className="font-display text-2xl font-bold">{t("record.title")}</h1>
-          <Link to="/upload" className="text-xs text-accent underline">Skip → Upload</Link>
+          <Link to="/upload" search={{}} className="text-xs text-accent underline">
+            {t("record.skipUpload")}
+          </Link>
         </div>
 
-        {/* Karaoke picker */}
-        <button className="mt-4 flex w-full items-center gap-3 rounded-2xl border border-border bg-card/60 p-3 text-start">
-          <div className="grid h-12 w-12 place-items-center rounded-xl gradient-neon">
-            <Music2 className="h-5 w-5 text-white" />
-          </div>
-          <div className="flex-1">
-            <p className="text-sm font-semibold">{t("record.karaoke")}</p>
-            <p className="text-xs text-muted-foreground">Browse 2M+ tracks — pop, hip-hop, R&B…</p>
-          </div>
-        </button>
+        <div className="mt-4 flex items-center gap-2">
+          <button
+            onClick={() => setKaraokeOpen(true)}
+            className="flex flex-1 items-center gap-3 rounded-2xl border border-border bg-card/60 p-3 text-start"
+          >
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl gradient-neon">
+              <Music2 className="h-5 w-5 text-white" />
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <p className="line-clamp-1 text-sm font-semibold">
+                {selectedTrack
+                  ? [selectedTrack.artist, selectedTrack.title].filter(Boolean).join(" — ")
+                  : t("record.karaoke")}
+              </p>
+              <p className="line-clamp-1 text-xs text-muted-foreground">
+                {selectedTrack ? t("record.changeTrack") : t("record.karaokeDesc")}
+              </p>
+            </div>
+          </button>
+          {selectedTrack && (
+            <button
+              onClick={() => setSelectedTrack(null)}
+              aria-label={t("record.clearTrack")}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-border bg-card/60"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
 
-        {/* Waveform */}
         <div className="mt-6 rounded-3xl border border-border bg-card/50 p-4">
-          <div className="relative h-40 overflow-hidden rounded-2xl bg-background/70">
-            <div className="absolute inset-0 flex items-center justify-around px-3">
-              {Array.from({ length: 48 }).map((_, i) => (
-                <motion.span
+          <div
+            className={`relative overflow-hidden rounded-2xl bg-background/70 ${selectedTrack ? "aspect-video" : "h-40"}`}
+          >
+            {selectedTrack ? (
+              <video
+                ref={videoRef}
+                src={selectedTrack.videoUrl}
+                className="h-full w-full object-cover"
+                playsInline
+                muted={false}
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-around px-3">
+                {levels.map((h, i) => (
+                  <span
+                    key={i}
+                    className="w-1 rounded-full transition-[height] duration-75"
+                    style={{ height: h, background: `hsl(${300 + ((i * 3) % 60)} 90% 60%)` }}
+                  />
+                ))}
+              </div>
+            )}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <button
+                onClick={toggleRecording}
+                className={`grid h-20 w-20 place-items-center rounded-full gradient-neon glow-pink ${recording ? "animate-pulse-glow" : ""} ${selectedTrack ? "opacity-90" : ""}`}
+              >
+                {recording ? (
+                  <Square className="h-8 w-8 text-white" />
+                ) : (
+                  <Mic className="h-9 w-9 text-white" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {selectedTrack && (
+            <div className="mt-3 flex items-center justify-around">
+              {levels.map((h, i) => (
+                <span
                   key={i}
-                  animate={{ height: recording ? [8, 20 + (i % 9) * 6, 12] : 8 + (i % 5) * 4 }}
-                  transition={{ duration: 0.6 + (i % 7) * 0.05, repeat: Infinity, ease: "easeInOut" }}
-                  className="w-1 rounded-full"
-                  style={{ background: `hsl(${300 + (i * 3) % 60} 90% 60%)` }}
+                  className="w-0.5 rounded-full transition-[height] duration-75"
+                  style={{
+                    height: Math.min(h, 24),
+                    background: `hsl(${300 + ((i * 3) % 60)} 90% 60%)`,
+                  }}
                 />
               ))}
             </div>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <motion.button
-                whileTap={{ scale: 0.9 }}
-                onClick={() => setRecording((v) => !v)}
-                className={`grid h-20 w-20 place-items-center rounded-full gradient-neon glow-pink ${recording ? "animate-pulse-glow" : ""}`}
-              >
-                {recording ? <Square className="h-8 w-8 text-white" /> : <Mic className="h-9 w-9 text-white" />}
-              </motion.button>
-            </div>
-          </div>
+          )}
 
           <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
             <span>00:00</span>
-            <span>{recording ? "● REC" : "READY"}</span>
-            <span>03:20</span>
+            <span>
+              {recording ? t("record.rec") : recordedBlob ? t("record.ready") : t("record.idle")}{" "}
+              {mm}:{ss}
+            </span>
+            <span>—</span>
           </div>
         </div>
 
-        {/* AI controls */}
         <section className="mt-6 rounded-3xl border border-border bg-card/50 p-4">
           <div className="mb-3 flex items-center gap-2">
             <Wand2 className="h-4 w-4 text-accent" />
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">AI Vocal</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
+              {t("record.aiVocalNote")}
+            </h2>
           </div>
           <Knob label={t("record.autotune")} value={autotune} onChange={setAutotune} suffix="%" />
-          <Knob label={t("record.pitch")} value={pitch} onChange={setPitch} min={-12} max={12} suffix=" st" />
-          <Knob label={t("record.speed")} value={speed} onChange={setSpeed} min={50} max={150} suffix="%" />
+          <Knob
+            label={t("record.pitch")}
+            value={pitch}
+            onChange={setPitch}
+            min={-12}
+            max={12}
+            suffix=" st"
+          />
+          <Knob
+            label={t("record.speed")}
+            value={speed}
+            onChange={setSpeed}
+            min={50}
+            max={150}
+            suffix="%"
+          />
           <Knob label={t("record.reverb")} value={reverb} onChange={setReverb} suffix="%" />
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <ChipBtn>{t("record.noise")}</ChipBtn>
-            <ChipBtn>{t("record.enhance")}</ChipBtn>
-            <ChipBtn>{t("record.eq")}</ChipBtn>
-            <ChipBtn>{t("record.compression")}</ChipBtn>
-          </div>
-          <Link to="/studio" className="mt-3 flex items-center justify-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-accent">
-            <Sliders className="h-4 w-4" /> Open AI Studio
+          <Link
+            to="/studio"
+            search={{ autotune, pitch, speed, reverb }}
+            className="mt-3 flex items-center justify-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-accent"
+          >
+            <Sliders className="h-4 w-4" /> {t("record.openStudio")}
           </Link>
         </section>
 
-        {/* Actions */}
         <div className="mt-6 grid grid-cols-4 gap-2">
-          <BigAction icon={<Play className="h-5 w-5" />} label={t("common.preview")} />
-          <BigAction icon={<Save className="h-5 w-5" />} label={t("common.save")} />
-          <BigAction icon={<Send className="h-5 w-5" />} label={t("common.publish")} primary />
-          <BigAction icon={<Send className="h-5 w-5" />} label={t("record.sendComp")} />
+          <BigAction
+            icon={playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+            label={t("common.preview")}
+            onClick={togglePreview}
+            disabled={!recordedBlob}
+          />
+          <BigAction
+            icon={<Save className="h-5 w-5" />}
+            label={t("common.save")}
+            onClick={() => finishMutation.mutate("studio")}
+            disabled={!recordedBlob || finishMutation.isPending}
+          />
+          <BigAction
+            icon={<Send className="h-5 w-5" />}
+            label={t("common.publish")}
+            primary
+            onClick={() => finishMutation.mutate("upload")}
+            disabled={!recordedBlob || finishMutation.isPending}
+          />
+          <BigAction
+            icon={<Send className="h-5 w-5" />}
+            label={t("record.sendComp")}
+            onClick={() => finishMutation.mutate("upload-comp")}
+            disabled={!recordedBlob || finishMutation.isPending}
+          />
         </div>
       </div>
+
+      <KaraokePickerSheet
+        open={karaokeOpen}
+        onClose={() => setKaraokeOpen(false)}
+        onSelect={(track) => {
+          setSelectedTrack(track);
+          setKaraokeOpen(false);
+        }}
+      />
     </AppShell>
   );
 }
 
-function Knob({ label, value, onChange, min = 0, max = 100, suffix = "" }: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; suffix?: string }) {
+function KaraokePickerSheet({
+  open,
+  onClose,
+  onSelect,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSelect: (track: KaraokeTrack) => void;
+}) {
+  const { t } = useTranslation();
+  const [query, setQuery] = useState("");
+  const { data: tracks } = useQuery({
+    queryKey: ["karaokeTracks", query],
+    queryFn: () => listKaraokeTracks({ data: { query } }),
+    enabled: open,
+  });
+
+  return (
+    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
+      <SheetContent side="bottom" className="flex h-[70vh] flex-col rounded-t-3xl">
+        <SheetHeader>
+          <SheetTitle>{t("record.karaoke")}</SheetTitle>
+        </SheetHeader>
+        <label className="mt-2 flex items-center gap-2 rounded-full bg-muted/60 px-4 py-2.5 ring-1 ring-border">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("record.karaokeSearchPlaceholder")}
+            className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+        </label>
+        <div className="mt-3 flex-1 space-y-2 overflow-y-auto">
+          {tracks?.length === 0 && (
+            <div className="p-4 text-center text-sm text-muted-foreground">
+              <p>{t("record.noKaraokeTracks")}</p>
+              <p className="mt-2 text-[11px]">{t("record.noKaraokeTracksHint")}</p>
+            </div>
+          )}
+          {tracks?.map((track) => (
+            <button
+              key={track.id}
+              onClick={() => onSelect(track)}
+              className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card/60 p-3 text-start hover:border-primary/50"
+            >
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl gradient-neon">
+                <Music2 className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <p className="line-clamp-1 text-sm font-semibold">{track.title}</p>
+                {track.artist && (
+                  <p className="line-clamp-1 text-xs text-muted-foreground">{track.artist}</p>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function Knob({
+  label,
+  value,
+  onChange,
+  min = 0,
+  max = 100,
+  suffix = "",
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  suffix?: string;
+}) {
   return (
     <div className="mb-3">
       <div className="mb-1 flex items-center justify-between text-xs">
         <span className="font-medium text-foreground/90">{label}</span>
-        <span className="font-mono text-accent">{value}{suffix}</span>
+        <span className="font-mono text-accent">
+          {value}
+          {suffix}
+        </span>
       </div>
       <input
-        type="range" min={min} max={max} value={value}
+        type="range"
+        min={min}
+        max={max}
+        value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-full accent-primary"
       />
     </div>
   );
 }
-function ChipBtn({ children }: { children: React.ReactNode }) {
+function BigAction({
+  icon,
+  label,
+  primary,
+  onClick,
+  disabled,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  primary?: boolean;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <button className="rounded-full border border-border bg-background/60 px-3 py-2 text-xs font-semibold text-foreground/90 hover:border-primary/50">
-      {children}
-    </button>
-  );
-}
-function BigAction({ icon, label, primary }: { icon: React.ReactNode; label: string; primary?: boolean }) {
-  return (
-    <button className={`flex flex-col items-center gap-1 rounded-2xl border p-3 text-[11px] font-semibold ${primary ? "gradient-neon border-transparent text-white glow-pink" : "border-border bg-card/60 text-foreground/90"}`}>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex flex-col items-center gap-1 rounded-2xl border p-3 text-[11px] font-semibold disabled:opacity-40 ${primary ? "gradient-neon border-transparent text-white glow-pink" : "border-border bg-card/60 text-foreground/90"}`}
+    >
       {icon}
       <span className="text-center leading-tight">{label}</span>
     </button>
