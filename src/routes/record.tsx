@@ -154,7 +154,16 @@ function RecordPage() {
         recorder.onstop = () => {
           const rawBlob = new Blob(chunksRef.current, { type: "audio/webm" });
           setProcessing(true);
-          processRecording(rawBlob, selectedTrack?.videoUrl)
+          // processRecording already time-boxes its own network fetch and render internally;
+          // this outer race is a last-resort safety net so nothing — however unexpected — can
+          // ever leave Save disabled forever.
+          const withOverallTimeout = Promise.race([
+            processRecording(rawBlob, selectedTrack?.videoUrl),
+            new Promise<Blob>((_, reject) =>
+              setTimeout(() => reject(new Error("processing timed out")), 30_000),
+            ),
+          ]);
+          withOverallTimeout
             .then(setRecordedBlob)
             .catch((err) => {
               console.error(err);
