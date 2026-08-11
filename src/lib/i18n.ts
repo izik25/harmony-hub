@@ -99,6 +99,9 @@ const en = {
     rec: "● REC",
     ready: "READY",
     idle: "IDLE",
+    paused: "PAUSED",
+    continueRecording: "Continue",
+    finishRecording: "Finish",
     karaokeSearchPlaceholder: "Search songs or artists...",
     noKaraokeTracks: "No karaoke tracks yet.",
     noKaraokeTracksHint:
@@ -451,6 +454,9 @@ const he = {
     rec: "● מקליט",
     ready: "מוכן",
     idle: "ממתין",
+    paused: "מושהה",
+    continueRecording: "המשך",
+    finishRecording: "סיום",
     karaokeSearchPlaceholder: "חפש שירים או אמנים...",
     noKaraokeTracks: "אין עדיין שירי קריוקי.",
     noKaraokeTracksHint:
@@ -802,6 +808,9 @@ const ar = {
     rec: "● تسجيل",
     ready: "جاهز",
     idle: "خامل",
+    paused: "متوقف مؤقتاً",
+    continueRecording: "متابعة",
+    finishRecording: "إنهاء",
     karaokeSearchPlaceholder: "ابحث عن أغاني أو فنانين...",
     noKaraokeTracks: "لا توجد مقاطع كاريوكي بعد.",
     noKaraokeTracksHint:

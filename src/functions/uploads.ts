@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServerFn } from "@tanstack/react-start";
+import { put } from "@vercel/blob";
 import { requireUserId } from "./auth";
+import { toSafeError } from "./safe-error";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 const ALLOWED_EXT = new Set([
@@ -34,9 +36,20 @@ export const uploadMedia = createServerFn({ method: "POST" })
     const safeExt = ALLOWED_EXT.has(ext) ? ext : "webm";
     const filename = `${randomUUID()}.${safeExt}`;
 
-    await mkdir(UPLOAD_DIR, { recursive: true });
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(path.join(UPLOAD_DIR, filename), buffer);
+    try {
+      // Serverless deployments (Vercel) have no writable, persistent local disk — uploads have
+      // to go to real object storage there. Local dev has no Blob store configured, so it falls
+      // back to writing straight into public/uploads/, same as before.
+      if (process.env.BLOB_READ_WRITE_TOKEN) {
+        const blob = await put(filename, file, { access: "public", addRandomSuffix: false });
+        return { url: blob.url };
+      }
 
-    return { url: `/uploads/${filename}` };
+      await mkdir(UPLOAD_DIR, { recursive: true });
+      const buffer = Buffer.from(await file.arrayBuffer());
+      await writeFile(path.join(UPLOAD_DIR, filename), buffer);
+      return { url: `/uploads/${filename}` };
+    } catch (error) {
+      throw toSafeError(error);
+    }
   });

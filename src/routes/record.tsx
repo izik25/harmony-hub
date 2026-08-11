@@ -15,6 +15,7 @@ import {
   Square,
   Search,
   X,
+  Check,
 } from "lucide-react";
 import i18n, { translateServerError } from "@/lib/i18n";
 import { AppShell } from "@/components/AppShell";
@@ -85,10 +86,12 @@ function useMicLevels(active: boolean) {
   return { levels, stream: streamRef };
 }
 
+type Phase = "idle" | "recording" | "paused" | "finished";
+
 function RecordPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [recording, setRecording] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [playing, setPlaying] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -104,21 +107,29 @@ function RecordPage() {
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
-  const { levels, stream } = useMicLevels(recording);
+  const recording = phase === "recording";
+  const { levels, stream } = useMicLevels(phase === "recording" || phase === "paused");
 
   useEffect(() => {
-    if (recording) {
-      setSeconds(0);
+    if (phase === "recording") {
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     } else {
       clearInterval(timerRef.current);
     }
     return () => clearInterval(timerRef.current);
-  }, [recording]);
+  }, [phase]);
 
   useEffect(() => {
-    // Wait for the mic stream to be ready (from useMicLevels) before starting MediaRecorder.
-    if (!recording) return;
+    if (phase !== "recording") return;
+
+    // Resuming a paused take: same recorder, same chunk buffer — just pick back up.
+    if (mediaRecorderRef.current?.state === "paused") {
+      mediaRecorderRef.current.resume();
+      videoRef.current?.play().catch(() => {});
+      return;
+    }
+
+    // Starting a fresh take: wait for the mic stream to be ready, then create a new recorder.
     let cancelled = false;
     const waitForStream = setInterval(() => {
       if (cancelled) return clearInterval(waitForStream);
@@ -134,27 +145,36 @@ function RecordPage() {
         };
         recorder.start();
         mediaRecorderRef.current = recorder;
+        if (videoRef.current) {
+          videoRef.current.currentTime = 0;
+          videoRef.current.play().catch(() => {});
+        }
       }
     }, 100);
     return () => {
       cancelled = true;
       clearInterval(waitForStream);
     };
-  }, [recording, stream]);
+  }, [phase, stream]);
 
-  const toggleRecording = () => {
-    if (recording) {
-      mediaRecorderRef.current?.stop();
-      videoRef.current?.pause();
-      setRecording(false);
-    } else {
+  const startOrResume = () => {
+    if (phase !== "paused") {
       setRecordedBlob(null);
-      if (videoRef.current) {
-        videoRef.current.currentTime = 0;
-        videoRef.current.play().catch(() => {});
-      }
-      setRecording(true);
+      setSeconds(0);
     }
+    setPhase("recording");
+  };
+
+  const pauseRecording = () => {
+    mediaRecorderRef.current?.pause();
+    videoRef.current?.pause();
+    setPhase("paused");
+  };
+
+  const finishRecording = () => {
+    mediaRecorderRef.current?.stop();
+    videoRef.current?.pause();
+    setPhase("finished");
   };
 
   const togglePreview = () => {
@@ -263,17 +283,40 @@ function RecordPage() {
                 ))}
               </div>
             )}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <button
-                onClick={toggleRecording}
-                className={`grid h-20 w-20 place-items-center rounded-full gradient-neon glow-pink ${recording ? "animate-pulse-glow" : ""} ${selectedTrack ? "opacity-90" : ""}`}
-              >
-                {recording ? (
-                  <Square className="h-8 w-8 text-white" />
-                ) : (
-                  <Mic className="h-9 w-9 text-white" />
-                )}
-              </button>
+            <div className="absolute inset-0 flex items-center justify-center gap-4">
+              {phase === "paused" ? (
+                <>
+                  <button
+                    onClick={startOrResume}
+                    className="flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-full gradient-neon glow-pink"
+                  >
+                    <Mic className="h-6 w-6 text-white" />
+                    <span className="text-[9px] font-semibold text-white">
+                      {t("record.continueRecording")}
+                    </span>
+                  </button>
+                  <button
+                    onClick={finishRecording}
+                    className="flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-full border border-accent bg-accent/20"
+                  >
+                    <Check className="h-6 w-6 text-accent" />
+                    <span className="text-[9px] font-semibold text-accent">
+                      {t("record.finishRecording")}
+                    </span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={recording ? pauseRecording : startOrResume}
+                  className={`grid h-20 w-20 place-items-center rounded-full gradient-neon glow-pink ${recording ? "animate-pulse-glow" : ""} ${selectedTrack ? "opacity-90" : ""}`}
+                >
+                  {recording ? (
+                    <Square className="h-8 w-8 text-white" />
+                  ) : (
+                    <Mic className="h-9 w-9 text-white" />
+                  )}
+                </button>
+              )}
             </div>
           </div>
 
@@ -295,7 +338,13 @@ function RecordPage() {
           <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
             <span>00:00</span>
             <span>
-              {recording ? t("record.rec") : recordedBlob ? t("record.ready") : t("record.idle")}{" "}
+              {phase === "recording"
+                ? t("record.rec")
+                : phase === "paused"
+                  ? t("record.paused")
+                  : recordedBlob
+                    ? t("record.ready")
+                    : t("record.idle")}{" "}
               {mm}:{ss}
             </span>
             <span>—</span>
