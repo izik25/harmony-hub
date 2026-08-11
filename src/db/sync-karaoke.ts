@@ -11,8 +11,11 @@ const KARAOKE_DIR = path.join(process.cwd(), "public", "karaoke");
 // through Vercel's static-file routing (mismatched encoding/normalization between what's
 // uploaded and what the browser requests), landing on the app's auth-gated catch-all instead
 // of the file. Source files stay readable for you to manage; what's actually served is a
-// stable ASCII filename derived from the original name, kept in this subfolder.
-const SERVED_DIR = path.join(KARAOKE_DIR, "_served");
+// stable ASCII filename derived from the original name, kept in this subfolder. Deliberately
+// no leading underscore — paths like `_served` collided with Vercel's own reserved internal
+// route prefixes (`_next`, `_vercel`) and caused intermittent 307s back to the app instead of
+// serving the file.
+const SERVED_DIR = path.join(KARAOKE_DIR, "files");
 
 function parseFilename(filename: string): { title: string; artist: string } {
   const base = filename.replace(/\.mp4$/i, "");
@@ -52,7 +55,7 @@ async function main() {
     );
   }
 
-  const videoUrls = files.map((f) => `/karaoke/_served/${safeFilename(f)}`);
+  const videoUrls = files.map((f) => `/karaoke/files/${safeFilename(f)}`);
 
   let added = 0;
   for (const file of files) {
@@ -62,7 +65,7 @@ async function main() {
       await copyFile(path.join(KARAOKE_DIR, file), servedPath);
     }
 
-    const videoUrl = `/karaoke/_served/${served}`;
+    const videoUrl = `/karaoke/files/${served}`;
     const [existing] = await db
       .select({ id: karaokeTracks.id })
       .from(karaokeTracks)
@@ -79,12 +82,14 @@ async function main() {
         .delete(karaokeTracks)
         .where(notInArray(karaokeTracks.videoUrl, videoUrls))
         .returning({ title: karaokeTracks.title, videoUrl: karaokeTracks.videoUrl })
-    : await db.delete(karaokeTracks).returning({ title: karaokeTracks.title, videoUrl: karaokeTracks.videoUrl });
+    : await db
+        .delete(karaokeTracks)
+        .returning({ title: karaokeTracks.title, videoUrl: karaokeTracks.videoUrl });
   for (const r of removed) {
     console.log(`- removed (file missing): ${r.title}`);
-    // Only ever delete our own managed copies under _served/ — older rows (or anything else)
+    // Only ever delete our own managed copies under files/ — older rows (or anything else)
     // may point straight at a source file, and that must never be touched by cleanup.
-    if (!r.videoUrl.startsWith("/karaoke/_served/")) continue;
+    if (!r.videoUrl.startsWith("/karaoke/files/")) continue;
     const servedPath = path.join(process.cwd(), "public", r.videoUrl.replace(/^\//, ""));
     await unlink(servedPath).catch(() => {});
   }
