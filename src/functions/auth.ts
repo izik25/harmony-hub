@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { users, sessions } from "@/db/schema";
+import { toSafeError } from "./safe-error";
 
 const SESSION_COOKIE = "sona_session";
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -43,10 +44,14 @@ function toSessionUser(u: typeof users.$inferSelect): SessionUser {
 export const getSessionUser = createServerOnlyFn(async (): Promise<SessionUser | null> => {
   const token = getCookie(SESSION_COOKIE);
   if (!token) return null;
-  const [session] = await db.select().from(sessions).where(eq(sessions.id, token));
-  if (!session || session.expiresAt.getTime() < Date.now()) return null;
-  const [user] = await db.select().from(users).where(eq(users.id, session.userId));
-  return user ? toSessionUser(user) : null;
+  try {
+    const [session] = await db.select().from(sessions).where(eq(sessions.id, token));
+    if (!session || session.expiresAt.getTime() < Date.now()) return null;
+    const [user] = await db.select().from(users).where(eq(users.id, session.userId));
+    return user ? toSessionUser(user) : null;
+  } catch (error) {
+    throw toSafeError(error);
+  }
 });
 
 /** Server-only helper — throws if there's no valid session. */
@@ -90,43 +95,51 @@ export const signup = createServerFn({ method: "POST" })
     if (!email.includes("@")) throw new Error("invalidEmail");
     if (data.password.length < 6) throw new Error("passwordTooShort");
 
-    const [handleTaken] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.handle, handle));
-    if (handleTaken) throw new Error("handleTaken");
-    const [emailTaken] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, email));
-    if (emailTaken) throw new Error("emailTaken");
+    try {
+      const [handleTaken] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.handle, handle));
+      if (handleTaken) throw new Error("handleTaken");
+      const [emailTaken] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, email));
+      if (emailTaken) throw new Error("emailTaken");
 
-    const passwordHash = await bcrypt.hash(data.password, 10);
-    const [user] = await db
-      .insert(users)
-      .values({
-        handle,
-        name,
-        email,
-        passwordHash,
-        avatarUrl: `https://api.dicebear.com/9.x/glass/svg?seed=${handle}`,
-      })
-      .returning();
+      const passwordHash = await bcrypt.hash(data.password, 10);
+      const [user] = await db
+        .insert(users)
+        .values({
+          handle,
+          name,
+          email,
+          passwordHash,
+          avatarUrl: `https://api.dicebear.com/9.x/glass/svg?seed=${handle}`,
+        })
+        .returning();
 
-    await createSession(user.id);
-    return toSessionUser(user);
+      await createSession(user.id);
+      return toSessionUser(user);
+    } catch (error) {
+      throw toSafeError(error);
+    }
   });
 
 export const login = createServerFn({ method: "POST" })
   .validator((input: unknown) => input as { email: string; password: string })
   .handler(async ({ data }) => {
     const email = data.email.trim().toLowerCase();
-    const [user] = await db.select().from(users).where(eq(users.email, email));
-    if (!user) throw new Error("invalidCredentials");
-    const ok = await bcrypt.compare(data.password, user.passwordHash);
-    if (!ok) throw new Error("invalidCredentials");
-    await createSession(user.id);
-    return toSessionUser(user);
+    try {
+      const [user] = await db.select().from(users).where(eq(users.email, email));
+      if (!user) throw new Error("invalidCredentials");
+      const ok = await bcrypt.compare(data.password, user.passwordHash);
+      if (!ok) throw new Error("invalidCredentials");
+      await createSession(user.id);
+      return toSessionUser(user);
+    } catch (error) {
+      throw toSafeError(error);
+    }
   });
 
 export const logout = createServerFn({ method: "POST" }).handler(async () => {
