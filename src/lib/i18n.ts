@@ -1126,8 +1126,20 @@ if (!i18n.isInitialized) {
       },
       fallbackLng: "en",
       supportedLngs: ["en", "he", "ar"],
+      // The client's very first render must hydrate against whatever the server actually
+      // rendered, not an independent guess — Accept-Language (server) and navigator.language
+      // (client) are two separate browser-maintained signals that can legitimately disagree
+      // (e.g. a browser that sends no Accept-Language header at all while navigator.language
+      // still reflects the OS locale). Guessing independently here caused React hydration
+      // errors. `document.documentElement.lang` is the SSR HTML's own `<html lang>` attribute,
+      // already parsed into the DOM before this module runs, so reading it back guarantees
+      // agreement. Any correction toward the visitor's real preference happens afterwards, as
+      // a normal post-mount state update (see reconcileClientLanguage below) instead of during
+      // hydration.
       lng:
-        typeof window !== "undefined" ? (localStorage.getItem("lang") ?? guessFromLocale()) : "en",
+        typeof window !== "undefined"
+          ? document.documentElement.lang || localStorage.getItem("lang") || guessFromLocale()
+          : "en",
       interpolation: { escapeValue: false },
       detection: {
         order: ["localStorage", "navigator"],
@@ -1152,6 +1164,20 @@ export function setLanguage(lng: string) {
     document.documentElement.lang = lng;
     document.documentElement.dir = isRTL(lng) ? "rtl" : "ltr";
   }
+}
+
+/**
+ * Runs once after the client mounts. A fresh visitor (no saved preference yet) hydrates in
+ * whatever language the server guessed from the Accept-Language header, which may not match
+ * their actual browser/OS locale (see the `lng` comment above). This nudges them to their real
+ * language right after hydration — a normal reactive update, not a hydration-time change — and
+ * persists it so every subsequent request (including SSR) gets it right immediately.
+ */
+export function reconcileClientLanguage() {
+  if (typeof window === "undefined") return;
+  if (localStorage.getItem("lang")) return;
+  const guessed = guessFromLocale();
+  if (guessed !== i18n.language) setLanguage(guessed);
 }
 
 /**

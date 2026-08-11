@@ -9,13 +9,14 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation, I18nextProvider } from "react-i18next";
+import type { i18n as I18nInstance } from "i18next";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { getCurrentUser } from "../functions/auth";
 import { detectServerLanguage } from "../functions/locale";
-import i18n, { isRTL } from "../lib/i18n";
+import i18n, { isRTL, reconcileClientLanguage } from "../lib/i18n";
 
 const PUBLIC_PATHS = new Set(["/login", "/signup"]);
 
@@ -78,10 +79,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   beforeLoad: async ({ location, context }) => {
     // Only on the server, and only for the initial SSR pass of a fresh request (never on
     // client-side navigations, which would otherwise fight a manual in-app language switch).
-    if (typeof document === "undefined") {
-      const lang = await detectServerLanguage();
-      if (i18n.language !== lang) await i18n.changeLanguage(lang);
-    }
+    // We only resolve which language to use here; the actual per-request i18next instance is
+    // built during render (see RootShell) rather than by mutating the shared `i18n` singleton
+    // — that singleton is process-wide, so under concurrent requests (e.g. two visitors with
+    // different languages) mutating it directly races and can bake the wrong language's text
+    // into a response's SSR output, which then fails to hydrate on the client.
+    const lang = typeof document === "undefined" ? await detectServerLanguage() : undefined;
 
     const user = await getCurrentUser();
     context.queryClient.setQueryData(["currentUser"], user);
@@ -90,7 +93,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     if (!user && !isPublic) throw redirect({ to: "/login" });
     if (user && isPublic) throw redirect({ to: "/" });
 
-    return { user };
+    return { user, lang };
   },
   head: () => ({
     meta: [
@@ -126,13 +129,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: ReactNode }) {
+  const { lang } = Route.useRouteContext();
+  // On the server, build a throwaway clone scoped to this render call so concurrent requests
+  // for different languages can never see each other's state (see beforeLoad above). On the
+  // client there's only ever one request at a time, so we keep using the real shared instance
+  // — that's what setLanguage()'s changeLanguage() calls need to keep working reactively.
+  const requestI18n: I18nInstance =
+    typeof document === "undefined" && lang ? i18n.cloneInstance({ lng: lang }) : i18n;
+  const resolvedLang = requestI18n.language;
   return (
-    <html lang={i18n.language} dir={isRTL(i18n.language) ? "rtl" : "ltr"} className="dark">
+    <html lang={resolvedLang} dir={isRTL(resolvedLang) ? "rtl" : "ltr"} className="dark">
       <head>
         <HeadContent />
       </head>
       <body>
-        {children}
+        <I18nextProvider i18n={requestI18n}>{children}</I18nextProvider>
         <Scripts />
       </body>
     </html>
@@ -141,6 +152,9 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  useEffect(() => {
+    reconcileClientLanguage();
+  }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
