@@ -1,21 +1,21 @@
 import "dotenv/config";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { mkdir, readdir, copyFile, unlink, access } from "node:fs/promises";
+import { mkdir, readdir, copyFile, unlink, access, readFile } from "node:fs/promises";
 import { eq, notInArray } from "drizzle-orm";
+import { put, head, del } from "@vercel/blob";
 import { db } from "./client";
 import { karaokeTracks } from "./schema";
 
 const KARAOKE_DIR = path.join(process.cwd(), "public", "karaoke");
-// Hebrew/Unicode filenames aren't reliable as public URLs — they've been observed falling
-// through Vercel's static-file routing (mismatched encoding/normalization between what's
-// uploaded and what the browser requests), landing on the app's auth-gated catch-all instead
-// of the file. Source files stay readable for you to manage; what's actually served is a
-// stable ASCII filename derived from the original name, kept in this subfolder. Deliberately
-// no leading underscore — paths like `_served` collided with Vercel's own reserved internal
-// route prefixes (`_next`, `_vercel`) and caused intermittent 307s back to the app instead of
-// serving the file.
 const SERVED_DIR = path.join(KARAOKE_DIR, "files");
+// Vercel's static-file serving for public/ turned out unreliable for these videos — verified
+// with repeated checks, the exact same nested path flipped between 200 and a 307-to-/login
+// with no caching involved (X-Vercel-Cache: MISS on the failures), even for a renamed,
+// no-underscore folder. Real object storage sidesteps the whole question, and it's the same
+// store already used for recordings/uploads. Local dev (no token) keeps the old local-file
+// behavior, since Vite's dev server serves public/ directly with none of this ambiguity.
+const USE_BLOB = !!process.env.BLOB_READ_WRITE_TOKEN;
 
 function parseFilename(filename: string): { title: string; artist: string } {
   const base = filename.replace(/\.mp4$/i, "");
@@ -40,9 +40,35 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
+async function ensureServed(file: string): Promise<string> {
+  const served = safeFilename(file);
+
+  if (USE_BLOB) {
+    const pathname = `karaoke/${served}`;
+    try {
+      const info = await head(pathname);
+      return info.url;
+    } catch {
+      const buffer = await readFile(path.join(KARAOKE_DIR, file));
+      const blob = await put(pathname, buffer, {
+        access: "public",
+        addRandomSuffix: false,
+        contentType: "video/mp4",
+      });
+      return blob.url;
+    }
+  }
+
+  const servedPath = path.join(SERVED_DIR, served);
+  if (!(await exists(servedPath))) {
+    await copyFile(path.join(KARAOKE_DIR, file), servedPath);
+  }
+  return `/karaoke/files/${served}`;
+}
+
 async function main() {
   await mkdir(KARAOKE_DIR, { recursive: true });
-  await mkdir(SERVED_DIR, { recursive: true });
+  if (!USE_BLOB) await mkdir(SERVED_DIR, { recursive: true });
   const entries = await readdir(KARAOKE_DIR, { withFileTypes: true });
   const files = entries
     .filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".mp4"))
@@ -54,18 +80,14 @@ async function main() {
       'Drop karaoke videos there, named like "Artist - Song Title.mp4", then re-run this.',
     );
   }
+  console.log(`Uploading via: ${USE_BLOB ? "Vercel Blob" : "local public/karaoke/files/"}\n`);
 
-  const videoUrls = files.map((f) => `/karaoke/files/${safeFilename(f)}`);
-
+  const videoUrls: Array<string> = [];
   let added = 0;
   for (const file of files) {
-    const served = safeFilename(file);
-    const servedPath = path.join(SERVED_DIR, served);
-    if (!(await exists(servedPath))) {
-      await copyFile(path.join(KARAOKE_DIR, file), servedPath);
-    }
+    const videoUrl = await ensureServed(file);
+    videoUrls.push(videoUrl);
 
-    const videoUrl = `/karaoke/files/${served}`;
     const [existing] = await db
       .select({ id: karaokeTracks.id })
       .from(karaokeTracks)
@@ -87,6 +109,12 @@ async function main() {
         .returning({ title: karaokeTracks.title, videoUrl: karaokeTracks.videoUrl });
   for (const r of removed) {
     console.log(`- removed (file missing): ${r.title}`);
+    if (USE_BLOB) {
+      if (r.videoUrl.includes(".public.blob.vercel-storage.com/")) {
+        await del(r.videoUrl).catch(() => {});
+      }
+      continue;
+    }
     // Only ever delete our own managed copies under files/ — older rows (or anything else)
     // may point straight at a source file, and that must never be touched by cleanup.
     if (!r.videoUrl.startsWith("/karaoke/files/")) continue;
