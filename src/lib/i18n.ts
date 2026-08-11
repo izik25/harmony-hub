@@ -102,6 +102,8 @@ const en = {
     paused: "PAUSED",
     continueRecording: "Continue",
     finishRecording: "Finish",
+    processing: "Cleaning up",
+    processFailed: "Couldn't clean up the recording, saved the raw take instead.",
     karaokeSearchPlaceholder: "Search songs or artists...",
     noKaraokeTracks: "No karaoke tracks yet.",
     noKaraokeTracksHint:
@@ -457,6 +459,8 @@ const he = {
     paused: "מושהה",
     continueRecording: "המשך",
     finishRecording: "סיום",
+    processing: "מנקה הקלטה",
+    processFailed: "לא הצלחנו לנקות את ההקלטה, נשמרה הגרסה הגולמית.",
     karaokeSearchPlaceholder: "חפש שירים או אמנים...",
     noKaraokeTracks: "אין עדיין שירי קריוקי.",
     noKaraokeTracksHint:
@@ -811,6 +815,8 @@ const ar = {
     paused: "متوقف مؤقتاً",
     continueRecording: "متابعة",
     finishRecording: "إنهاء",
+    processing: "تنظيف التسجيل",
+    processFailed: "تعذّر تنظيف التسجيل، تم حفظ النسخة الأصلية.",
     karaokeSearchPlaceholder: "ابحث عن أغاني أو فنانين...",
     noKaraokeTracks: "لا توجد مقاطع كاريوكي بعد.",
     noKaraokeTracksHint:

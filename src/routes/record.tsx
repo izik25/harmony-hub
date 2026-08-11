@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ import {
   Search,
   X,
   Check,
+  Loader2,
 } from "lucide-react";
 import i18n, { translateServerError } from "@/lib/i18n";
 import { AppShell } from "@/components/AppShell";
@@ -24,18 +25,13 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { uploadMedia } from "@/functions/uploads";
 import { createDraft } from "@/functions/posts";
 import { listKaraokeTracks } from "@/functions/karaoke";
+import { processRecording } from "@/lib/mix-recording";
 
 export const Route = createFileRoute("/record")({
   component: RecordPage,
 });
 
 type KaraokeTrack = Awaited<ReturnType<typeof listKaraokeTracks>>[number];
-
-// captureStream() is broadly supported (Chrome/Edge/Firefox, Safari 15+) but missing from this
-// TS DOM lib version.
-type MediaElementWithCapture = HTMLVideoElement & {
-  captureStream?: () => MediaStream;
-};
 
 const BAR_COUNT = 48;
 
@@ -51,7 +47,9 @@ function useMicLevels(active: boolean) {
     let cancelled = false;
 
     navigator.mediaDevices
-      .getUserMedia({ audio: true })
+      .getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      })
       .then((stream) => {
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
@@ -99,6 +97,7 @@ function RecordPage() {
   const navigate = useNavigate();
   const [phase, setPhase] = useState<Phase>("idle");
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [processing, setProcessing] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [autotune, setAutotune] = useState(60);
@@ -115,71 +114,6 @@ function RecordPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const recording = phase === "recording";
   const { levels, stream } = useMicLevels(phase === "recording" || phase === "paused");
-
-  // Mixes the karaoke backing track's own audio into the recording — otherwise only the mic
-  // gets captured (the video plays live so the performer can hear/see it, but that playback
-  // never reaches the saved file, so the result is vocals-only instead of a full song).
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const videoSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
-  const wiredVideoElRef = useRef<HTMLVideoElement | null>(null);
-
-  useEffect(() => {
-    return () => {
-      audioCtxRef.current?.close().catch(() => {});
-    };
-  }, []);
-
-  const buildRecordingStream = useCallback(
-    (micStream: MediaStream): MediaStream => {
-      if (!selectedTrack || !videoRef.current) return micStream;
-      const video = videoRef.current;
-
-      const ctx = (audioCtxRef.current ??= new AudioContext());
-      ctx.resume().catch(() => {});
-
-      const dest = ctx.createMediaStreamDestination();
-      const micGain = ctx.createGain();
-      micGain.gain.value = 1;
-      ctx.createMediaStreamSource(micStream).connect(micGain).connect(dest);
-
-      const videoGain = ctx.createGain();
-      videoGain.gain.value = 0.7; // sits under the vocal instead of drowning it out
-
-      // captureStream() taps the video's audio without touching its own normal output, so the
-      // performer keeps hearing it live exactly as before — nothing else to wire up. Only fall
-      // back to createMediaElementSource (which DOES redirect the element's own audio output
-      // into the Web Audio graph, silencing normal playback unless explicitly reconnected) if
-      // captureStream isn't supported, or throws (e.g. a stricter cross-origin policy than the
-      // video's own `crossOrigin="anonymous"` + the Blob store's `Access-Control-Allow-Origin`
-      // are meant to satisfy).
-      let capturedAudio: MediaStreamTrack | undefined;
-      try {
-        capturedAudio = (video as MediaElementWithCapture).captureStream?.().getAudioTracks()[0];
-      } catch {
-        capturedAudio = undefined;
-      }
-
-      if (capturedAudio) {
-        ctx.createMediaStreamSource(new MediaStream([capturedAudio])).connect(videoGain);
-      } else {
-        try {
-          if (wiredVideoElRef.current !== video) {
-            videoSourceRef.current = ctx.createMediaElementSource(video);
-            wiredVideoElRef.current = video;
-          }
-          videoSourceRef.current!.disconnect();
-          videoSourceRef.current!.connect(videoGain);
-          videoGain.connect(ctx.destination); // reconnect to speakers since it was just detached
-        } catch {
-          // Neither path is available — recording falls back to mic-only rather than breaking.
-        }
-      }
-      videoGain.connect(dest);
-
-      return dest.stream;
-    },
-    [selectedTrack],
-  );
 
   useEffect(() => {
     if (phase === "recording") {
@@ -201,6 +135,8 @@ function RecordPage() {
     }
 
     // Starting a fresh take: wait for the mic stream to be ready, then create a new recorder.
+    // The mic is recorded on its own, clean — the karaoke backing track (if any) gets blended
+    // in afterward via an offline render (see finishRecording), not mixed live while recording.
     let cancelled = false;
     const waitForStream = setInterval(() => {
       if (cancelled) return clearInterval(waitForStream);
@@ -211,12 +147,21 @@ function RecordPage() {
           videoRef.current.currentTime = 0;
           videoRef.current.play().catch(() => {});
         }
-        const recorder = new MediaRecorder(buildRecordingStream(stream.current));
+        const recorder = new MediaRecorder(stream.current);
         recorder.ondataavailable = (e) => {
           if (e.data.size > 0) chunksRef.current.push(e.data);
         };
         recorder.onstop = () => {
-          setRecordedBlob(new Blob(chunksRef.current, { type: "audio/webm" }));
+          const rawBlob = new Blob(chunksRef.current, { type: "audio/webm" });
+          setProcessing(true);
+          processRecording(rawBlob, selectedTrack?.videoUrl)
+            .then(setRecordedBlob)
+            .catch((err) => {
+              console.error(err);
+              toast.error(t("record.processFailed"));
+              setRecordedBlob(rawBlob); // keep the take rather than losing it
+            })
+            .finally(() => setProcessing(false));
         };
         recorder.start();
         mediaRecorderRef.current = recorder;
@@ -226,7 +171,7 @@ function RecordPage() {
       cancelled = true;
       clearInterval(waitForStream);
     };
-  }, [phase, stream, buildRecordingStream]);
+  }, [phase, stream, selectedTrack, t]);
 
   const startOrResume = () => {
     if (phase !== "paused") {
@@ -267,7 +212,8 @@ function RecordPage() {
     mutationFn: async (next: "studio" | "upload" | "upload-comp") => {
       if (!recordedBlob) throw new Error(i18n.t("record.recordFirst"));
       const formData = new FormData();
-      formData.append("file", recordedBlob, `recording-${Date.now()}.webm`);
+      const ext = recordedBlob.type.includes("wav") ? "wav" : "webm";
+      formData.append("file", recordedBlob, `recording-${Date.now()}.${ext}`);
       const { url } = await uploadMedia({ data: formData });
       const draft = await createDraft({
         data: {
@@ -342,7 +288,6 @@ function RecordPage() {
                 className="h-full w-full object-cover"
                 playsInline
                 muted={false}
-                crossOrigin="anonymous"
               />
             ) : (
               <div className="absolute inset-0 flex items-center justify-around px-3">
@@ -409,14 +354,17 @@ function RecordPage() {
 
           <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
             <span>00:00</span>
-            <span>
-              {phase === "recording"
-                ? t("record.rec")
-                : phase === "paused"
-                  ? t("record.paused")
-                  : recordedBlob
-                    ? t("record.ready")
-                    : t("record.idle")}{" "}
+            <span className="flex items-center gap-1.5">
+              {processing && <Loader2 className="h-3 w-3 animate-spin" />}
+              {processing
+                ? t("record.processing")
+                : phase === "recording"
+                  ? t("record.rec")
+                  : phase === "paused"
+                    ? t("record.paused")
+                    : recordedBlob
+                      ? t("record.ready")
+                      : t("record.idle")}{" "}
               {mm}:{ss}
             </span>
             <span>—</span>
