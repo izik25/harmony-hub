@@ -447,7 +447,7 @@ function RecordPage() {
           />
           <BigAction
             icon={<Send className="h-5 w-5" />}
-            label={t("common.publish")}
+            label={t("common.continueToPublish")}
             primary
             onClick={() => finishMutation.mutate("upload")}
             disabled={!recordedBlob || finishMutation.isPending}

@@ -105,6 +105,9 @@ function UploadPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["feed"] });
+      queryClient.invalidateQueries({ queryKey: ["userPosts"] });
+      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      queryClient.invalidateQueries({ queryKey: ["myDrafts"] });
       toast.success(t("upload.publishedToast"));
       navigate({ to: "/" });
     },

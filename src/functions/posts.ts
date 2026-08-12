@@ -276,6 +276,15 @@ export const listMyPublishedPosts = createServerFn({ method: "GET" }).handler(as
     .orderBy(desc(posts.createdAt));
 });
 
+export const listMyDrafts = createServerFn({ method: "GET" }).handler(async () => {
+  const userId = await requireUserId();
+  return db
+    .select()
+    .from(posts)
+    .where(and(eq(posts.userId, userId), eq(posts.status, "draft")))
+    .orderBy(desc(posts.createdAt));
+});
+
 export const addComment = createServerFn({ method: "POST" })
   .validator((input: unknown) => input as { postId: string; body: string })
   .handler(async ({ data }) => {

@@ -21,6 +21,7 @@ import { PostCoverBg } from "@/components/PostCoverBg";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatCount } from "@/lib/mock-data";
 import { translateServerError } from "@/lib/i18n";
+import { shareContent } from "@/lib/share";
 import {
   listFeed,
   toggleLike,
@@ -105,18 +106,19 @@ function FeedItem({
   });
 
   const shareMutation = useMutation({
-    mutationFn: () => sharePost({ data: { postId: post.id } }),
-    onSuccess: async () => {
+    mutationFn: async () => {
+      const url = `${window.location.origin}/?post=${post.id}`;
+      const result = await shareContent({ title: post.title, url });
+      if (result === "cancelled") return result;
+      await sharePost({ data: { postId: post.id } });
+      return result;
+    },
+    onSuccess: (result) => {
+      if (result === "cancelled") return;
       queryClient.setQueryData<FeedPostDTO[]>(["feed"], (old) =>
         old?.map((p) => (p.id === post.id ? { ...p, shares: p.shares + 1 } : p)),
       );
-      const url = `${window.location.origin}/?post=${post.id}`;
-      if (navigator.share) {
-        await navigator.share({ title: post.title, url }).catch(() => {});
-      } else {
-        await navigator.clipboard.writeText(url);
-        toast.success(t("common.linkCopied"));
-      }
+      if (result === "copied") toast.success(t("common.linkCopied"));
     },
   });
 

@@ -10,13 +10,14 @@ import { PostCoverBg } from "@/components/PostCoverBg";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { getProfileByHandle, listUserPosts, updateProfile } from "@/functions/profile";
 import { listUserCompetitionEntries } from "@/functions/competitions";
-import { toggleFollow } from "@/functions/posts";
+import { toggleFollow, listMyDrafts } from "@/functions/posts";
 import { getOrCreateConversation } from "@/functions/messages";
 import { uploadMedia } from "@/functions/uploads";
 import { logout } from "@/functions/auth";
 import { formatCount } from "@/lib/mock-data";
+import { shareContent } from "@/lib/share";
 
-const tabs = ["videos", "songs", "covers", "live", "competitions", "about"] as const;
+const tabs = ["videos", "songs", "covers", "drafts", "live", "competitions", "about"] as const;
 
 export function ProfileView({ handle }: { handle: string }) {
   const { t } = useTranslation();
@@ -37,6 +38,11 @@ export function ProfileView({ handle }: { handle: string }) {
     queryKey: ["userCompetitionEntries", handle],
     queryFn: () => listUserCompetitionEntries({ data: { handle } }),
     enabled: tab === "competitions",
+  });
+  const { data: drafts } = useQuery({
+    queryKey: ["myDrafts"],
+    queryFn: () => listMyDrafts(),
+    enabled: tab === "drafts" && !!profile?.isMe,
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["profile", handle] });
@@ -75,12 +81,21 @@ export function ProfileView({ handle }: { handle: string }) {
       <div className="relative">
         <div className="h-40 gradient-neon opacity-70" />
         {profile.isMe && (
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="absolute right-4 top-4 rounded-full glass p-2"
-          >
-            <Settings className="h-4 w-4" />
-          </button>
+          <div className="absolute right-4 top-4 flex items-center gap-2">
+            <button
+              onClick={async () => {
+                const url = `${window.location.origin}/profile/${profile.handle}`;
+                const result = await shareContent({ title: profile.name, url });
+                if (result === "copied") toast.success(t("profile.linkCopied"));
+              }}
+              className="rounded-full glass p-2"
+            >
+              <Share2 className="h-4 w-4" />
+            </button>
+            <button onClick={() => setSettingsOpen(true)} className="rounded-full glass p-2">
+              <Settings className="h-4 w-4" />
+            </button>
+          </div>
         )}
         <div className="-mt-12 px-4">
           <img
@@ -124,10 +139,9 @@ export function ProfileView({ handle }: { handle: string }) {
               </button>
               <button
                 onClick={async () => {
-                  await navigator.clipboard.writeText(
-                    `${window.location.origin}/profile/${profile.handle}`,
-                  );
-                  toast.success(t("profile.linkCopied"));
+                  const url = `${window.location.origin}/profile/${profile.handle}`;
+                  const result = await shareContent({ title: profile.name, url });
+                  if (result === "copied") toast.success(t("profile.linkCopied"));
                 }}
                 className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold"
               >
@@ -138,19 +152,21 @@ export function ProfileView({ handle }: { handle: string }) {
         </div>
 
         <div className="mt-6 flex gap-1 overflow-x-auto border-b border-border px-2 no-scrollbar">
-          {tabs.map((k) => (
-            <button
-              key={k}
-              onClick={() => setTab(k)}
-              className={`shrink-0 border-b-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider ${
-                tab === k
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground"
-              }`}
-            >
-              {t(`profile.${k}`)}
-            </button>
-          ))}
+          {tabs
+            .filter((k) => k !== "drafts" || profile.isMe)
+            .map((k) => (
+              <button
+                key={k}
+                onClick={() => setTab(k)}
+                className={`shrink-0 border-b-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider ${
+                  tab === k
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground"
+                }`}
+              >
+                {t(`profile.${k}`)}
+              </button>
+            ))}
         </div>
 
         {tab === "about" ? (
@@ -170,6 +186,25 @@ export function ProfileView({ handle }: { handle: string }) {
         ) : tab === "live" ? (
           <div className="p-6 text-center text-sm text-muted-foreground">
             {t("profile.noLiveSessions")}
+          </div>
+        ) : tab === "drafts" ? (
+          <div className="space-y-2 p-4">
+            {drafts?.length === 0 && (
+              <p className="text-center text-sm text-muted-foreground">{t("profile.noDrafts")}</p>
+            )}
+            {drafts?.map((d) => (
+              <Link
+                key={d.id}
+                to="/upload"
+                search={{ draftId: d.id }}
+                className="flex items-center justify-between rounded-2xl border border-border bg-card/60 p-3"
+              >
+                <span className="line-clamp-1 text-sm font-semibold">{d.title}</span>
+                <span className="shrink-0 text-xs text-accent">
+                  {t("profile.finishPublishing")}
+                </span>
+              </Link>
+            ))}
           </div>
         ) : tab === "competitions" ? (
           <div className="space-y-2 p-4">

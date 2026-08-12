@@ -373,7 +373,7 @@ function StudioPage() {
                 disabled={!ready || publishMutation.isPending}
                 className="flex flex-col items-center gap-1 rounded-2xl gradient-neon p-3 text-[11px] font-bold text-white glow-pink disabled:opacity-50"
               >
-                <Send className="h-4 w-4" /> {t("common.publish")}
+                <Send className="h-4 w-4" /> {t("common.continueToPublish")}
               </button>
             </div>
           </>
