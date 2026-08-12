@@ -109,3 +109,15 @@
 
 @keyframes spin-slow { to { transform: rotate(360deg); } }
 @utility animate-spin-slow { animation: spin-slow 6s linear infinite; }
+
+@keyframes cover-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.035); }
+}
+@utility animate-cover-breathe { animation: cover-breathe 3.2s ease-in-out infinite; }
+
+@keyframes sound-hint-fade {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@utility animate-sound-hint { animation: sound-hint-fade 3.5s ease-out forwards; }

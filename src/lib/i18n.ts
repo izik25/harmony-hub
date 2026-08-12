@@ -63,6 +63,9 @@ const en = {
     credits: "Credits",
     sendGiftTo: "Send a gift to {{name}}",
     giftSentTo: "Gift sent to {{name}}",
+    tapForSound: "Tap for sound",
+    mute: "Mute",
+    unmute: "Unmute",
   },
   explore: {
     search: "Search artists, songs, DJs...",
@@ -430,6 +433,9 @@ const he = {
     credits: "קרדיטים",
     sendGiftTo: "שלח מתנה ל-{{name}}",
     giftSentTo: "המתנה נשלחה ל-{{name}}",
+    tapForSound: "הקש להפעלת קול",
+    mute: "השתק",
+    unmute: "בטל השתקה",
   },
   explore: {
     search: "חפש אמנים, שירים, DJs...",
@@ -796,6 +802,9 @@ const ar = {
     credits: "الاعتمادات",
     sendGiftTo: "أرسل هدية إلى {{name}}",
     giftSentTo: "تم إرسال الهدية إلى {{name}}",
+    tapForSound: "اضغط لتشغيل الصوت",
+    mute: "كتم الصوت",
+    unmute: "إلغاء الكتم",
   },
   explore: {
     search: "ابحث عن فنانين، أغاني، DJs...",
