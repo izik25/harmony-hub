@@ -75,10 +75,21 @@ function applyNoiseGate(
  * to (Save staying disabled indefinitely looks, to the user, exactly like "it won't let me
  * save").
  */
+export type MixLevels = {
+  /** Multiplier on the vocal's post-compression makeup gain. 1.4 (the default) is the baseline
+   * "studio" loudness the chain was tuned around; callers can scale it up/down from a UI slider. */
+  vocalGain?: number;
+  /** Multiplier on the backing track's level under the vocal. 0.65 is the default balance. */
+  backingGain?: number;
+};
+
 export async function processRecording(
   micBlob: Blob,
   backingTrackUrl?: string | null,
+  levels: MixLevels = {},
 ): Promise<Blob> {
+  const vocalGain = levels.vocalGain ?? 1.4;
+  const backingGainLevel = levels.backingGain ?? 0.65;
   const decodeCtx = new AudioContext();
   let micBuffer: AudioBuffer;
   let backingBuffer: AudioBuffer | null = null;
@@ -147,7 +158,7 @@ export async function processRecording(
   compressor.release.value = 0.25;
 
   const makeupGain = offlineCtx.createGain();
-  makeupGain.gain.value = 1.4;
+  makeupGain.gain.value = vocalGain;
 
   // Final limiter on the whole bus (vocal + reverb + backing track together) — catches anything
   // the makeup gain pushes over 0dB so loudness never turns into hard digital clipping.
@@ -181,7 +192,7 @@ export async function processRecording(
     const backingSource = offlineCtx.createBufferSource();
     backingSource.buffer = backingBuffer;
     const backingGain = offlineCtx.createGain();
-    backingGain.gain.value = 0.65; // sits under the vocal instead of drowning it out
+    backingGain.gain.value = backingGainLevel; // sits under the vocal instead of drowning it out
     backingSource.connect(backingGain).connect(limiter);
     backingSource.start(0, 0, Math.min(duration, backingBuffer.duration));
   }

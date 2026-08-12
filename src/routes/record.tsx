@@ -112,8 +112,13 @@ function RecordPage() {
   const [reverb, setReverb] = useState(30);
   const [karaokeOpen, setKaraokeOpen] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<KaraokeTrack | null>(null);
+  // 140/65 match processRecording's own defaults — the "studio" balance the chain was tuned
+  // around. Expressed as % so the slider reads naturally; divided by 100 before being passed in.
+  const [vocalVolume, setVocalVolume] = useState(140);
+  const [playbackVolume, setPlaybackVolume] = useState(65);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const rawBlobRef = useRef<Blob | null>(null);
   const chunksRef = useRef<Array<BlobPart>>([]);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -170,24 +175,8 @@ function RecordPage() {
         };
         recorder.onstop = () => {
           const rawBlob = new Blob(chunksRef.current, { type: "audio/webm" });
-          setProcessing(true);
-          // processRecording already time-boxes its own network fetch and render internally;
-          // this outer race is a last-resort safety net so nothing — however unexpected — can
-          // ever leave Save disabled forever.
-          const withOverallTimeout = Promise.race([
-            processRecording(rawBlob, selectedTrack?.videoUrl),
-            new Promise<Blob>((_, reject) =>
-              setTimeout(() => reject(new Error("processing timed out")), 30_000),
-            ),
-          ]);
-          withOverallTimeout
-            .then(setRecordedBlob)
-            .catch((err) => {
-              console.error(err);
-              toast.error(t("record.processFailed"));
-              setRecordedBlob(rawBlob); // keep the take rather than losing it
-            })
-            .finally(() => setProcessing(false));
+          rawBlobRef.current = rawBlob;
+          applyMix(rawBlob, vocalVolume, playbackVolume);
         };
         recorder.start();
         mediaRecorderRef.current = recorder;
@@ -197,6 +186,11 @@ function RecordPage() {
       cancelled = true;
       clearInterval(waitForStream);
     };
+    // applyMix/vocalVolume/playbackVolume intentionally excluded: this effect only sets up
+    // recording start/resume, and onstop reads whatever those values are at the moment it fires
+    // (a plain closure, always fresh) — including them here would restart the whole recorder
+    // setup any time a slider moves, which is neither needed nor wanted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, stream, selectedTrack, t]);
 
   const startOrResume = () => {
@@ -218,6 +212,46 @@ function RecordPage() {
     videoRef.current?.pause();
     setPhase("finished");
   };
+
+  const applyMix = (rawBlob: Blob, vocalPercent: number, playbackPercent: number) => {
+    setProcessing(true);
+    // processRecording already time-boxes its own network fetch and render internally; this
+    // outer race is a last-resort safety net so nothing — however unexpected — can ever leave
+    // Save disabled forever.
+    const withOverallTimeout = Promise.race([
+      processRecording(rawBlob, selectedTrack?.videoUrl, {
+        vocalGain: vocalPercent / 100,
+        backingGain: playbackPercent / 100,
+      }),
+      new Promise<Blob>((_, reject) =>
+        setTimeout(() => reject(new Error("processing timed out")), 30_000),
+      ),
+    ]);
+    withOverallTimeout
+      .then(setRecordedBlob)
+      .catch((err) => {
+        console.error(err);
+        toast.error(t("record.processFailed"));
+        setRecordedBlob(rawBlob); // keep the take rather than losing it
+      })
+      .finally(() => setProcessing(false));
+  };
+
+  // Lets you rebalance vocal/playback levels and re-render the mix without re-recording — audio
+  // mixing is rarely right on the first try, and re-singing the whole take just to hear a
+  // different balance would be a bad trade.
+  const remix = () => {
+    if (!rawBlobRef.current) return;
+    applyMix(rawBlobRef.current, vocalVolume, playbackVolume);
+  };
+
+  // Rebuild the preview player whenever the mix changes (e.g. after a remix) instead of playing
+  // back a stale cached blob.
+  useEffect(() => {
+    audioElRef.current?.pause();
+    audioElRef.current = null;
+    setPlaying(false);
+  }, [recordedBlob]);
 
   const togglePreview = () => {
     if (!recordedBlob) return;
@@ -396,6 +430,45 @@ function RecordPage() {
             <span>—</span>
           </div>
         </div>
+
+        <section className="mt-6 rounded-3xl border border-border bg-card/50 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Sliders className="h-4 w-4 text-accent" />
+            <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
+              {t("record.mixBalance")}
+            </h2>
+          </div>
+          <Knob
+            label={t("record.vocalVolume")}
+            value={vocalVolume}
+            onChange={setVocalVolume}
+            min={50}
+            max={200}
+            suffix="%"
+          />
+          {selectedTrack && (
+            <Knob
+              label={t("record.playbackVolume")}
+              value={playbackVolume}
+              onChange={setPlaybackVolume}
+              min={0}
+              max={150}
+              suffix="%"
+            />
+          )}
+          <button
+            onClick={remix}
+            disabled={processing || !rawBlobRef.current}
+            className="mt-1 flex w-full items-center justify-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-accent disabled:opacity-40"
+          >
+            {processing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Wand2 className="h-4 w-4" />
+            )}
+            {t("record.remix")}
+          </button>
+        </section>
 
         <section className="mt-6 rounded-3xl border border-border bg-card/50 p-4">
           <div className="mb-3 flex items-center gap-2">

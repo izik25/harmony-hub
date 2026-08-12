@@ -107,6 +107,10 @@ const en = {
     processFailed: "Couldn't clean up the recording, saved the raw take instead.",
     headphonesHint:
       "For the cleanest recording, use headphones — otherwise the mic can pick up the playback.",
+    mixBalance: "Mix Balance",
+    vocalVolume: "Vocal Volume",
+    playbackVolume: "Playback Volume",
+    remix: "Update Mix",
     karaokeSearchPlaceholder: "Search songs or artists...",
     noKaraokeTracks: "No karaoke tracks yet.",
     noKaraokeTracksHint:
@@ -470,6 +474,10 @@ const he = {
     processFailed: "לא הצלחנו לנקות את ההקלטה, נשמרה הגרסה הגולמית.",
     headphonesHint:
       "להקלטה הכי נקייה, מומלץ להשתמש באוזניות — אחרת המיקרופון עלול לקלוט את הפלייבק.",
+    mixBalance: "איזון מיקס",
+    vocalVolume: "עוצמת קול",
+    playbackVolume: "עוצמת פלייבק",
+    remix: "עדכן מיקס",
     karaokeSearchPlaceholder: "חפש שירים או אמנים...",
     noKaraokeTracks: "אין עדיין שירי קריוקי.",
     noKaraokeTracksHint:
@@ -832,6 +840,10 @@ const ar = {
     processFailed: "تعذّر تنظيف التسجيل، تم حفظ النسخة الأصلية.",
     headphonesHint:
       "للحصول على أنظف تسجيل، يُنصح باستخدام سماعات — وإلا فقد يلتقط الميكروفون صوت التشغيل.",
+    mixBalance: "توازن المزيج",
+    vocalVolume: "مستوى الصوت",
+    playbackVolume: "مستوى التشغيل",
+    remix: "تحديث المزيج",
     karaokeSearchPlaceholder: "ابحث عن أغاني أو فنانين...",
     noKaraokeTracks: "لا توجد مقاطع كاريوكي بعد.",
     noKaraokeTracksHint:
