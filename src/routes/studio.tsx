@@ -204,15 +204,22 @@ function StudioPage() {
     };
     const audioUrl = draft.audioUrl;
 
-    const rendered = await Tone.Offline(async () => {
-      const offlineChain = buildChain();
-      // Re-decode fresh in the offline context rather than reusing the live AudioContext's
-      // buffer — Chromium can silently stall OfflineAudioContext rendering when a source node
-      // references an AudioBuffer decoded by a different context.
-      await offlineChain.player.load(audioUrl);
-      applyParams(offlineChain, params);
-      offlineChain.player.start(0);
-    }, duration);
+    const rendered = await Tone.Offline(
+      async () => {
+        const offlineChain = buildChain();
+        // Re-decode fresh in the offline context rather than reusing the live AudioContext's
+        // buffer — Chromium can silently stall OfflineAudioContext rendering when a source node
+        // references an AudioBuffer decoded by a different context.
+        await offlineChain.player.load(audioUrl);
+        applyParams(offlineChain, params);
+        offlineChain.player.start(0);
+      },
+      duration,
+      // Mono — the source is a solo vocal take, so rendering to stereo would just double the
+      // exported WAV's byte size (and the risk of tripping a request-body size limit) for no
+      // audible benefit.
+      1,
+    );
 
     const audioBuffer = rendered.get();
     if (!audioBuffer) throw new Error(t("studio.exportFailed"));

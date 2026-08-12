@@ -117,8 +117,12 @@ export async function processRecording(
   const duration = micBuffer.duration;
   const reverbTailSeconds = 1.2; // room for the reverb send to decay naturally instead of being
   // cut off exactly at the end of the take
+  // Mono output — the source is a solo voice take (getUserMedia requests channelCount: 1), so
+  // rendering to stereo would just duplicate identical samples into a second channel, doubling
+  // the WAV's byte size for zero audible benefit (and making it that much likelier to trip a
+  // request-body size limit on the way to the server).
   const offlineCtx = new OfflineAudioContext(
-    2,
+    1,
     Math.max(1, Math.ceil((duration + reverbTailSeconds) * sampleRate)),
     sampleRate,
   );
