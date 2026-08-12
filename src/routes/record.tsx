@@ -124,6 +124,14 @@ function RecordPage() {
     return () => clearInterval(timerRef.current);
   }, [phase]);
 
+  // On a phone especially, the backing track plays out of the speaker right next to the mic and
+  // bleeds straight into the recording. Ducking playback while actively recording (still clearly
+  // audible to follow along, just quieter) cuts down how much of that bleed reaches the mic in
+  // the first place — the noise gate in processRecording only cleans up what's left over.
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.volume = phase === "recording" ? 0.35 : 1;
+  }, [phase, selectedTrack]);
+
   useEffect(() => {
     if (phase !== "recording") return;
 
@@ -450,6 +458,7 @@ function RecordPage() {
         onSelect={(track) => {
           setSelectedTrack(track);
           setKaraokeOpen(false);
+          toast.info(t("record.headphonesHint"));
         }}
       />
     </AppShell>

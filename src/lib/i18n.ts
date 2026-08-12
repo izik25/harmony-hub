@@ -104,6 +104,8 @@ const en = {
     finishRecording: "Finish",
     processing: "Cleaning up",
     processFailed: "Couldn't clean up the recording, saved the raw take instead.",
+    headphonesHint:
+      "For the cleanest recording, use headphones — otherwise the mic can pick up the playback.",
     karaokeSearchPlaceholder: "Search songs or artists...",
     noKaraokeTracks: "No karaoke tracks yet.",
     noKaraokeTracksHint:
@@ -461,6 +463,8 @@ const he = {
     finishRecording: "סיום",
     processing: "מנקה הקלטה",
     processFailed: "לא הצלחנו לנקות את ההקלטה, נשמרה הגרסה הגולמית.",
+    headphonesHint:
+      "להקלטה הכי נקייה, מומלץ להשתמש באוזניות — אחרת המיקרופון עלול לקלוט את הפלייבק.",
     karaokeSearchPlaceholder: "חפש שירים או אמנים...",
     noKaraokeTracks: "אין עדיין שירי קריוקי.",
     noKaraokeTracksHint:
@@ -817,6 +821,8 @@ const ar = {
     finishRecording: "إنهاء",
     processing: "تنظيف التسجيل",
     processFailed: "تعذّر تنظيف التسجيل، تم حفظ النسخة الأصلية.",
+    headphonesHint:
+      "للحصول على أنظف تسجيل، يُنصح باستخدام سماعات — وإلا فقد يلتقط الميكروفون صوت التشغيل.",
     karaokeSearchPlaceholder: "ابحث عن أغاني أو فنانين...",
     noKaraokeTracks: "لا توجد مقاطع كاريوكي بعد.",
     noKaraokeTracksHint:

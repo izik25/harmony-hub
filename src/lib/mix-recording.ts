@@ -20,6 +20,46 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 /**
+ * Attenuates (not silences — a hard cut sounds choppier than a gentle dip) whatever's below the
+ * threshold, with a short attack and a slower release so it doesn't chop the tails off words.
+ * On phones especially, the backing track playing out of the speaker leaks straight into the
+ * mic — that bleed sits in the gaps between phrases, and this is what actually cleans those up.
+ * Nothing here can remove bleed that overlaps the voice itself; see the volume ducking and
+ * headphone hint in record.tsx for that half of the fix.
+ */
+function applyNoiseGate(
+  buffer: AudioBuffer,
+  thresholdDb = -42,
+  attackMs = 4,
+  releaseMs = 180,
+  floorGain = 0.12,
+): void {
+  const thresholdLinear = 10 ** (thresholdDb / 20);
+  const sampleRate = buffer.sampleRate;
+  const attackSamples = Math.max(1, Math.floor((attackMs / 1000) * sampleRate));
+  const releaseSamples = Math.max(1, Math.floor((releaseMs / 1000) * sampleRate));
+  const windowSize = Math.max(1, Math.floor(sampleRate * 0.02)); // 20ms short-time RMS window
+
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const data = buffer.getChannelData(ch);
+    const n = data.length;
+    let sumSquares = 0;
+    let currentGain = 1;
+    for (let i = 0; i < n; i++) {
+      const sample = data[i];
+      sumSquares += sample * sample;
+      if (i >= windowSize) sumSquares -= data[i - windowSize] * data[i - windowSize];
+      const rms = Math.sqrt(sumSquares / Math.min(i + 1, windowSize));
+
+      const targetGain = rms >= thresholdLinear ? 1 : floorGain;
+      const step = targetGain > currentGain ? attackSamples : releaseSamples;
+      currentGain += (targetGain - currentGain) / step;
+      data[i] = sample * currentGain;
+    }
+  }
+}
+
+/**
  * Turns a raw mic recording into a clean, studio-style take: cuts low-frequency rumble/hum,
  * lifts vocal presence, evens out levels with a compressor + makeup gain, then runs everything
  * through a limiter so the boost never turns into clipping/distortion — and, if a karaoke
@@ -58,6 +98,8 @@ export async function processRecording(
   } finally {
     await decodeCtx.close();
   }
+
+  applyNoiseGate(micBuffer);
 
   const sampleRate = micBuffer.sampleRate;
   const duration = micBuffer.duration;

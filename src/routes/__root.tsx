@@ -17,6 +17,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { getCurrentUser } from "../functions/auth";
 import { detectServerLanguage } from "../functions/locale";
 import i18n, { isRTL, reconcileClientLanguage } from "../lib/i18n";
+import { Toaster } from "../components/ui/sonner";
 
 const PUBLIC_PATHS = new Set(["/login", "/signup"]);
 
@@ -158,6 +159,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
+      <Toaster richColors position="top-center" />
     </QueryClientProvider>
   );
 }
