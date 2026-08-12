@@ -1,4 +1,5 @@
 import { audioBufferToWavBlob } from "./wav-encoder";
+import { generateImpulseResponse } from "./impulse-response";
 
 const FETCH_TIMEOUT_MS = 10_000;
 const RENDER_TIMEOUT_MS = 20_000;
@@ -60,10 +61,10 @@ function applyNoiseGate(
 }
 
 /**
- * Turns a raw mic recording into a clean, studio-style take: cuts low-frequency rumble/hum,
- * lifts vocal presence, evens out levels with a compressor + makeup gain, then runs everything
- * through a limiter so the boost never turns into clipping/distortion — and, if a karaoke
- * backing track was used, blends it in underneath. This runs entirely offline
+ * Turns a raw mic recording into a clean, studio-style take instead of the thin, boxy, dead-dry
+ * sound of a phone voice memo: noise gate, rumble cut, warmth + presence EQ, a de-harshing
+ * high-shelf, compression + makeup gain, a touch of room reverb, and a final limiter — then, if
+ * a karaoke backing track was used, blends it in underneath. This runs entirely offline
  * (OfflineAudioContext), rendering sample-accurately from decoded buffers rather than mixing two
  * live streams in real time. Live mixing of independently-clocked sources (mic + a playing
  * <video>) is exactly what produces audible clicks/glitches at buffer boundaries; rendering
@@ -103,9 +104,11 @@ export async function processRecording(
 
   const sampleRate = micBuffer.sampleRate;
   const duration = micBuffer.duration;
+  const reverbTailSeconds = 1.2; // room for the reverb send to decay naturally instead of being
+  // cut off exactly at the end of the take
   const offlineCtx = new OfflineAudioContext(
     2,
-    Math.max(1, Math.ceil(duration * sampleRate)),
+    Math.max(1, Math.ceil((duration + reverbTailSeconds) * sampleRate)),
     sampleRate,
   );
 
@@ -116,11 +119,25 @@ export async function processRecording(
   highpass.type = "highpass";
   highpass.frequency.value = 100; // cuts rumble/hum without touching the voice
 
+  // A phone mic recording on its own is thin and boxy — no low end, no space — which is exactly
+  // what makes it read as "a voice message" instead of a vocal take. warmth adds a little body
+  // back in; presence lifts clarity; the reverb send further down adds a touch of room instead
+  // of the completely dry, right-on-the-capsule sound phone mics produce.
+  const warmth = offlineCtx.createBiquadFilter();
+  warmth.type = "lowshelf";
+  warmth.frequency.value = 200;
+  warmth.gain.value = 2.5;
+
   const presence = offlineCtx.createBiquadFilter();
   presence.type = "peaking";
   presence.frequency.value = 3000;
   presence.Q.value = 1;
   presence.gain.value = 3; // gentle clarity/intelligibility lift, not a full EQ makeover
+
+  const airRolloff = offlineCtx.createBiquadFilter();
+  airRolloff.type = "highshelf";
+  airRolloff.frequency.value = 9000;
+  airRolloff.gain.value = -3; // takes the edge off harsh phone-mic sibilance/hiss
 
   const compressor = offlineCtx.createDynamicsCompressor();
   compressor.threshold.value = -20;
@@ -132,8 +149,8 @@ export async function processRecording(
   const makeupGain = offlineCtx.createGain();
   makeupGain.gain.value = 1.4;
 
-  // Final limiter on the whole bus (vocal + backing track together) — catches anything the
-  // makeup gain pushes over 0dB so loudness never turns into hard digital clipping.
+  // Final limiter on the whole bus (vocal + reverb + backing track together) — catches anything
+  // the makeup gain pushes over 0dB so loudness never turns into hard digital clipping.
   const limiter = offlineCtx.createDynamicsCompressor();
   limiter.threshold.value = -1;
   limiter.knee.value = 0;
@@ -142,8 +159,22 @@ export async function processRecording(
   limiter.release.value = 0.1;
   limiter.connect(offlineCtx.destination);
 
-  micSource.connect(highpass).connect(presence).connect(compressor).connect(makeupGain);
+  // Short, subtle room send on the vocal only — enough to feel produced, not an obvious effect.
+  const reverbSend = offlineCtx.createGain();
+  reverbSend.gain.value = 0.16;
+  const convolver = offlineCtx.createConvolver();
+  convolver.buffer = generateImpulseResponse(offlineCtx, 1.1, 3.2);
+  convolver.normalize = true;
+
+  micSource
+    .connect(highpass)
+    .connect(warmth)
+    .connect(presence)
+    .connect(airRolloff)
+    .connect(compressor)
+    .connect(makeupGain);
   makeupGain.connect(limiter);
+  makeupGain.connect(reverbSend).connect(convolver).connect(limiter);
   micSource.start(0);
 
   if (backingBuffer) {

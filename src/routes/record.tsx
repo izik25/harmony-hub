@@ -48,7 +48,13 @@ function useMicLevels(active: boolean) {
 
     navigator.mediaDevices
       .getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: { ideal: 48000 },
+          channelCount: { ideal: 1 },
+        },
       })
       .then((stream) => {
         if (cancelled) {
@@ -155,7 +161,10 @@ function RecordPage() {
           videoRef.current.currentTime = 0;
           videoRef.current.play().catch(() => {});
         }
-        const recorder = new MediaRecorder(stream.current);
+        // Explicit bitrate — MediaRecorder's default Opus encoding is conservative enough that
+        // the raw capture itself can come out sounding thin/"voice memo"-like before any
+        // cleanup even runs. 128kbps is comfortably high quality for a mono voice track.
+        const recorder = new MediaRecorder(stream.current, { audioBitsPerSecond: 128_000 });
         recorder.ondataavailable = (e) => {
           if (e.data.size > 0) chunksRef.current.push(e.data);
         };
