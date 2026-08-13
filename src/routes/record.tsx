@@ -20,11 +20,12 @@ export const Route = createFileRoute("/record")({
 type KaraokeTrack = Awaited<ReturnType<typeof listKaraokeTracks>>[number];
 
 const BAR_COUNT = 48;
-// Starting balance for the initial auto-mix — matches processRecording's own defaults. The user
-// re-balances (and hears the result) from the Mix Balance section in Studio, which now owns this
-// entirely; record.tsx's only job is to get a take onto the Studio screen as fast as possible.
-const DEFAULT_VOCAL_GAIN = 1.4;
-const DEFAULT_BACKING_GAIN = 0.65;
+// Starting balance for the initial auto-mix — matches the Mix Balance defaults in studio.tsx, a
+// touch under the vocal / a touch over the backing track so the take doesn't drown out the
+// instrumental out of the gate. The user re-balances (and hears the result) from Studio, which
+// now owns this entirely; record.tsx's only job is to get a take onto the Studio screen fast.
+const DEFAULT_VOCAL_GAIN = 1.25;
+const DEFAULT_BACKING_GAIN = 0.75;
 
 function useMicLevels(active: boolean) {
   const [levels, setLevels] = useState<number[]>(() => Array(BAR_COUNT).fill(6));

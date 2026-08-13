@@ -113,15 +113,18 @@ function StudioPage() {
   const [reverbAmt, setR] = useState(30);
   const [eq, setE] = useState(50);
   const [comp, setC] = useState(30);
-  const [noise, setN] = useState(0);
+  // Defaults to 50 rather than 0 — this is a plain highpass filter for rumble/hum, and it turns
+  // out to matter enough for how a take actually sounds that it shouldn't need discovering.
+  const [noise, setN] = useState(50);
   const [speed, setSpeed] = useState(100);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
 
-  // 140/65 match processRecording's own defaults — the balance record.tsx's initial auto-mix
-  // was tuned around, expressed as % so the sliders read naturally.
-  const [vocalVolume, setVocalVolume] = useState(140);
-  const [playbackVolume, setPlaybackVolume] = useState(65);
+  // 125/75 match record.tsx's initial auto-mix — a touch under the vocal / a touch over the
+  // backing track so the instrumental doesn't get buried under it, expressed as % so the sliders
+  // read naturally.
+  const [vocalVolume, setVocalVolume] = useState(125);
+  const [playbackVolume, setPlaybackVolume] = useState(75);
 
   const chainRef = useRef<VocalChain | null>(null);
   // Mirrors the DSP slider state without being a dependency of the chain-(re)build effect below —
@@ -313,10 +316,17 @@ function StudioPage() {
     setE(60);
     toast.success(t("studio.enhanceApplied"));
   };
+  // The one-tap "get me as close to a finished studio vocal as possible" preset — touches every
+  // knob that matters (autotune, noise/rumble cleanup, room reverb, EQ, compression) instead of
+  // just EQ/compression/reverb, so it's a real starting point rather than a partial polish. It
+  // writes into the same state the manual sliders below read from, so they immediately reflect
+  // what it did and you can keep nudging from there instead of starting over.
   const applyMaster = () => {
-    setR(20);
-    setC(70);
-    setE(55);
+    setA(65);
+    setN(55);
+    setR(25);
+    setE(58);
+    setC(72);
     toast.success(t("studio.masterApplied"));
   };
 
@@ -418,7 +428,20 @@ function StudioPage() {
               </section>
             )}
 
-            <section className="mt-5 rounded-3xl border border-border bg-card/50 p-4">
+            <section className="mt-5 rounded-3xl border border-accent/40 bg-accent/5 p-4">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-accent">
+                <Waves className="h-4 w-4" /> {t("studio.masteringPreset")}
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">{t("studio.masteringDesc")}</p>
+              <button
+                onClick={applyMaster}
+                className="mt-3 w-full rounded-full gradient-neon py-2.5 text-sm font-bold text-white glow-pink"
+              >
+                {t("record.master")}
+              </button>
+            </section>
+
+            <section className="mt-4 rounded-3xl border border-border bg-card/50 p-4">
               <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
                 <Sliders className="h-4 w-4 text-accent" /> {t("studio.vocalChain")}
               </h2>
@@ -435,19 +458,6 @@ function StudioPage() {
                 max={150}
                 suffix="%"
               />
-            </section>
-
-            <section className="mt-4 rounded-3xl border border-accent/40 bg-accent/5 p-4">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-accent">
-                <Waves className="h-4 w-4" /> {t("studio.masteringPreset")}
-              </h2>
-              <p className="mt-1 text-xs text-muted-foreground">{t("studio.masteringDesc")}</p>
-              <button
-                onClick={applyMaster}
-                className="mt-3 w-full rounded-full gradient-neon py-2.5 text-sm font-bold text-white glow-pink"
-              >
-                {t("record.master")}
-              </button>
             </section>
 
             <div className="mt-5 grid grid-cols-4 gap-2">

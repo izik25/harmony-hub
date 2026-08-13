@@ -138,7 +138,8 @@ const en = {
     loading: "Loading…",
     vocalChain: "Vocal chain",
     masteringPreset: "Mastering preset",
-    masteringDesc: "One-tap loudness, clarity and glue via the compressor + EQ chain.",
+    masteringDesc:
+      "One tap tunes, cleans and glues the whole vocal — autotune, noise cleanup, room reverb, EQ and compression together — as close to a finished studio take as it gets. Fine-tune any of it below afterward.",
     loadTrackFirst: "Load a track first.",
     couldNotLoad: "Could not load the track for editing.",
     exportFailed: "Export failed.",
@@ -513,7 +514,8 @@ const he = {
     loading: "טוען…",
     vocalChain: "שרשרת ווקאל",
     masteringPreset: "פריסט מאסטרינג",
-    masteringDesc: "עוצמה, בהירות ואיחוי בלחיצה אחת דרך הקומפרסור וה-EQ.",
+    masteringDesc:
+      "לחיצה אחת מכווננת, מנקה ומאחדת את כל הווקאל — אוטוטיון, ניקוי רעש, ריוורב חדר, EQ ודחיסה ביחד — הכי קרוב שאפשר להקלטת אולפן גמורה. אפשר לדייק כל פרמטר בנפרד למטה אחר כך.",
     loadTrackFirst: "טען טראק קודם.",
     couldNotLoad: "לא ניתן היה לטעון את הטראק לעריכה.",
     exportFailed: "הייצוא נכשל.",
@@ -887,7 +889,8 @@ const ar = {
     loading: "جارٍ التحميل…",
     vocalChain: "سلسلة الصوت",
     masteringPreset: "إعداد الماسترينج",
-    masteringDesc: "عمق ووضوح وتماسك بلمسة واحدة عبر الضاغط ومعادل الصوت.",
+    masteringDesc:
+      "لمسة واحدة تضبط وتنظّف وتوحّد الصوت بالكامل — أوتوتيون، تنظيف الضوضاء، صدى الغرفة، EQ وضغط معاً — لأقرب نتيجة ممكنة لتسجيل استوديو مكتمل. يمكنك ضبط أي عنصر يدوياً بعد ذلك.",
     loadTrackFirst: "حمّل مقطعاً أولاً.",
     couldNotLoad: "تعذّر تحميل المقطع للتحرير.",
     exportFailed: "فشل التصدير.",
