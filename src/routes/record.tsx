@@ -12,7 +12,6 @@ import {
   Send,
   Play,
   Pause,
-  Square,
   Search,
   X,
   Check,
@@ -293,6 +292,21 @@ function RecordPage() {
     onError: (e: Error) => toast.error(translateServerError(e.message)),
   });
 
+  // Save/Publish/Compete used to just sit disabled (opacity-40, no message) until a take
+  // existed — indistinguishable, from a tap, to "broken". Now they're always tappable and say
+  // exactly what's missing instead of silently doing nothing.
+  const runFinish = (next: "studio" | "upload" | "upload-comp") => {
+    if (processing) {
+      toast.info(t("record.processing"));
+      return;
+    }
+    if (!recordedBlob) {
+      toast.error(t("record.recordFirst"));
+      return;
+    }
+    finishMutation.mutate(next);
+  };
+
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
 
@@ -337,9 +351,12 @@ function RecordPage() {
           )}
         </div>
 
-        <div className="mt-6 rounded-3xl border border-border bg-card/50 p-4">
+        <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-card/50">
+          {/* No padding around the video itself — every extra pixel here is a pixel of lyrics
+              you can actually read. Controls sit in a slim strip along the bottom edge instead
+              of floating in the middle, so they never block the words. */}
           <div
-            className={`relative overflow-hidden rounded-2xl bg-background/70 ${selectedTrack ? "aspect-video" : "h-40"}`}
+            className={`relative overflow-hidden bg-background/70 ${selectedTrack ? "aspect-video" : "h-48"}`}
           >
             {selectedTrack ? (
               <video
@@ -360,74 +377,93 @@ function RecordPage() {
                 ))}
               </div>
             )}
-            <div className="absolute inset-0 flex items-center justify-center gap-4">
-              {phase === "paused" ? (
-                <>
-                  <button
+
+            {recording && (
+              <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse-glow" />
+                {mm}:{ss}
+              </span>
+            )}
+
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-3 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pb-3 pt-8">
+              <div className="pointer-events-auto flex items-center gap-3">
+                {phase === "paused" ? (
+                  <>
+                    <ControlButton
+                      onClick={startOrResume}
+                      icon={<Mic className="h-5 w-5" />}
+                      label={t("record.continueRecording")}
+                      variant="primary"
+                    />
+                    <ControlButton
+                      onClick={finishRecording}
+                      icon={<Check className="h-5 w-5" />}
+                      label={t("record.finishRecording")}
+                      variant="accent"
+                    />
+                  </>
+                ) : recording ? (
+                  <>
+                    <ControlButton
+                      onClick={pauseRecording}
+                      icon={<Pause className="h-5 w-5" />}
+                      label={t("common.pause")}
+                      variant="glass"
+                    />
+                    <ControlButton
+                      onClick={finishRecording}
+                      icon={<Check className="h-5 w-5" />}
+                      label={t("record.finishRecording")}
+                      variant="accent"
+                    />
+                  </>
+                ) : (
+                  <ControlButton
                     onClick={startOrResume}
-                    className="flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-full gradient-neon glow-pink"
-                  >
-                    <Mic className="h-6 w-6 text-white" />
-                    <span className="text-[9px] font-semibold text-white">
-                      {t("record.continueRecording")}
-                    </span>
-                  </button>
-                  <button
-                    onClick={finishRecording}
-                    className="flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-full border border-accent bg-accent/20"
-                  >
-                    <Check className="h-6 w-6 text-accent" />
-                    <span className="text-[9px] font-semibold text-accent">
-                      {t("record.finishRecording")}
-                    </span>
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={recording ? pauseRecording : startOrResume}
-                  className={`grid h-20 w-20 place-items-center rounded-full gradient-neon glow-pink ${recording ? "animate-pulse-glow" : ""} ${selectedTrack ? "opacity-90" : ""}`}
-                >
-                  {recording ? (
-                    <Square className="h-8 w-8 text-white" />
-                  ) : (
-                    <Mic className="h-9 w-9 text-white" />
-                  )}
-                </button>
-              )}
+                    icon={<Mic className="h-5 w-5" />}
+                    label={recordedBlob ? t("record.reRecord") : t("common.record")}
+                    variant="primary"
+                  />
+                )}
+              </div>
             </div>
           </div>
 
-          {selectedTrack && (
-            <div className="mt-3 flex items-center justify-around">
-              {levels.map((h, i) => (
-                <span
-                  key={i}
-                  className="w-0.5 rounded-full transition-[height] duration-75"
-                  style={{
-                    height: Math.min(h, 24),
-                    background: `hsl(${300 + ((i * 3) % 60)} 90% 60%)`,
-                  }}
-                />
-              ))}
-            </div>
-          )}
+          <div className="p-4">
+            {selectedTrack && (
+              <div className="flex items-center justify-around">
+                {levels.map((h, i) => (
+                  <span
+                    key={i}
+                    className="w-0.5 rounded-full transition-[height] duration-75"
+                    style={{
+                      height: Math.min(h, 24),
+                      background: `hsl(${300 + ((i * 3) % 60)} 90% 60%)`,
+                    }}
+                  />
+                ))}
+              </div>
+            )}
 
-          <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>00:00</span>
-            <span className="flex items-center gap-1.5">
-              {processing && <Loader2 className="h-3 w-3 animate-spin" />}
-              {processing
-                ? t("record.processing")
-                : phase === "recording"
-                  ? t("record.rec")
-                  : phase === "paused"
-                    ? t("record.paused")
-                    : recordedBlob
-                      ? t("record.ready")
-                      : t("record.idle")}{" "}
-              {mm}:{ss}
-            </span>
-            <span>—</span>
+            <div
+              className={`flex items-center justify-between text-[11px] text-muted-foreground ${selectedTrack ? "mt-3" : ""}`}
+            >
+              <span>00:00</span>
+              <span className="flex items-center gap-1.5">
+                {processing && <Loader2 className="h-3 w-3 animate-spin" />}
+                {processing
+                  ? t("record.processing")
+                  : phase === "recording"
+                    ? t("record.rec")
+                    : phase === "paused"
+                      ? t("record.paused")
+                      : recordedBlob
+                        ? t("record.ready")
+                        : t("record.idle")}{" "}
+                {mm}:{ss}
+              </span>
+              <span>—</span>
+            </div>
           </div>
         </div>
 
@@ -515,21 +551,21 @@ function RecordPage() {
           <BigAction
             icon={<Save className="h-5 w-5" />}
             label={t("common.save")}
-            onClick={() => finishMutation.mutate("studio")}
-            disabled={!recordedBlob || finishMutation.isPending}
+            onClick={() => runFinish("studio")}
+            disabled={finishMutation.isPending}
           />
           <BigAction
             icon={<Send className="h-5 w-5" />}
             label={t("common.continueToPublish")}
             primary
-            onClick={() => finishMutation.mutate("upload")}
-            disabled={!recordedBlob || finishMutation.isPending}
+            onClick={() => runFinish("upload")}
+            disabled={finishMutation.isPending}
           />
           <BigAction
             icon={<Send className="h-5 w-5" />}
             label={t("record.sendComp")}
-            onClick={() => finishMutation.mutate("upload-comp")}
-            disabled={!recordedBlob || finishMutation.isPending}
+            onClick={() => runFinish("upload-comp")}
+            disabled={finishMutation.isPending}
           />
         </div>
       </div>
@@ -644,6 +680,36 @@ function Knob({
     </div>
   );
 }
+
+function ControlButton({
+  icon,
+  label,
+  onClick,
+  variant = "glass",
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  variant?: "primary" | "accent" | "glass";
+}) {
+  const variantClass =
+    variant === "primary"
+      ? "gradient-neon glow-pink text-white"
+      : variant === "accent"
+        ? "border border-accent bg-accent/20 text-accent"
+        : "glass text-white";
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={`grid h-12 w-12 shrink-0 place-items-center rounded-full ${variantClass}`}
+    >
+      {icon}
+    </button>
+  );
+}
+
 function BigAction({
   icon,
   label,

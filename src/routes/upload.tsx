@@ -114,7 +114,10 @@ function UploadPage() {
     onError: (e: Error) => toast.error(translateServerError(e.message)),
   });
 
-  const canPublish = !!audioUrl && title.trim().length > 0 && !publishMutation.isPending;
+  // A caption isn't actually required server-side (publishPost falls back to "Untitled" when
+  // it's blank) — gating the button on a non-empty title made Publish silently do nothing for
+  // anyone who skipped the caption field, indistinguishable from a broken button.
+  const canPublish = !!audioUrl && !publishMutation.isPending;
 
   return (
     <AppShell>

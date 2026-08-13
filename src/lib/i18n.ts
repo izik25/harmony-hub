@@ -30,6 +30,7 @@ const en = {
     preview: "Preview",
     record: "Record",
     stop: "Stop",
+    pause: "Pause",
     enter: "Enter",
     vote: "Vote",
     live: "LIVE",
@@ -106,6 +107,7 @@ const en = {
     paused: "PAUSED",
     continueRecording: "Continue",
     finishRecording: "Finish",
+    reRecord: "Re-record",
     processing: "Cleaning up",
     processFailed: "Couldn't clean up the recording, saved the raw take instead.",
     headphonesHint:
@@ -400,6 +402,7 @@ const he = {
     preview: "תצוגה",
     record: "הקלט",
     stop: "עצור",
+    pause: "השהה",
     enter: "הרשם",
     vote: "הצבע",
     live: "לייב",
@@ -476,6 +479,7 @@ const he = {
     paused: "מושהה",
     continueRecording: "המשך",
     finishRecording: "סיום",
+    reRecord: "הקלט מחדש",
     processing: "מנקה הקלטה",
     processFailed: "לא הצלחנו לנקות את ההקלטה, נשמרה הגרסה הגולמית.",
     headphonesHint:
@@ -769,6 +773,7 @@ const ar = {
     preview: "معاينة",
     record: "تسجيل",
     stop: "إيقاف",
+    pause: "إيقاف مؤقت",
     enter: "تسجيل",
     vote: "تصويت",
     live: "مباشر",
@@ -845,6 +850,7 @@ const ar = {
     paused: "متوقف مؤقتاً",
     continueRecording: "متابعة",
     finishRecording: "إنهاء",
+    reRecord: "إعادة التسجيل",
     processing: "تنظيف التسجيل",
     processFailed: "تعذّر تنظيف التسجيل، تم حفظ النسخة الأصلية.",
     headphonesHint:
