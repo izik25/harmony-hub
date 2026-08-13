@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { getDraft, publishPost } from "@/functions/posts";
-import { uploadMedia } from "@/functions/uploads";
+import { smartUploadMedia } from "@/lib/blob-upload";
 import { translateServerError } from "@/lib/i18n";
 
 interface UploadSearch {
@@ -62,9 +62,7 @@ function UploadPage() {
 
   const uploadFileMutation = useMutation({
     mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      const { url } = await uploadMedia({ data: formData });
+      const { url } = await smartUploadMedia(file, file.name);
       return { url, name: file.name };
     },
     onSuccess: (result) => setPickedFile(result),

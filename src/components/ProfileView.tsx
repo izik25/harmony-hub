@@ -12,7 +12,7 @@ import { getProfileByHandle, listUserPosts, updateProfile } from "@/functions/pr
 import { listUserCompetitionEntries } from "@/functions/competitions";
 import { toggleFollow, listMyDrafts } from "@/functions/posts";
 import { getOrCreateConversation } from "@/functions/messages";
-import { uploadMedia } from "@/functions/uploads";
+import { smartUploadMedia } from "@/lib/blob-upload";
 import { logout } from "@/functions/auth";
 import { formatCount } from "@/lib/mock-data";
 import { shareContent } from "@/lib/share";
@@ -290,9 +290,7 @@ function SettingsSheet({
 
   const avatarMutation = useMutation({
     mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      const { url } = await uploadMedia({ data: formData });
+      const { url } = await smartUploadMedia(file, file.name);
       return url;
     },
     onSuccess: setAvatarUrl,

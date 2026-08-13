@@ -21,7 +21,7 @@ import i18n, { translateServerError } from "@/lib/i18n";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { uploadMedia } from "@/functions/uploads";
+import { smartUploadMedia } from "@/lib/blob-upload";
 import { createDraft } from "@/functions/posts";
 import { listKaraokeTracks } from "@/functions/karaoke";
 import { processRecording } from "@/lib/mix-recording";
@@ -270,10 +270,8 @@ function RecordPage() {
   const finishMutation = useMutation({
     mutationFn: async (next: "studio" | "upload" | "upload-comp") => {
       if (!recordedBlob) throw new Error(i18n.t("record.recordFirst"));
-      const formData = new FormData();
       const ext = recordedBlob.type.includes("wav") ? "wav" : "webm";
-      formData.append("file", recordedBlob, `recording-${Date.now()}.${ext}`);
-      const { url } = await uploadMedia({ data: formData });
+      const { url } = await smartUploadMedia(recordedBlob, `recording-${Date.now()}.${ext}`);
       const draft = await createDraft({
         data: {
           audioUrl: url,

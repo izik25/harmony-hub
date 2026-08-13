@@ -8,7 +8,7 @@ import * as Tone from "tone";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { getDraft, updateDraftAudio } from "@/functions/posts";
-import { uploadMedia } from "@/functions/uploads";
+import { smartUploadMedia } from "@/lib/blob-upload";
 import { audioBufferToWavBlob } from "@/lib/wav-encoder";
 import { generateImpulseResponse } from "@/lib/impulse-response";
 import { translateServerError } from "@/lib/i18n";
@@ -244,9 +244,7 @@ function StudioPage() {
     mutationFn: async () => {
       if (!draftId) throw new Error(t("studio.nothingToPublish"));
       const blob = await renderProcessed();
-      const formData = new FormData();
-      formData.append("file", blob, `studio-${Date.now()}.wav`);
-      const { url } = await uploadMedia({ data: formData });
+      const { url } = await smartUploadMedia(blob, `studio-${Date.now()}.wav`);
       await updateDraftAudio({ data: { id: draftId, audioUrl: url } });
       return draftId;
     },

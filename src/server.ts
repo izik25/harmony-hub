@@ -1,11 +1,66 @@
 import "./lib/error-capture";
 
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { eq } from "drizzle-orm";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { db } from "./db/client";
+import { sessions } from "./db/schema";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
+
+const SESSION_COOKIE = "sona_session";
+
+// Mirrors functions/auth.ts's session check, but against a raw Request — this endpoint is
+// handled outside TanStack Start's router (see handleBlobUploadRequest below), so none of the
+// framework's request-context helpers (getCookie, createServerFn, etc.) are available here.
+async function getUserIdFromRequest(request: Request): Promise<string | null> {
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const match = cookieHeader.match(/(?:^|;\s*)sona_session=([^;]+)/);
+  if (!match) return null;
+  const token = decodeURIComponent(match[1]);
+  const [session] = await db.select().from(sessions).where(eq(sessions.id, token));
+  if (!session || session.expiresAt.getTime() < Date.now()) return null;
+  return session.userId;
+}
+
+// Recordings/exports (uncompressed WAV) and video uploads regularly exceed the request-body
+// limit Vercel enforces on serverless function invocations (historically ~4.5MB) — routing them
+// through a createServerFn, whose entire request body is that limit, made Save/Publish fail with
+// "FUNCTION_PAYLOAD_TOO_LARGE" for anything longer than roughly a minute of audio. This endpoint
+// lets the browser upload directly to Vercel Blob instead: the client calls upload() from
+// @vercel/blob/client, which POSTs here first (a tiny JSON request, no file bytes) to get a
+// short-lived client token, then PUTs the actual file straight to Blob storage — our function
+// never sees the file body at all. Plain fetch handler (not a createServerFn) because the SDK's
+// upload() calls this URL directly with its own request/response shape.
+async function handleBlobUploadRequest(request: Request): Promise<Response> {
+  const userId = await getUserIdFromRequest(request);
+  if (!userId) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+
+  try {
+    const body = (await request.json()) as HandleUploadBody;
+    const result = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async () => ({
+        allowedContentTypes: ["audio/*", "video/*", "image/*"],
+        maximumSizeInBytes: 100 * 1024 * 1024,
+        addRandomSuffix: true,
+      }),
+    });
+    return new Response(JSON.stringify(result), {
+      headers: { "content-type": "application/json" },
+    });
+  } catch (error) {
+    // Most commonly: no BLOB_READ_WRITE_TOKEN configured (local dev without a Blob store) — the
+    // client helper (lib/blob-upload.ts) falls back to the old server-function upload path for
+    // exactly this response.
+    const message = error instanceof Error ? error.message : "blob upload failed";
+    return new Response(JSON.stringify({ error: message }), { status: 501 });
+  }
+}
 
 let serverEntryPromise: Promise<ServerEntry> | undefined;
 
@@ -47,6 +102,9 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      if (request.method === "POST" && new URL(request.url).pathname === "/api/blob-upload") {
+        return await handleBlobUploadRequest(request);
+      }
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
