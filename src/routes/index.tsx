@@ -61,13 +61,18 @@ function FeedSlider({ posts }: { posts: FeedPostDTO[] }) {
 
   // Only one post is ever ~fully visible at a time in a snap-scroll feed, so whichever section
   // crosses the intersection threshold is "the one playing" — same idea as TikTok/Reels.
+  // `activeId` is intentionally NOT a dependency here: reading it inside the effect (instead of
+  // via a functional setState) would tear down and recreate the observer on every single scroll
+  // transition, and a freshly-created IntersectionObserver takes a frame to report its first
+  // intersection — during fast scrolling that gap was dropping transitions entirely, which is
+  // exactly "scrolling doesn't play the next one".
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const sections = Array.from(container.querySelectorAll<HTMLElement>("[data-post-id]"));
     if (sections.length === 0) return;
 
-    if (!activeId) setActiveId(sections[0].dataset.postId ?? null);
+    setActiveId((current) => current ?? sections[0].dataset.postId ?? null);
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -84,7 +89,7 @@ function FeedSlider({ posts }: { posts: FeedPostDTO[] }) {
     );
     sections.forEach((s) => observer.observe(s));
     return () => observer.disconnect();
-  }, [posts, activeId]);
+  }, [posts]);
 
   const unmute = () => {
     setHasInteracted(true);
@@ -99,18 +104,28 @@ function FeedSlider({ posts }: { posts: FeedPostDTO[] }) {
       }}
       className="h-[calc(100dvh-80px)] snap-y snap-mandatory overflow-y-auto no-scrollbar"
     >
-      {posts.map((p) => (
-        <FeedItem
-          key={p.id}
-          post={p}
-          active={p.id === activeId}
-          muted={muted}
-          onToggleMute={() => setMuted((m) => !m)}
-          showSoundHint={!hasInteracted && p.id === activeId}
-          onOpenComments={() => setCommentsFor(p.id)}
-          onOpenGift={() => setGiftFor(p)}
-        />
-      ))}
+      {posts.map((p, i) => {
+        const activeIndex = posts.findIndex((x) => x.id === activeId);
+        // Full preload for the playing post, a lightweight metadata head-start for its immediate
+        // neighbor (whichever way the user scrolls next), nothing for everything else — loading
+        // audio for all 50 feed posts at once (the old blanket "metadata" preload) is exactly
+        // what was making the very first post take forever to start.
+        const preload =
+          p.id === activeId ? "auto" : Math.abs(i - activeIndex) === 1 ? "metadata" : "none";
+        return (
+          <FeedItem
+            key={p.id}
+            post={p}
+            active={p.id === activeId}
+            preload={preload}
+            muted={muted}
+            onToggleMute={() => setMuted((m) => !m)}
+            showSoundHint={!hasInteracted && p.id === activeId}
+            onOpenComments={() => setCommentsFor(p.id)}
+            onOpenGift={() => setGiftFor(p)}
+          />
+        );
+      })}
       <CommentsSheet postId={commentsFor} onClose={() => setCommentsFor(null)} />
       <GiftSheet post={giftFor} onClose={() => setGiftFor(null)} />
     </div>
@@ -120,6 +135,7 @@ function FeedSlider({ posts }: { posts: FeedPostDTO[] }) {
 function FeedItem({
   post,
   active,
+  preload,
   muted,
   onToggleMute,
   showSoundHint,
@@ -128,6 +144,7 @@ function FeedItem({
 }: {
   post: FeedPostDTO;
   active: boolean;
+  preload: "auto" | "metadata" | "none";
   muted: boolean;
   onToggleMute: () => void;
   showSoundHint: boolean;
@@ -235,7 +252,7 @@ function FeedItem({
           loop
           muted={muted}
           playsInline
-          preload="metadata"
+          preload={preload}
         />
       )}
       <div className={isPlaying ? "absolute inset-0 animate-cover-breathe" : "absolute inset-0"}>
