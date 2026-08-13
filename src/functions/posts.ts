@@ -176,7 +176,16 @@ export const listComments = createServerFn({ method: "GET" })
   });
 
 export const createDraft = createServerFn({ method: "POST" })
-  .validator((input: unknown) => input as { audioUrl: string; title?: string; type?: string })
+  .validator(
+    (input: unknown) =>
+      input as {
+        audioUrl: string;
+        title?: string;
+        type?: string;
+        rawVocalUrl?: string;
+        backingTrackUrl?: string;
+      },
+  )
   .handler(async ({ data }) => {
     const userId = await requireUserId();
     const [draft] = await db
@@ -186,6 +195,8 @@ export const createDraft = createServerFn({ method: "POST" })
         type: data.type ?? "original",
         title: data.title ?? "Untitled recording",
         audioUrl: data.audioUrl,
+        rawVocalUrl: data.rawVocalUrl ?? "",
+        backingTrackUrl: data.backingTrackUrl ?? "",
         hue: Math.floor(Math.random() * 360),
         credits: { performer: "", writer: "", composer: "", producer: "" },
         status: "draft",

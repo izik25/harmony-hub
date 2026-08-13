@@ -123,6 +123,8 @@ const en = {
     nowPerforming: "Now performing",
     changeTrack: "Change",
     clearTrack: "Clear",
+    opensStudioHint:
+      "Finishing opens the AI Studio, where you can balance and shape the take before saving or publishing.",
   },
   studio: {
     title: "AI Music Studio",
@@ -141,6 +143,7 @@ const en = {
     couldNotLoad: "Could not load the track for editing.",
     exportFailed: "Export failed.",
     exportedToast: "Exported processed WAV",
+    remixedToast: "Balance updated",
     nothingToPublish: "Nothing to publish.",
     enhanceApplied: "Enhance preset applied",
     masterApplied: "Mastering preset applied — targets a fuller, louder mix",
@@ -495,6 +498,8 @@ const he = {
     nowPerforming: "מבצע כרגע",
     changeTrack: "החלף",
     clearTrack: "נקה",
+    opensStudioHint:
+      "סיום ההקלטה פותח את אולפן ה-AI, שם תוכל לאזן ולעצב את ההקלטה לפני שמירה או פרסום.",
   },
   studio: {
     title: "אולפן מוזיקה AI",
@@ -513,6 +518,7 @@ const he = {
     couldNotLoad: "לא ניתן היה לטעון את הטראק לעריכה.",
     exportFailed: "הייצוא נכשל.",
     exportedToast: "קובץ WAV מעובד יוצא בהצלחה",
+    remixedToast: "האיזון עודכן",
     nothingToPublish: "אין מה לפרסם.",
     enhanceApplied: "פריסט השיפור הוחל",
     masterApplied: "פריסט המאסטרינג הוחל — מכוון למיקס מלא וחזק יותר",
@@ -866,6 +872,8 @@ const ar = {
     nowPerforming: "يؤدي الآن",
     changeTrack: "تغيير",
     clearTrack: "مسح",
+    opensStudioHint:
+      "إنهاء التسجيل يفتح استوديو الـ AI، حيث يمكنك موازنة المقطع وتشكيله قبل الحفظ أو النشر.",
   },
   studio: {
     title: "استوديو الموسيقى AI",
@@ -884,6 +892,7 @@ const ar = {
     couldNotLoad: "تعذّر تحميل المقطع للتحرير.",
     exportFailed: "فشل التصدير.",
     exportedToast: "تم تصدير ملف WAV المعالَج",
+    remixedToast: "تم تحديث التوازن",
     nothingToPublish: "لا يوجد شيء لنشره.",
     enhanceApplied: "تم تطبيق إعداد التحسين",
     masterApplied: "تم تطبيق إعداد الماسترينج — يستهدف مزيجاً أكثر امتلاءً وقوة",

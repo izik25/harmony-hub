@@ -43,6 +43,11 @@ export const posts = pgTable("posts", {
   title: text("title").notNull(),
   songTitle: text("song_title").notNull().default(""),
   audioUrl: text("audio_url").notNull().default(""),
+  // Pre-mix source material for a draft recorded via /record — kept around so the Studio screen
+  // can re-balance vocal vs. backing track and re-bake audioUrl without re-recording. Empty for
+  // anything published without going through that flow (plain uploads, older drafts, etc.).
+  rawVocalUrl: text("raw_vocal_url").notNull().default(""),
+  backingTrackUrl: text("backing_track_url").notNull().default(""),
   coverUrl: text("cover_url").notNull().default(""),
   hue: integer("hue").notNull().default(300),
   credits: jsonb("credits")

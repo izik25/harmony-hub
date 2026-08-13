@@ -1,33 +1,26 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Sliders, Wand2, Waves, Download, Send, Play, Pause } from "lucide-react";
+import { Sliders, Wand2, Waves, Download, Send, Play, Pause, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import * as Tone from "tone";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { getDraft, updateDraftAudio } from "@/functions/posts";
 import { smartUploadMedia } from "@/lib/blob-upload";
+import { processRecording } from "@/lib/mix-recording";
 import { audioBufferToWavBlob } from "@/lib/wav-encoder";
 import { generateImpulseResponse } from "@/lib/impulse-response";
 import { translateServerError } from "@/lib/i18n";
 
 interface StudioSearch {
   draftId?: string;
-  autotune?: number;
-  pitch?: number;
-  speed?: number;
-  reverb?: number;
 }
 
 export const Route = createFileRoute("/studio")({
   validateSearch: (search: Record<string, unknown>): StudioSearch => ({
     draftId: typeof search.draftId === "string" ? search.draftId : undefined,
-    autotune: typeof search.autotune === "number" ? search.autotune : undefined,
-    pitch: typeof search.pitch === "number" ? search.pitch : undefined,
-    speed: typeof search.speed === "number" ? search.speed : undefined,
-    reverb: typeof search.reverb === "number" ? search.reverb : undefined,
   }),
   component: StudioPage,
 });
@@ -42,6 +35,8 @@ type VocalChain = {
   reverbDry: Tone.Gain;
   reverbWet: Tone.Gain;
 };
+
+type DraftDTO = Awaited<ReturnType<typeof getDraft>>;
 
 type Params = {
   autotune: number;
@@ -109,20 +104,49 @@ function disposeChain(chain: VocalChain) {
 function StudioPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const search = Route.useSearch();
   const draftId = search.draftId;
-  const pitchRef = useRef(search.pitch ?? 0);
+  const pitchRef = useRef(0);
 
-  const [autotune, setA] = useState(search.autotune ?? 40);
-  const [reverbAmt, setR] = useState(search.reverb ?? 30);
+  const [autotune, setA] = useState(40);
+  const [reverbAmt, setR] = useState(30);
   const [eq, setE] = useState(50);
   const [comp, setC] = useState(30);
   const [noise, setN] = useState(0);
-  const [speed, setSpeed] = useState(search.speed ?? 100);
+  const [speed, setSpeed] = useState(100);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
 
+  // 140/65 match processRecording's own defaults — the balance record.tsx's initial auto-mix
+  // was tuned around, expressed as % so the sliders read naturally.
+  const [vocalVolume, setVocalVolume] = useState(140);
+  const [playbackVolume, setPlaybackVolume] = useState(65);
+
   const chainRef = useRef<VocalChain | null>(null);
+  // Mirrors the DSP slider state without being a dependency of the chain-(re)build effect below —
+  // a remix swaps draft.audioUrl and rebuilds the chain from scratch, and it should pick up
+  // whatever the sliders are currently set to rather than resetting to Tone's raw defaults.
+  const paramsRef = useRef<Params>({
+    autotune,
+    pitch: pitchRef.current,
+    speed,
+    noise,
+    reverb: reverbAmt,
+    eq,
+    compression: comp,
+  });
+  useEffect(() => {
+    paramsRef.current = {
+      autotune,
+      pitch: pitchRef.current,
+      speed,
+      noise,
+      reverb: reverbAmt,
+      eq,
+      compression: comp,
+    };
+  }, [autotune, noise, reverbAmt, eq, comp, speed]);
 
   const { data: draft } = useQuery({
     queryKey: ["draft", draftId],
@@ -149,7 +173,9 @@ function StudioPage() {
     };
     loadWithRetry(draft.audioUrl)
       .then(() => {
-        if (!disposed) setReady(true);
+        if (disposed) return;
+        applyParams(chain, paramsRef.current);
+        setReady(true);
       })
       .catch((err) => {
         if (!disposed) toast.error(t("studio.couldNotLoad"));
@@ -241,14 +267,43 @@ function StudioPage() {
   });
 
   const publishMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (forCompetition: boolean) => {
       if (!draftId) throw new Error(t("studio.nothingToPublish"));
       const blob = await renderProcessed();
       const { url } = await smartUploadMedia(blob, `studio-${Date.now()}.wav`);
       await updateDraftAudio({ data: { id: draftId, audioUrl: url } });
-      return draftId;
+      return { id: draftId, forCompetition };
     },
-    onSuccess: (id) => navigate({ to: "/upload", search: { draftId: id } }),
+    onSuccess: ({ id, forCompetition }) =>
+      navigate({
+        to: "/upload",
+        search: forCompetition ? { draftId: id, forCompetition: 1 } : { draftId: id },
+      }),
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
+  });
+
+  // Re-bakes the vocal/backing balance from the original stems (kept around from record.tsx as
+  // rawVocalUrl/backingTrackUrl) at a new gain balance, without re-recording. Same offline
+  // pipeline record.tsx used to run itself — just relocated here so it lives alongside every
+  // other knob instead of being a separate step before Studio even opens.
+  const remixMutation = useMutation({
+    mutationFn: async () => {
+      if (!draftId || !draft?.rawVocalUrl) throw new Error(t("studio.nothingToPublish"));
+      const rawBlob = await fetch(draft.rawVocalUrl).then((r) => r.blob());
+      const mixed = await processRecording(rawBlob, draft.backingTrackUrl || undefined, {
+        vocalGain: vocalVolume / 100,
+        backingGain: playbackVolume / 100,
+      });
+      const { url } = await smartUploadMedia(mixed, `studio-remix-${Date.now()}.wav`);
+      await updateDraftAudio({ data: { id: draftId, audioUrl: url } });
+      return url;
+    },
+    onSuccess: (url) => {
+      queryClient.setQueryData<DraftDTO>(["draft", draftId], (old) =>
+        old ? { ...old, audioUrl: url } : old,
+      );
+      toast.success(t("studio.remixedToast"));
+    },
     onError: (e: Error) => toast.error(translateServerError(e.message)),
   });
 
@@ -327,6 +382,42 @@ function StudioPage() {
               </div>
             </div>
 
+            {draft?.rawVocalUrl && (
+              <section className="mt-5 rounded-3xl border border-border bg-card/50 p-4">
+                <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                  <Sliders className="h-4 w-4 text-accent" /> {t("record.mixBalance")}
+                </h2>
+                <Slider
+                  label={t("record.vocalVolume")}
+                  v={vocalVolume}
+                  onChange={setVocalVolume}
+                  min={50}
+                  max={200}
+                />
+                {draft.backingTrackUrl && (
+                  <Slider
+                    label={t("record.playbackVolume")}
+                    v={playbackVolume}
+                    onChange={setPlaybackVolume}
+                    min={0}
+                    max={150}
+                  />
+                )}
+                <button
+                  onClick={() => remixMutation.mutate()}
+                  disabled={remixMutation.isPending}
+                  className="mt-1 flex w-full items-center justify-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-accent disabled:opacity-40"
+                >
+                  {remixMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-4 w-4" />
+                  )}
+                  {t("record.remix")}
+                </button>
+              </section>
+            )}
+
             <section className="mt-5 rounded-3xl border border-border bg-card/50 p-4">
               <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
                 <Sliders className="h-4 w-4 text-accent" /> {t("studio.vocalChain")}
@@ -359,7 +450,7 @@ function StudioPage() {
               </button>
             </section>
 
-            <div className="mt-5 grid grid-cols-3 gap-2">
+            <div className="mt-5 grid grid-cols-4 gap-2">
               <button
                 onClick={applyEnhance}
                 className="flex flex-col items-center gap-1 rounded-2xl border border-border bg-card/60 p-3 text-[11px] font-semibold"
@@ -374,11 +465,18 @@ function StudioPage() {
                 <Download className="h-4 w-4" /> {t("record.export")}
               </button>
               <button
-                onClick={() => publishMutation.mutate()}
+                onClick={() => publishMutation.mutate(false)}
                 disabled={!ready || publishMutation.isPending}
                 className="flex flex-col items-center gap-1 rounded-2xl gradient-neon p-3 text-[11px] font-bold text-white glow-pink disabled:opacity-50"
               >
                 <Send className="h-4 w-4" /> {t("common.continueToPublish")}
+              </button>
+              <button
+                onClick={() => publishMutation.mutate(true)}
+                disabled={!ready || publishMutation.isPending}
+                className="flex flex-col items-center gap-1 rounded-2xl border border-border bg-card/60 p-3 text-[11px] font-semibold disabled:opacity-50"
+              >
+                <Send className="h-4 w-4" /> {t("record.sendComp")}
               </button>
             </div>
           </>
