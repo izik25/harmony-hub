@@ -294,3 +294,46 @@ export const karaokeTracks = pgTable("karaoke_tracks", {
   durationSeconds: integer("duration_seconds"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// One row per (user, external platform) OAuth connection used by the "Publish everywhere" flow.
+// Tokens are stored as-is (no app-level encryption) — acceptable for now since this whole table
+// is only ever read from trusted server code (functions/platforms.ts, lib/social-platforms/*),
+// same trust boundary as sessions.id already sitting in plaintext in this DB.
+export const platformConnections = pgTable(
+  "platform_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(), // youtube | tiktok | instagram
+    accessToken: text("access_token").notNull(),
+    refreshToken: text("refresh_token").notNull().default(""),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    externalAccountId: text("external_account_id").notNull().default(""),
+    externalAccountName: text("external_account_name").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("platform_conn_user_platform_uq").on(t.userId, t.platform)],
+);
+
+// One row per (post, platform) publish attempt triggered from the "Publish everywhere" modal.
+// `platform` also covers the link-out-only targets (spotify/apple_music/soundcloud) so the UI has
+// one place to read status/history from regardless of how a given platform is actually handled.
+export const platformPublishes = pgTable("platform_publishes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  postId: uuid("post_id")
+    .notNull()
+    .references(() => posts.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  platform: text("platform").notNull(),
+  status: text("status").notNull().default("pending"), // pending | processing | success | failed
+  externalUrl: text("external_url").notNull().default(""),
+  externalId: text("external_id").notNull().default(""),
+  error: text("error").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

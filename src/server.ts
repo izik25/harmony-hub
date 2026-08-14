@@ -1,11 +1,18 @@
 import "./lib/error-capture";
 
+import { randomUUID } from "node:crypto";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { db } from "./db/client";
-import { sessions } from "./db/schema";
+import { sessions, platformConnections } from "./db/schema";
+import {
+  socialPlatforms,
+  isOAuthPlatformId,
+  redirectUriFor,
+  type OAuthPlatformId,
+} from "./lib/social-platforms";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -62,6 +69,143 @@ async function handleBlobUploadRequest(request: Request): Promise<Response> {
   }
 }
 
+// "Publish everywhere" OAuth connect/callback — same raw-fetch-handler approach as the blob
+// upload endpoint above, and for the same reason: these need full control over redirects and
+// Set-Cookie headers that createServerFn's RPC shape doesn't give us.
+const OAUTH_STATE_COOKIE = "sona_oauth_state";
+
+type OAuthStateCookie = { state: string; returnTo: string; platform: OAuthPlatformId };
+
+function oauthStateCookieHeader(value: string, maxAge: number): string {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${OAUTH_STATE_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+}
+
+function readOAuthStateCookie(request: Request): OAuthStateCookie | null {
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const match = cookieHeader.match(/(?:^|;\s*)sona_oauth_state=([^;]+)/);
+  if (!match) return null;
+  try {
+    return JSON.parse(decodeURIComponent(match[1])) as OAuthStateCookie;
+  } catch {
+    return null;
+  }
+}
+
+async function handleConnectStart(request: Request, platform: OAuthPlatformId): Promise<Response> {
+  const userId = await getUserIdFromRequest(request);
+  const url = new URL(request.url);
+  if (!userId) return Response.redirect(new URL("/login", url.origin).toString(), 302);
+
+  const social = socialPlatforms[platform];
+  if (!social.configured()) {
+    return new Response(`${platform} is not configured on this server yet`, { status: 501 });
+  }
+
+  const returnTo = url.searchParams.get("returnTo") || "/upload";
+  const state = randomUUID();
+  const redirectUri = redirectUriFor(url.origin, platform);
+  const cookieValue = encodeURIComponent(JSON.stringify({ state, returnTo, platform }));
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: social.authorizeUrl(redirectUri, state),
+      "set-cookie": oauthStateCookieHeader(cookieValue, 600),
+    },
+  });
+}
+
+async function handleConnectCallback(
+  request: Request,
+  platform: OAuthPlatformId,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const social = socialPlatforms[platform];
+  const stateCookie = readOAuthStateCookie(request);
+  const returnTo = stateCookie?.returnTo || "/upload";
+  const clearCookie = oauthStateCookieHeader("", 0);
+
+  const fail = (reason: string) => {
+    const target = new URL(returnTo, url.origin);
+    target.searchParams.set("platformError", `${platform}:${reason}`);
+    return new Response(null, {
+      status: 302,
+      headers: { location: target.toString(), "set-cookie": clearCookie },
+    });
+  };
+
+  const userId = await getUserIdFromRequest(request);
+  if (!userId) return fail("notLoggedIn");
+
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  if (
+    !code ||
+    !state ||
+    !stateCookie ||
+    state !== stateCookie.state ||
+    stateCookie.platform !== platform
+  ) {
+    return fail("invalidState");
+  }
+
+  try {
+    const redirectUri = redirectUriFor(url.origin, platform);
+    const tokens = await social.exchangeCode(code, redirectUri);
+    const [existing] = await db
+      .select()
+      .from(platformConnections)
+      .where(
+        and(eq(platformConnections.userId, userId), eq(platformConnections.platform, platform)),
+      );
+
+    if (existing) {
+      await db
+        .update(platformConnections)
+        .set({
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: tokens.expiresAt,
+          externalAccountId: tokens.externalAccountId,
+          externalAccountName: tokens.externalAccountName,
+          updatedAt: new Date(),
+        })
+        .where(eq(platformConnections.id, existing.id));
+    } else {
+      await db.insert(platformConnections).values({
+        userId,
+        platform,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+        externalAccountId: tokens.externalAccountId,
+        externalAccountName: tokens.externalAccountName,
+      });
+    }
+  } catch (error) {
+    console.error(error);
+    return fail("exchangeFailed");
+  }
+
+  const target = new URL(returnTo, url.origin);
+  target.searchParams.set("platformConnected", platform);
+  return new Response(null, {
+    status: 302,
+    headers: { location: target.toString(), "set-cookie": clearCookie },
+  });
+}
+
+async function handleConnectRequest(request: Request, pathname: string): Promise<Response | null> {
+  const match = pathname.match(/^\/api\/connect\/([a-z_]+)\/(start|callback)$/);
+  if (!match) return null;
+  const [, platform, action] = match;
+  if (!isOAuthPlatformId(platform)) return new Response("Unknown platform", { status: 404 });
+  return action === "start"
+    ? handleConnectStart(request, platform)
+    : handleConnectCallback(request, platform);
+}
+
 let serverEntryPromise: Promise<ServerEntry> | undefined;
 
 async function getServerEntry(): Promise<ServerEntry> {
@@ -102,8 +246,13 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
-      if (request.method === "POST" && new URL(request.url).pathname === "/api/blob-upload") {
+      const pathname = new URL(request.url).pathname;
+      if (request.method === "POST" && pathname === "/api/blob-upload") {
         return await handleBlobUploadRequest(request);
+      }
+      if (request.method === "GET") {
+        const connectResponse = await handleConnectRequest(request, pathname);
+        if (connectResponse) return connectResponse;
       }
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

@@ -1,11 +1,23 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Upload, Music, Mic, Radio, Play, Pause, Globe, Lock, CheckCircle2 } from "lucide-react";
-import { useRef, useState } from "react";
+import {
+  Upload,
+  Music,
+  Mic,
+  Radio,
+  Play,
+  Pause,
+  Globe,
+  Lock,
+  CheckCircle2,
+  Share2,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
+import { PublishEverywhereModal } from "@/components/PublishEverywhereModal";
 import { getDraft, publishPost } from "@/functions/posts";
 import { smartUploadMedia } from "@/lib/blob-upload";
 import { translateServerError } from "@/lib/i18n";
@@ -13,12 +25,20 @@ import { translateServerError } from "@/lib/i18n";
 interface UploadSearch {
   draftId?: string;
   forCompetition?: number;
+  justPublishedId?: string;
+  platformConnected?: string;
+  platformError?: string;
 }
 
 export const Route = createFileRoute("/upload")({
   validateSearch: (search: Record<string, unknown>): UploadSearch => ({
     draftId: typeof search.draftId === "string" ? search.draftId : undefined,
     forCompetition: typeof search.forCompetition === "number" ? search.forCompetition : undefined,
+    justPublishedId:
+      typeof search.justPublishedId === "string" ? search.justPublishedId : undefined,
+    platformConnected:
+      typeof search.platformConnected === "string" ? search.platformConnected : undefined,
+    platformError: typeof search.platformError === "string" ? search.platformError : undefined,
   }),
   component: UploadPage,
 });
@@ -36,12 +56,39 @@ function UploadPage() {
   const queryClient = useQueryClient();
   const search = Route.useSearch();
   const draftId = search.draftId;
+  const justPublishedId = search.justPublishedId;
 
   const { data: draft } = useQuery({
     queryKey: ["draft", draftId],
     queryFn: () => getDraft({ data: { id: draftId! } }),
     enabled: !!draftId,
   });
+
+  const { data: publishedPost } = useQuery({
+    queryKey: ["draft", justPublishedId],
+    queryFn: () => getDraft({ data: { id: justPublishedId! } }),
+    enabled: !!justPublishedId,
+  });
+
+  // Landing back here after an OAuth connect round-trip (see server.ts's /api/connect/* handlers)
+  // — surface the result once, then strip these two params so a refresh doesn't re-toast.
+  useEffect(() => {
+    if (!search.platformConnected && !search.platformError) return;
+    if (search.platformConnected) {
+      toast.success(t("publishEverywhere.connectSuccess", { platform: search.platformConnected }));
+    }
+    if (search.platformError) {
+      const [platform] = search.platformError.split(":");
+      toast.error(t("publishEverywhere.connectFailed", { platform }));
+    }
+    queryClient.invalidateQueries({ queryKey: ["platformStatus"] });
+    navigate({
+      to: "/upload",
+      search: { justPublishedId },
+      replace: true,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.platformConnected, search.platformError]);
 
   const [type, setType] = useState<(typeof types)[number]["key"] | "competition">(
     search.forCompetition ? "competition" : "cover",
@@ -101,16 +148,20 @@ function UploadPage() {
           visibility,
         },
       }),
-    onSuccess: () => {
+    onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ["feed"] });
       queryClient.invalidateQueries({ queryKey: ["userPosts"] });
       queryClient.invalidateQueries({ queryKey: ["profile"] });
       queryClient.invalidateQueries({ queryKey: ["myDrafts"] });
       toast.success(t("upload.publishedToast"));
-      navigate({ to: "/" });
+      // Route through justPublishedId (instead of straight to "/") so the "publish everywhere"
+      // modal below has a post to work with — it opens automatically whenever this is set.
+      navigate({ to: "/upload", search: { justPublishedId: created.id }, replace: true });
     },
     onError: (e: Error) => toast.error(translateServerError(e.message)),
   });
+
+  const closeShareModal = () => navigate({ to: "/" });
 
   // A caption isn't actually required server-side (publishPost falls back to "Untitled" when
   // it's blank) — gating the button on a non-empty title made Publish silently do nothing for
@@ -307,6 +358,14 @@ function UploadPage() {
 
       <style>{`.input { width: 100%; border-radius: 12px; background: var(--color-input); padding: 10px 12px; font-size: 14px; outline: none; border: 1px solid var(--color-border); }
       .input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 25%, transparent); }`}</style>
+
+      <PublishEverywhereModal
+        open={!!justPublishedId && !!publishedPost}
+        onOpenChange={(next) => {
+          if (!next) closeShareModal();
+        }}
+        post={publishedPost}
+      />
     </AppShell>
   );
 }

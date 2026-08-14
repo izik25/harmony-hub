@@ -3,15 +3,25 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Mic, Music2, Search, X, Check, Pause, Loader2 } from "lucide-react";
+import { Mic, Music2, Search, X, Check, Pause, Loader2, Headphones } from "lucide-react";
 import i18n, { translateServerError } from "@/lib/i18n";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { smartUploadMedia } from "@/lib/blob-upload";
 import { createDraft } from "@/functions/posts";
 import { listKaraokeTracks } from "@/functions/karaoke";
 import { processRecording } from "@/lib/mix-recording";
+import { commitCheckpoint, trimCheckpoint } from "@/lib/audio-splice";
 
 export const Route = createFileRoute("/record")({
   component: RecordPage,
@@ -26,11 +36,16 @@ const BAR_COUNT = 48;
 // now owns this entirely; record.tsx's only job is to get a take onto the Studio screen fast.
 const DEFAULT_VOCAL_GAIN = 1.25;
 const DEFAULT_BACKING_GAIN = 0.75;
+// Studio-style cue: how loud the mic is fed back into the monitor tap, relative to the raw
+// signal. Kept under unity so a live "hear yourself" mix doesn't come in hotter than the
+// backing track and isn't right at the edge of feedback if headphones seal imperfectly.
+const MONITOR_GAIN = 0.8;
 
-function useMicLevels(active: boolean) {
+function useMicLevels(active: boolean, monitor: boolean) {
   const [levels, setLevels] = useState<number[]>(() => Array(BAR_COUNT).fill(6));
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const monitorGainRef = useRef<GainNode | null>(null);
   const rafRef = useRef<number>(0);
 
   useEffect(() => {
@@ -61,6 +76,16 @@ function useMicLevels(active: boolean) {
         source.connect(analyser);
         analyserRef.current = analyser;
 
+        // Live monitor tap: routes the mic straight to the output (headphones) so you can hear
+        // yourself over the backing track while recording, like a studio cue mix. This is a
+        // separate node off the same source — it never touches what MediaRecorder captures, so
+        // it can be toggled live without affecting the take being recorded.
+        const monitorGain = ctx.createGain();
+        monitorGain.gain.value = monitor ? MONITOR_GAIN : 0;
+        source.connect(monitorGain);
+        monitorGain.connect(ctx.destination);
+        monitorGainRef.current = monitorGain;
+
         const data = new Uint8Array(analyser.frequencyBinCount);
         const tick = () => {
           analyser.getByteFrequencyData(data);
@@ -80,10 +105,24 @@ function useMicLevels(active: boolean) {
       cancelled = true;
       cancelAnimationFrame(rafRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      monitorGainRef.current = null;
       ctx?.close();
       setLevels(Array(BAR_COUNT).fill(6));
     };
+    // monitor intentionally excluded: this effect opens the mic stream/AudioContext, which we
+    // don't want to tear down and recreate (audible glitch) every time the toggle flips — the
+    // separate effect below rides the gain node instead, using the initial value here only to
+    // seed it correctly for whatever the toggle's state was when the stream opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
+
+  // Toggling monitoring shouldn't tear down and reopen the mic stream — just ride the gain
+  // node up or down live.
+  useEffect(() => {
+    if (monitorGainRef.current) {
+      monitorGainRef.current.gain.value = monitor ? MONITOR_GAIN : 0;
+    }
+  }, [monitor]);
 
   return { levels, stream: streamRef };
 }
@@ -97,13 +136,51 @@ function RecordPage() {
   const [seconds, setSeconds] = useState(0);
   const [karaokeOpen, setKaraokeOpen] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<KaraokeTrack | null>(null);
+  const [monitorEnabled, setMonitorEnabled] = useState(false);
+  // Rewind-and-punch-in: previewSeconds tracks the live drag position while the user is
+  // scrubbing the timeline backward; cutConfirm holds the target once they release, gating the
+  // "delete back to here and re-record?" dialog.
+  const [previewSeconds, setPreviewSeconds] = useState<number | null>(null);
+  const [cutConfirm, setCutConfirm] = useState<number | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Array<BlobPart>>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  // Everything committed before the currently-live MediaRecorder segment — every pause, scrub
+  // checkpoint, or confirmed cut folds the live segment into this (see audio-splice.ts) and
+  // throws the MediaRecorder instance away, rather than trying to pause/resume one continuous
+  // recorder. That's what makes an arbitrary mid-recording cut possible: a WebM chunk stream can
+  // only be decoded from its own start, so there's no way to snip a "resumed" recorder's stream
+  // in the middle — but decoding, slicing and re-concatenating whole takes works from any blob.
+  const baseBlobRef = useRef<Blob | null>(null);
+  // Resolves once a live recorder's audio has been folded into baseBlobRef; awaited before
+  // anything (finish, a new scrub) reads baseBlobRef so it never races an in-flight checkpoint.
+  const checkpointPromiseRef = useRef<Promise<void>>(Promise.resolve());
+  const checkpointResolveRef = useRef<(() => void) | null>(null);
+  const stopModeRef = useRef<"checkpoint" | "finish">("checkpoint");
+  // Whether recording was actively running when a scrub gesture began, so releasing without a
+  // real rewind (or answering "no" to the cut prompt) knows whether to resume or stay paused.
+  const wasRecordingRef = useRef(false);
   const recording = phase === "recording";
-  const { levels, stream } = useMicLevels(phase === "recording" || phase === "paused");
+  const { levels, stream } = useMicLevels(
+    phase === "recording" || phase === "paused",
+    monitorEnabled,
+  );
+
+  // Remember the monitor preference across visits, same as any other studio setting.
+  useEffect(() => {
+    setMonitorEnabled(localStorage.getItem("hh:monitorEnabled") === "1");
+  }, []);
+
+  const toggleMonitor = () => {
+    setMonitorEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem("hh:monitorEnabled", next ? "1" : "0");
+      if (next) toast.info(t("record.monitorFeedbackWarning"));
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (phase === "recording") {
@@ -146,9 +223,12 @@ function RecordPage() {
       }
 
       const ext = mixedBlob.type.includes("wav") ? "wav" : "webm";
+      // rawBlob is WAV whenever the take went through a rewind/cut checkpoint (see
+      // audio-splice.ts) and plain WebM otherwise — name it to match what it actually is.
+      const rawExt = rawBlob.type.includes("wav") ? "wav" : "webm";
       const [mixed, raw] = await Promise.all([
         smartUploadMedia(mixedBlob, `recording-${Date.now()}.${ext}`),
-        smartUploadMedia(rawBlob, `recording-raw-${Date.now()}.webm`),
+        smartUploadMedia(rawBlob, `recording-raw-${Date.now()}.${rawExt}`),
       ]);
       return createDraft({
         data: {
@@ -168,16 +248,11 @@ function RecordPage() {
   useEffect(() => {
     if (phase !== "recording") return;
 
-    // Resuming a paused take: same recorder, same chunk buffer — just pick back up.
-    if (mediaRecorderRef.current?.state === "paused") {
-      mediaRecorderRef.current.resume();
-      videoRef.current?.play().catch(() => {});
-      return;
-    }
-
-    // Starting a fresh take: wait for the mic stream to be ready, then create a new recorder.
-    // The mic is recorded on its own, clean — the karaoke backing track (if any) gets blended
-    // in afterward via an offline render (finishMutation), not mixed live while recording.
+    // Every entry into "recording" starts a brand-new MediaRecorder appended after whatever's
+    // already in baseBlobRef — there's no browser-level pause()/resume() here (see baseBlobRef's
+    // comment above for why). Wait for the mic stream to be ready, then create the recorder. The
+    // mic is recorded on its own, clean — the karaoke backing track (if any) gets blended in
+    // afterward via an offline render (finishMutation), not mixed live while recording.
     let cancelled = false;
     const waitForStream = setInterval(() => {
       if (cancelled) return clearInterval(waitForStream);
@@ -185,7 +260,9 @@ function RecordPage() {
         clearInterval(waitForStream);
         chunksRef.current = [];
         if (videoRef.current) {
-          videoRef.current.currentTime = 0;
+          // Only rewind the backing video to the top for a genuinely fresh take — resuming after
+          // a pause/scrub checkpoint should carry on from wherever it already is.
+          if (!baseBlobRef.current) videoRef.current.currentTime = 0;
           videoRef.current.play().catch(() => {});
         }
         // Explicit bitrate — MediaRecorder's default Opus encoding is conservative enough that
@@ -195,9 +272,40 @@ function RecordPage() {
         recorder.ondataavailable = (e) => {
           if (e.data.size > 0) chunksRef.current.push(e.data);
         };
-        recorder.onstop = () => {
-          const rawBlob = new Blob(chunksRef.current, { type: "audio/webm" });
-          finishMutation.mutate(rawBlob);
+        recorder.onstop = async () => {
+          const newBlob = new Blob(chunksRef.current, { type: "audio/webm" });
+          chunksRef.current = [];
+          const mode = stopModeRef.current;
+          const resolveCheckpoint = checkpointResolveRef.current;
+          checkpointResolveRef.current = null;
+
+          if (mode === "finish") {
+            if (baseBlobRef.current) {
+              try {
+                const { blob } = await commitCheckpoint(baseBlobRef.current, newBlob);
+                finishMutation.mutate(blob);
+              } catch (err) {
+                console.error(err);
+                finishMutation.mutate(newBlob); // keep the last segment rather than losing the take
+              }
+            } else {
+              finishMutation.mutate(newBlob);
+            }
+            resolveCheckpoint?.();
+            return;
+          }
+
+          // Checkpoint: fold whatever was just captured into the running base so a pause or a
+          // scrub never loses audio, even though the MediaRecorder instance itself is discarded.
+          if (newBlob.size > 0) {
+            try {
+              const { blob } = await commitCheckpoint(baseBlobRef.current, newBlob);
+              baseBlobRef.current = blob;
+            } catch (err) {
+              console.error(err); // keep the previous checkpoint rather than losing the take
+            }
+          }
+          resolveCheckpoint?.();
         };
         recorder.start();
         mediaRecorderRef.current = recorder;
@@ -214,22 +322,107 @@ function RecordPage() {
   }, [phase, stream, selectedTrack, t]);
 
   const startOrResume = () => {
-    if (phase !== "paused") setSeconds(0);
+    if (phase !== "paused") {
+      setSeconds(0);
+      baseBlobRef.current = null; // a genuinely fresh take, not a continue-after-checkpoint
+    }
     setPhase("recording");
   };
 
+  // Stops the live recorder (if any) and folds its audio into baseBlobRef, in `mode`. Resolves
+  // once that fold-in has finished — callers that need baseBlobRef to be current (finishing,
+  // starting a new scrub) await this instead of racing the async decode/encode.
+  const stopRecorder = (mode: "checkpoint" | "finish"): Promise<void> => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state !== "recording") return Promise.resolve();
+    const promise = new Promise<void>((resolve) => {
+      checkpointResolveRef.current = resolve;
+    });
+    stopModeRef.current = mode;
+    recorder.stop();
+    return promise;
+  };
+
   const pauseRecording = () => {
-    mediaRecorderRef.current?.pause();
     videoRef.current?.pause();
+    checkpointPromiseRef.current = stopRecorder("checkpoint");
     setPhase("paused");
   };
 
-  const finishRecording = () => {
-    mediaRecorderRef.current?.stop();
+  const finishRecording = async () => {
     videoRef.current?.pause();
+    await checkpointPromiseRef.current;
+    if (mediaRecorderRef.current?.state === "recording") {
+      await stopRecorder("finish"); // onstop calls finishMutation.mutate itself
+    } else if (baseBlobRef.current) {
+      finishMutation.mutate(baseBlobRef.current);
+    }
     setPhase("finished");
   };
 
+  const resumeIfWasRecording = () => {
+    if (wasRecordingRef.current) startOrResume();
+  };
+
+  // Drag start: freeze the timeline at its current length (stopping the 1s ticker by flipping to
+  // "paused") and, if we were actively recording, checkpoint the in-flight segment so
+  // baseBlobRef reflects "now" exactly — the point the user is about to rewind from.
+  const handleScrubStart = () => {
+    if (finishMutation.isPending || seconds < 1) return;
+    wasRecordingRef.current = phase === "recording";
+    setPreviewSeconds(seconds);
+    if (wasRecordingRef.current) {
+      videoRef.current?.pause();
+      checkpointPromiseRef.current = stopRecorder("checkpoint");
+      // Flips the 1s ticker off (it only runs while phase === "recording") so the timeline's
+      // length stays put for the rest of the gesture instead of growing while the user drags.
+      setPhase("paused");
+    }
+  };
+
+  const handleScrubMove = (value: number) => setPreviewSeconds(value);
+
+  const handleScrubEnd = async (value: number) => {
+    setPreviewSeconds(null);
+    await checkpointPromiseRef.current;
+    if (value >= seconds) {
+      // No real rewind — a tap, or released right back where it started.
+      resumeIfWasRecording();
+      return;
+    }
+    setCutConfirm(value);
+  };
+
+  const cancelCut = () => {
+    setCutConfirm(null);
+    resumeIfWasRecording();
+  };
+
+  const confirmCut = async () => {
+    const target = cutConfirm;
+    setCutConfirm(null);
+    if (target == null || !baseBlobRef.current) {
+      resumeIfWasRecording();
+      return;
+    }
+    try {
+      const { blob, seconds: exact } = await trimCheckpoint(baseBlobRef.current, target);
+      baseBlobRef.current = blob;
+      setSeconds(Math.round(exact));
+      if (videoRef.current) videoRef.current.currentTime = target;
+    } catch (err) {
+      console.error(err);
+      toast.error(t("record.cutFailed"));
+    }
+    // Always punch back in after a confirmed cut — that's the point of the gesture.
+    startOrResume();
+  };
+
+  const formatTime = (s: number) => {
+    const m = String(Math.floor(s / 60)).padStart(2, "0");
+    const ss = String(Math.floor(s % 60)).padStart(2, "0");
+    return `${m}:${ss}`;
+  };
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
 
@@ -308,6 +501,19 @@ function RecordPage() {
               </span>
             )}
 
+            <button
+              onClick={toggleMonitor}
+              aria-pressed={monitorEnabled}
+              aria-label={monitorEnabled ? t("record.monitorOff") : t("record.monitorOn")}
+              title={monitorEnabled ? t("record.monitorOff") : t("record.monitorOn")}
+              className={`absolute right-3 top-3 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold backdrop-blur-sm transition-colors ${
+                monitorEnabled ? "gradient-neon text-white" : "bg-black/60 text-white/70"
+              }`}
+            >
+              <Headphones className="h-3.5 w-3.5" />
+              {monitorEnabled && t("record.monitorOn")}
+            </button>
+
             <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-3 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pb-3 pt-8">
               <div className="pointer-events-auto flex items-center gap-3">
                 {phase === "paused" ? (
@@ -375,23 +581,35 @@ function RecordPage() {
               </div>
             )}
 
-            <div
-              className={`flex items-center justify-between text-[11px] text-muted-foreground ${selectedTrack ? "mt-3" : ""}`}
-            >
-              <span>00:00</span>
-              <span className="flex items-center gap-1.5">
-                {finishMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
-                {finishMutation.isPending
-                  ? t("record.processing")
-                  : phase === "recording"
-                    ? t("record.rec")
-                    : phase === "paused"
-                      ? t("record.paused")
-                      : t("record.idle")}{" "}
-                {mm}:{ss}
-              </span>
-              <span>—</span>
-            </div>
+            {(phase === "recording" || phase === "paused") && seconds > 0 ? (
+              <div className={selectedTrack ? "mt-3" : ""}>
+                <ScrubBar
+                  totalSeconds={seconds}
+                  previewSeconds={previewSeconds}
+                  onDragStart={handleScrubStart}
+                  onDragMove={handleScrubMove}
+                  onDragEnd={handleScrubEnd}
+                />
+                <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span>{t("record.scrubHint")}</span>
+                  <span className="flex items-center gap-1.5">
+                    {phase === "recording" ? t("record.rec") : t("record.paused")}{" "}
+                    {formatTime(previewSeconds ?? seconds)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div
+                className={`flex items-center justify-between text-[11px] text-muted-foreground ${selectedTrack ? "mt-3" : ""}`}
+              >
+                <span>00:00</span>
+                <span className="flex items-center gap-1.5">
+                  {finishMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {finishMutation.isPending ? t("record.processing") : t("record.idle")} {mm}:{ss}
+                </span>
+                <span>—</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -409,7 +627,103 @@ function RecordPage() {
           toast.info(t("record.headphonesHint"));
         }}
       />
+
+      <AlertDialog open={cutConfirm != null} onOpenChange={(open) => !open && cancelCut()}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("record.cutConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("record.cutConfirmBody", { time: formatTime(cutConfirm ?? 0) })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button variant="outline" onClick={cancelCut}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="destructive" onClick={confirmCut}>
+              {t("record.cutConfirmAction")}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppShell>
+  );
+}
+
+/**
+ * Horizontal timeline scrubber for rewinding into an already-recorded take. Always rendered LTR
+ * regardless of the app's language direction — audio timelines read left(start)→right(now) the
+ * same way voice-message scrubbers do in RTL apps, so the drag gesture stays predictable instead
+ * of flipping meaning with the UI language. Dragging left of "now" previews an earlier point (the
+ * region between the preview and "now" is highlighted as what would be deleted); releasing there
+ * hands the target back to the caller, which decides whether that's a real rewind worth
+ * confirming.
+ */
+function ScrubBar({
+  totalSeconds,
+  previewSeconds,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+}: {
+  totalSeconds: number;
+  previewSeconds: number | null;
+  onDragStart: () => void;
+  onDragMove: (seconds: number) => void;
+  onDragEnd: (seconds: number) => void;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+
+  const seekFromClientX = (clientX: number) => {
+    const el = trackRef.current;
+    if (!el || totalSeconds <= 0) return totalSeconds;
+    const rect = el.getBoundingClientRect();
+    const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return Math.round(fraction * totalSeconds);
+  };
+
+  const position = previewSeconds ?? totalSeconds;
+  const fraction = totalSeconds > 0 ? position / totalSeconds : 1;
+
+  return (
+    <div
+      ref={trackRef}
+      dir="ltr"
+      onPointerDown={(e) => {
+        if (totalSeconds < 1) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        draggingRef.current = true;
+        onDragStart();
+        onDragMove(seekFromClientX(e.clientX));
+      }}
+      onPointerMove={(e) => {
+        if (!draggingRef.current) return;
+        onDragMove(seekFromClientX(e.clientX));
+      }}
+      onPointerUp={(e) => {
+        if (!draggingRef.current) return;
+        draggingRef.current = false;
+        onDragEnd(seekFromClientX(e.clientX));
+      }}
+      className="relative h-6 w-full touch-none select-none"
+    >
+      <div className="absolute inset-y-1/2 left-0 right-0 h-1.5 -translate-y-1/2 rounded-full bg-muted/50" />
+      <div
+        className="absolute inset-y-1/2 left-0 h-1.5 -translate-y-1/2 rounded-full bg-primary/70"
+        style={{ width: `${fraction * 100}%` }}
+      />
+      {previewSeconds != null && (
+        <div
+          className="absolute inset-y-1/2 h-1.5 -translate-y-1/2 rounded-full bg-destructive/60"
+          style={{ left: `${fraction * 100}%`, right: 0 }}
+        />
+      )}
+      <div
+        className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary shadow"
+        style={{ left: `${fraction * 100}%` }}
+      />
+    </div>
   );
 }
 
