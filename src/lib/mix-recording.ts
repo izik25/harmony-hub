@@ -20,6 +20,37 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+type SignalProfile = {
+  noiseFloorDb: number;
+  vocalLevelDb: number;
+};
+
+/**
+ * Measures this specific take's actual noise floor and typical singing level from real
+ * short-window RMS data, instead of assuming every recording behaves the same. The gate's
+ * threshold and the auto-leveling gain below are both derived from these numbers, so a quiet
+ * room and a noisy one — or a soft singer and a loud one — each get treated for what they
+ * actually are rather than run through one fixed setting regardless of content.
+ */
+function analyzeSignal(buffer: AudioBuffer): SignalProfile {
+  const data = buffer.getChannelData(0);
+  const windowSize = Math.max(1, Math.floor(buffer.sampleRate * 0.02)); // 20ms windows
+  const windowDb: number[] = [];
+  for (let i = 0; i < data.length; i += windowSize) {
+    const end = Math.min(data.length, i + windowSize);
+    let sumSquares = 0;
+    for (let j = i; j < end; j++) sumSquares += data[j] * data[j];
+    const rms = Math.sqrt(sumSquares / (end - i));
+    windowDb.push(rms > 0 ? 20 * Math.log10(rms) : -100);
+  }
+  windowDb.sort((a, b) => a - b);
+  const percentile = (p: number) => windowDb[Math.floor(p * (windowDb.length - 1))] ?? -100;
+  return {
+    noiseFloorDb: percentile(0.1), // quietest tenth of the take — the room/hiss floor between phrases
+    vocalLevelDb: percentile(0.85), // near the loud end without being skewed by rare transient peaks
+  };
+}
+
 /**
  * Attenuates (not silences — a hard cut sounds choppier than a gentle dip) whatever's below the
  * threshold, with a short attack and a slower release so it doesn't chop the tails off words.
@@ -30,7 +61,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
  */
 function applyNoiseGate(
   buffer: AudioBuffer,
-  thresholdDb = -42,
+  thresholdDb: number,
   attackMs = 4,
   releaseMs = 180,
   floorGain = 0.12,
@@ -62,13 +93,16 @@ function applyNoiseGate(
 
 /**
  * Turns a raw mic recording into a clean, studio-style take instead of the thin, boxy, dead-dry
- * sound of a phone voice memo: noise gate, rumble cut, warmth + presence EQ, a de-harshing
- * high-shelf, compression + makeup gain, a touch of room reverb, and a final limiter — then, if
- * a karaoke backing track was used, blends it in underneath. This runs entirely offline
- * (OfflineAudioContext), rendering sample-accurately from decoded buffers rather than mixing two
- * live streams in real time. Live mixing of independently-clocked sources (mic + a playing
- * <video>) is exactly what produces audible clicks/glitches at buffer boundaries; rendering
- * offline from fixed buffers has none of that — the result is deterministic and glitch-free.
+ * sound of a phone voice memo: analyzes the actual take first (analyzeSignal) so the noise gate's
+ * threshold and the auto-leveling gain both reflect what's really in this specific recording
+ * rather than one fixed setting applied to everything, then runs noise gate, rumble cut, warmth +
+ * presence EQ, a de-harshing high-shelf, compression + makeup gain, a touch of room reverb, and a
+ * final limiter — then, if a karaoke backing track was used, blends it in underneath. This runs
+ * entirely offline (OfflineAudioContext), rendering sample-accurately from decoded buffers rather
+ * than mixing two live streams in real time. Live mixing of independently-clocked sources (mic +
+ * a playing <video>) is exactly what produces audible clicks/glitches at buffer boundaries;
+ * rendering offline from fixed buffers has none of that — the result is deterministic and
+ * glitch-free.
  *
  * The backing-track fetch and the render itself are both time-boxed: a stalled network request
  * or a stuck render would otherwise leave the caller waiting forever with nothing to fall back
@@ -111,7 +145,18 @@ export async function processRecording(
     await decodeCtx.close();
   }
 
-  applyNoiseGate(micBuffer);
+  // Analyze this take before touching it — the gate threshold and the auto-leveling gain below
+  // both come from what's actually in the recording, not a fixed guess.
+  const profile = analyzeSignal(micBuffer);
+  const gateThresholdDb = Math.min(-25, Math.max(-55, profile.noiseFloorDb + 8));
+  applyNoiseGate(micBuffer, gateThresholdDb);
+
+  // Levels the take toward the compressor's own threshold before the caller's vocalGain
+  // multiplier goes on top, so a naturally soft take and a naturally hot one both land in the
+  // same ballpark instead of the same fixed multiplier under- or over-driving one of them.
+  const targetVocalDb = -20;
+  const autoGainDb = Math.min(12, Math.max(-6, targetVocalDb - profile.vocalLevelDb));
+  const autoGainLinear = 10 ** (autoGainDb / 20);
 
   const sampleRate = micBuffer.sampleRate;
   const duration = micBuffer.duration;
@@ -133,6 +178,12 @@ export async function processRecording(
   const highpass = offlineCtx.createBiquadFilter();
   highpass.type = "highpass";
   highpass.frequency.value = 100; // cuts rumble/hum without touching the voice
+
+  // Take-specific auto-leveling from analyzeSignal above — runs before the EQ/compressor so the
+  // rest of the chain always sees a consistently-leveled signal regardless of how hot or quiet
+  // the raw capture came in.
+  const autoGain = offlineCtx.createGain();
+  autoGain.gain.value = autoGainLinear;
 
   // A phone mic recording on its own is thin and boxy — no low end, no space — which is exactly
   // what makes it read as "a voice message" instead of a vocal take. warmth adds a little body
@@ -183,6 +234,7 @@ export async function processRecording(
 
   micSource
     .connect(highpass)
+    .connect(autoGain)
     .connect(warmth)
     .connect(presence)
     .connect(airRolloff)

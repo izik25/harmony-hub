@@ -41,12 +41,45 @@ const DEFAULT_BACKING_GAIN = 0.75;
 // backing track and isn't right at the edge of feedback if headphones seal imperfectly.
 const MONITOR_GAIN = 0.8;
 
+// Legacy Chromium-only constraint names ("goog*") aren't in the standard MediaTrackConstraints
+// type, but are still honored today and are the only way to reach past the conservative default
+// AEC/NS tuning the plain boolean flags below ask for — AEC3 specifically, plus a second-stage
+// noise suppressor and a capture-side highpass to cut room rumble before it ever hits the gate in
+// mix-recording.ts.
+type ChromeAudioConstraints = MediaTrackConstraints & {
+  googEchoCancellation?: boolean;
+  googEchoCancellation2?: boolean;
+  googAutoGainControl?: boolean;
+  googAutoGainControl2?: boolean;
+  googNoiseSuppression?: boolean;
+  googNoiseSuppression2?: boolean;
+  googHighpassFilter?: boolean;
+  googTypingNoiseDetection?: boolean;
+};
+
+const MIC_CONSTRAINTS: ChromeAudioConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  sampleRate: { ideal: 48000 },
+  channelCount: { exact: 1 },
+  googEchoCancellation: true,
+  googEchoCancellation2: true,
+  googAutoGainControl: true,
+  googAutoGainControl2: true,
+  googNoiseSuppression: true,
+  googNoiseSuppression2: true,
+  googHighpassFilter: true,
+  googTypingNoiseDetection: true,
+};
+
 function useMicLevels(active: boolean, monitor: boolean) {
   const [levels, setLevels] = useState<number[]>(() => Array(BAR_COUNT).fill(6));
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const monitorGainRef = useRef<GainNode | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
+  const monitorAudioElRef = useRef<HTMLAudioElement | null>(null);
   const rafRef = useRef<number>(0);
 
   useEffect(() => {
@@ -55,15 +88,7 @@ function useMicLevels(active: boolean, monitor: boolean) {
     let cancelled = false;
 
     navigator.mediaDevices
-      .getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: { ideal: 48000 },
-          channelCount: { ideal: 1 },
-        },
-      })
+      .getUserMedia({ audio: MIC_CONSTRAINTS })
       .then((stream) => {
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
@@ -74,9 +99,9 @@ function useMicLevels(active: boolean, monitor: boolean) {
         ctxRef.current = ctx;
         // Chrome's autoplay policy can leave a freshly-created AudioContext "suspended" if the
         // mic permission prompt ate up the page's transient user-activation window (first-time
-        // grants especially) — when that happens every node in the graph goes silent, including
-        // the monitor tap below, with no visible sign anything's wrong. Resuming explicitly is
-        // the standard fix and a harmless no-op if the context was already running.
+        // grants especially) — when that happens every node in the graph goes silent, with no
+        // visible sign anything's wrong. Resuming explicitly is the standard fix and a harmless
+        // no-op if the context was already running.
         ctx.resume().catch(() => {});
         const source = ctx.createMediaStreamSource(stream);
         const analyser = ctx.createAnalyser();
@@ -84,15 +109,30 @@ function useMicLevels(active: boolean, monitor: boolean) {
         source.connect(analyser);
         analyserRef.current = analyser;
 
-        // Live monitor tap: routes the mic straight to the output (headphones) so you can hear
-        // yourself over the backing track while recording, like a studio cue mix. This is a
-        // separate node off the same source — it never touches what MediaRecorder captures, so
-        // it can be toggled live without affecting the take being recorded.
+        // Live monitor tap: routes the mic to the output so you can hear yourself over the
+        // backing track while recording, like a studio cue mix. This is a separate node off the
+        // same source — it never touches what MediaRecorder captures, so it can be toggled live
+        // without affecting the take being recorded.
+        //
+        // It's routed through a real <audio> element instead of straight to ctx.destination.
+        // Requesting a mic with echoCancellation flags this AudioContext to Windows/Chrome as a
+        // "communications" audio session, which some setups route to the OS's default
+        // *communications* device — independent from, and sometimes silent on, the default
+        // *media* device the karaoke <video> plays through. A plain HTMLMediaElement always
+        // follows the normal media route, the same one the backing track already uses
+        // successfully, so bouncing the monitor signal through one sidesteps that split entirely.
         const monitorGain = ctx.createGain();
         monitorGain.gain.value = monitor ? MONITOR_GAIN : 0;
         source.connect(monitorGain);
-        monitorGain.connect(ctx.destination);
+        const monitorDestination = ctx.createMediaStreamDestination();
+        monitorGain.connect(monitorDestination);
         monitorGainRef.current = monitorGain;
+
+        const monitorAudioEl = new Audio();
+        monitorAudioEl.srcObject = monitorDestination.stream;
+        monitorAudioEl.autoplay = true;
+        monitorAudioEl.play().catch(() => {});
+        monitorAudioElRef.current = monitorAudioEl;
 
         const data = new Uint8Array(analyser.frequencyBinCount);
         const tick = () => {
@@ -116,6 +156,11 @@ function useMicLevels(active: boolean, monitor: boolean) {
       monitorGainRef.current = null;
       ctxRef.current = null;
       ctx?.close();
+      if (monitorAudioElRef.current) {
+        monitorAudioElRef.current.pause();
+        monitorAudioElRef.current.srcObject = null;
+        monitorAudioElRef.current = null;
+      }
       setLevels(Array(BAR_COUNT).fill(6));
     };
     // monitor intentionally excluded: this effect opens the mic stream/AudioContext, which we
@@ -130,7 +175,10 @@ function useMicLevels(active: boolean, monitor: boolean) {
   // inactive-tab or long-idle AudioContext on their own, and flipping the toggle back on is the
   // moment the user expects to actually hear themselves again.
   useEffect(() => {
-    if (monitor) ctxRef.current?.resume().catch(() => {});
+    if (monitor) {
+      ctxRef.current?.resume().catch(() => {});
+      monitorAudioElRef.current?.play().catch(() => {});
+    }
     if (monitorGainRef.current) {
       monitorGainRef.current.gain.value = monitor ? MONITOR_GAIN : 0;
     }
