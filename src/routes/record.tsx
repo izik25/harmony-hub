@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Mic, Music2, Search, X, Check, Pause, Loader2, Headphones } from "lucide-react";
+import { Mic, Music2, Search, X, Check, Pause, Loader2, Headphones, Scissors } from "lucide-react";
 import i18n, { translateServerError } from "@/lib/i18n";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
@@ -46,6 +46,7 @@ function useMicLevels(active: boolean, monitor: boolean) {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const monitorGainRef = useRef<GainNode | null>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number>(0);
 
   useEffect(() => {
@@ -70,6 +71,13 @@ function useMicLevels(active: boolean, monitor: boolean) {
         }
         streamRef.current = stream;
         ctx = new AudioContext();
+        ctxRef.current = ctx;
+        // Chrome's autoplay policy can leave a freshly-created AudioContext "suspended" if the
+        // mic permission prompt ate up the page's transient user-activation window (first-time
+        // grants especially) — when that happens every node in the graph goes silent, including
+        // the monitor tap below, with no visible sign anything's wrong. Resuming explicitly is
+        // the standard fix and a harmless no-op if the context was already running.
+        ctx.resume().catch(() => {});
         const source = ctx.createMediaStreamSource(stream);
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 128;
@@ -106,6 +114,7 @@ function useMicLevels(active: boolean, monitor: boolean) {
       cancelAnimationFrame(rafRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
       monitorGainRef.current = null;
+      ctxRef.current = null;
       ctx?.close();
       setLevels(Array(BAR_COUNT).fill(6));
     };
@@ -117,14 +126,33 @@ function useMicLevels(active: boolean, monitor: boolean) {
   }, [active]);
 
   // Toggling monitoring shouldn't tear down and reopen the mic stream — just ride the gain
-  // node up or down live.
+  // node up or down live. Also re-resumes the context on the way up: some browsers suspend an
+  // inactive-tab or long-idle AudioContext on their own, and flipping the toggle back on is the
+  // moment the user expects to actually hear themselves again.
   useEffect(() => {
+    if (monitor) ctxRef.current?.resume().catch(() => {});
     if (monitorGainRef.current) {
       monitorGainRef.current.gain.value = monitor ? MONITOR_GAIN : 0;
     }
   }, [monitor]);
 
   return { levels, stream: streamRef };
+}
+
+function formatTime(s: number) {
+  const m = String(Math.floor(s / 60)).padStart(2, "0");
+  const ss = String(Math.floor(s % 60)).padStart(2, "0");
+  return `${m}:${ss}`;
+}
+
+// Spaces the scrub bar's time markers so a short freestyle take and a five-minute one both end up
+// with a readable handful of ticks instead of either one bare line or an illegible comb.
+function pickTickInterval(totalSeconds: number): number {
+  if (totalSeconds <= 15) return 2;
+  if (totalSeconds <= 40) return 5;
+  if (totalSeconds <= 90) return 10;
+  if (totalSeconds <= 240) return 30;
+  return 60;
 }
 
 type Phase = "idle" | "recording" | "paused" | "finished";
@@ -380,13 +408,20 @@ function RecordPage() {
     }
   };
 
-  const handleScrubMove = (value: number) => setPreviewSeconds(value);
+  const handleScrubMove = (value: number) => {
+    setPreviewSeconds(value);
+    // Scrubs the karaoke video/lyrics along with the drag — seeing exactly what was on screen at
+    // the point you're dragging to is a much clearer reference than a bare number.
+    if (videoRef.current) videoRef.current.currentTime = value;
+  };
 
   const handleScrubEnd = async (value: number) => {
     setPreviewSeconds(null);
     await checkpointPromiseRef.current;
     if (value >= seconds) {
-      // No real rewind — a tap, or released right back where it started.
+      // No real rewind — a tap, or released right back where it started. Snap the video back to
+      // "now" in case the drag scrubbed it away from that.
+      if (videoRef.current) videoRef.current.currentTime = seconds;
       resumeIfWasRecording();
       return;
     }
@@ -395,6 +430,7 @@ function RecordPage() {
 
   const cancelCut = () => {
     setCutConfirm(null);
+    if (videoRef.current) videoRef.current.currentTime = seconds;
     resumeIfWasRecording();
   };
 
@@ -418,11 +454,6 @@ function RecordPage() {
     startOrResume();
   };
 
-  const formatTime = (s: number) => {
-    const m = String(Math.floor(s / 60)).padStart(2, "0");
-    const ss = String(Math.floor(s % 60)).padStart(2, "0");
-    return `${m}:${ss}`;
-  };
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
 
@@ -685,44 +716,110 @@ function ScrubBar({
 
   const position = previewSeconds ?? totalSeconds;
   const fraction = totalSeconds > 0 ? position / totalSeconds : 1;
+  const dragging = previewSeconds != null;
+
+  const tickInterval = pickTickInterval(totalSeconds);
+  const ticks: number[] = [];
+  for (let s = 0; s <= totalSeconds; s += tickInterval) ticks.push(s);
+  if (ticks[ticks.length - 1] !== totalSeconds) ticks.push(totalSeconds);
 
   return (
-    <div
-      ref={trackRef}
-      dir="ltr"
-      onPointerDown={(e) => {
-        if (totalSeconds < 1) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        draggingRef.current = true;
-        onDragStart();
-        onDragMove(seekFromClientX(e.clientX));
-      }}
-      onPointerMove={(e) => {
-        if (!draggingRef.current) return;
-        onDragMove(seekFromClientX(e.clientX));
-      }}
-      onPointerUp={(e) => {
-        if (!draggingRef.current) return;
-        draggingRef.current = false;
-        onDragEnd(seekFromClientX(e.clientX));
-      }}
-      className="relative h-6 w-full touch-none select-none"
-    >
-      <div className="absolute inset-y-1/2 left-0 right-0 h-1.5 -translate-y-1/2 rounded-full bg-muted/50" />
+    <div dir="ltr" className="select-none">
       <div
-        className="absolute inset-y-1/2 left-0 h-1.5 -translate-y-1/2 rounded-full bg-primary/70"
-        style={{ width: `${fraction * 100}%` }}
-      />
-      {previewSeconds != null && (
+        ref={trackRef}
+        onPointerDown={(e) => {
+          if (totalSeconds < 1) return;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          draggingRef.current = true;
+          onDragStart();
+          onDragMove(seekFromClientX(e.clientX));
+        }}
+        onPointerMove={(e) => {
+          if (!draggingRef.current) return;
+          onDragMove(seekFromClientX(e.clientX));
+        }}
+        onPointerUp={(e) => {
+          if (!draggingRef.current) return;
+          draggingRef.current = false;
+          onDragEnd(seekFromClientX(e.clientX));
+        }}
+        className="relative h-8 w-full touch-none"
+      >
+        {/* Floating readout above the drag point — the exact time being previewed, plus a
+            scissors cue so the gesture reads as "cut here" rather than an ordinary seek. */}
+        {dragging && (
+          <div
+            className="pointer-events-none absolute -top-8 flex -translate-x-1/2 items-center gap-1 whitespace-nowrap rounded-md bg-destructive px-2 py-1 text-[11px] font-bold text-destructive-foreground shadow-lg"
+            style={{ left: `${Math.min(92, Math.max(8, fraction * 100))}%` }}
+          >
+            <Scissors className="h-3 w-3" />
+            {formatTime(position)}
+          </div>
+        )}
+
+        {/* Fixed time markers along the take, so a drag position always reads against real
+            elapsed time instead of a bare, unlabeled bar. */}
+        {ticks.map((s) => (
+          <div
+            key={s}
+            className="absolute top-0 h-1.5 w-px bg-muted-foreground/40"
+            style={{ left: `${(s / totalSeconds) * 100}%` }}
+          />
+        ))}
+
+        <div className="absolute inset-x-0 top-3 h-1.5 rounded-full bg-muted/50" />
         <div
-          className="absolute inset-y-1/2 h-1.5 -translate-y-1/2 rounded-full bg-destructive/60"
-          style={{ left: `${fraction * 100}%`, right: 0 }}
+          className="absolute top-3 h-1.5 rounded-full bg-primary/70"
+          style={{ left: 0, width: `${fraction * 100}%` }}
         />
-      )}
-      <div
-        className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary shadow"
-        style={{ left: `${fraction * 100}%` }}
-      />
+        {dragging && (
+          <div
+            className="absolute top-3 h-1.5 overflow-hidden rounded-r-full bg-destructive/25"
+            style={{ left: `${fraction * 100}%`, right: 0 }}
+          >
+            <div
+              className="h-full w-full opacity-70"
+              style={{
+                backgroundImage:
+                  "repeating-linear-gradient(-45deg, var(--destructive) 0 3px, transparent 3px 6px)",
+              }}
+            />
+          </div>
+        )}
+
+        <div
+          className="absolute top-3 h-4 w-4 -translate-x-1/2 -translate-y-1/4 rounded-full border-2 border-white bg-primary shadow"
+          style={{ left: `${fraction * 100}%` }}
+        />
+      </div>
+
+      <div className="relative h-3.5 text-[9px] text-muted-foreground">
+        {ticks.map((s, i) => {
+          // The first/last labels pin to the track's own edges (0% / 100% by definition) rather
+          // than center-anchoring on a computed percentage, so they never clip outside the bar.
+          if (i === 0)
+            return (
+              <span key={s} className="absolute left-0">
+                {formatTime(s)}
+              </span>
+            );
+          if (i === ticks.length - 1)
+            return (
+              <span key={s} className="absolute right-0">
+                {formatTime(s)}
+              </span>
+            );
+          return (
+            <span
+              key={s}
+              className="absolute -translate-x-1/2"
+              style={{ left: `${(s / totalSeconds) * 100}%` }}
+            >
+              {formatTime(s)}
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }
