@@ -1,5 +1,4 @@
 import { audioBufferToWavBlob } from "./wav-encoder";
-import { generateImpulseResponse } from "./impulse-response";
 
 const FETCH_TIMEOUT_MS = 10_000;
 const RENDER_TIMEOUT_MS = 20_000;
@@ -122,13 +121,14 @@ function applyNoiseGate(
  * sound of a phone voice memo: analyzes the actual take first (analyzeSignal) so the noise gate's
  * threshold and the auto-leveling gain both reflect what's really in this specific recording
  * rather than one fixed setting applied to everything, then runs noise gate, rumble cut, warmth +
- * presence EQ, a de-harshing high-shelf, compression + makeup gain, a touch of room reverb, and a
- * final limiter — then, if a karaoke backing track was used, blends it in underneath. This runs
- * entirely offline (OfflineAudioContext), rendering sample-accurately from decoded buffers rather
- * than mixing two live streams in real time. Live mixing of independently-clocked sources (mic +
- * a playing <video>) is exactly what produces audible clicks/glitches at buffer boundaries;
- * rendering offline from fixed buffers has none of that — the result is deterministic and
- * glitch-free.
+ * presence EQ, a de-harshing high-shelf, compression + makeup gain, and a final limiter — then, if
+ * a karaoke backing track was used, blends it in underneath. Deliberately no reverb/room send —
+ * even a light one reads as an audible echo on a dry phone recording; Studio has a manual reverb
+ * slider for anyone who wants to add some on purpose. This runs entirely offline
+ * (OfflineAudioContext), rendering sample-accurately from decoded buffers rather than mixing two
+ * live streams in real time. Live mixing of independently-clocked sources (mic + a playing
+ * <video>) is exactly what produces audible clicks/glitches at buffer boundaries; rendering
+ * offline from fixed buffers has none of that — the result is deterministic and glitch-free.
  *
  * The backing-track fetch and the render itself are both time-boxed: a stalled network request
  * or a stuck render would otherwise leave the caller waiting forever with nothing to fall back
@@ -253,15 +253,9 @@ export async function processRecording(
   limiter.release.value = 0.1;
   limiter.connect(offlineCtx.destination);
 
-  // Short, subtle room send on the vocal only — enough to feel produced, not an audible echo. A
-  // longer/louder send than this reads as slapback on anything with clear consonants, which is
-  // exactly the "echo-y" complaint a heavier send produces.
-  const reverbSend = offlineCtx.createGain();
-  reverbSend.gain.value = 0.07;
-  const convolver = offlineCtx.createConvolver();
-  convolver.buffer = generateImpulseResponse(offlineCtx, 0.55, 4);
-  convolver.normalize = true;
-
+  // No reverb/room send on the automatic pass — even a light one reads as an audible echo on a
+  // dry, close-mic'd phone take, which is exactly what repeated feedback on this flagged. Studio
+  // still has a manual reverb slider for anyone who wants to add some deliberately.
   micSource
     .connect(highpass)
     .connect(autoGain)
@@ -271,7 +265,6 @@ export async function processRecording(
     .connect(compressor)
     .connect(makeupGain);
   makeupGain.connect(limiter);
-  makeupGain.connect(reverbSend).connect(convolver).connect(limiter);
   micSource.start(0);
 
   if (backingBuffer) {

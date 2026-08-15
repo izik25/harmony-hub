@@ -77,8 +77,6 @@ function useMicLevels(active: boolean, monitor: boolean) {
   const [levels, setLevels] = useState<number[]>(() => Array(BAR_COUNT).fill(6));
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const monitorGainRef = useRef<GainNode | null>(null);
-  const ctxRef = useRef<AudioContext | null>(null);
   const monitorAudioElRef = useRef<HTMLAudioElement | null>(null);
   const rafRef = useRef<number>(0);
 
@@ -95,57 +93,39 @@ function useMicLevels(active: boolean, monitor: boolean) {
           return;
         }
         streamRef.current = stream;
-        ctx = new AudioContext();
-        ctxRef.current = ctx;
-        // Chrome's autoplay policy can leave a freshly-created AudioContext "suspended" if the
-        // mic permission prompt ate up the page's transient user-activation window (first-time
-        // grants especially) — when that happens every node in the graph goes silent, with no
-        // visible sign anything's wrong. Resuming explicitly is the standard fix and a harmless
-        // no-op if the context was already running.
-        ctx.resume().catch(() => {});
-        const source = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 128;
-        source.connect(analyser);
-        analyserRef.current = analyser;
 
-        // Live monitor tap: routes the mic to the output so you can hear yourself over the
-        // backing track while recording, like a studio cue mix. This is a separate node off the
-        // same source — it never touches what MediaRecorder captures, so it can be toggled live
-        // without affecting the take being recorded.
-        //
-        // It's routed through a real <audio> element instead of straight to ctx.destination.
-        // Requesting a mic with echoCancellation flags this AudioContext to Windows/Chrome as a
-        // "communications" audio session, which some setups route to the OS's default
-        // *communications* device — independent from, and sometimes silent on, the default
-        // *media* device the karaoke <video> plays through. A plain HTMLMediaElement always
-        // follows the normal media route, the same one the backing track already uses
-        // successfully, so bouncing the monitor signal through one sidesteps that split entirely.
-        const monitorGain = ctx.createGain();
-        monitorGain.gain.value = monitor ? MONITOR_GAIN : 0;
-        source.connect(monitorGain);
-        const monitorDestination = ctx.createMediaStreamDestination();
-        monitorGain.connect(monitorDestination);
-        monitorGainRef.current = monitorGain;
-
-        // Some browsers only reliably route/play a srcObject stream through a media element
-        // that's actually attached to the document — an element built with `new Audio()` and
-        // never inserted can silently produce no output despite `.play()` resolving normally.
-        // Hidden (not display:none, which some browsers also treat as "not rendering, don't
-        // play") off-screen instead.
+        // Live monitor: plays the raw mic stream straight through a hidden <audio> element —
+        // deliberately NOT routed through any Web Audio graph. An earlier version ran it through
+        // this AudioContext (createMediaStreamDestination → another audio element), which
+        // depends on the context actually being in the "running" state; if it's suspended for
+        // any reason — and calling .resume() is a request, not a guarantee it takes — the whole
+        // route goes silent with no visible sign anything's wrong. A MediaStream played directly
+        // by a plain <audio> element has no such dependency: it's the exact same mechanism the
+        // karaoke <video> already uses to play its own audio successfully, just with the mic's
+        // stream instead. Volume is controlled with the element's own .volume, not a gain node.
         const monitorAudioEl = document.createElement("audio");
         monitorAudioEl.autoplay = true;
-        monitorAudioEl.muted = false;
-        monitorAudioEl.volume = 1;
+        monitorAudioEl.muted = !monitor;
+        monitorAudioEl.volume = MONITOR_GAIN;
         monitorAudioEl.style.position = "fixed";
         monitorAudioEl.style.width = "0";
         monitorAudioEl.style.height = "0";
         monitorAudioEl.style.opacity = "0";
         monitorAudioEl.style.pointerEvents = "none";
         document.body.appendChild(monitorAudioEl);
-        monitorAudioEl.srcObject = monitorDestination.stream;
+        monitorAudioEl.srcObject = stream;
         monitorAudioEl.play().catch(() => {});
         monitorAudioElRef.current = monitorAudioEl;
+
+        // The level-meter analyser is a separate, independent tap off the same stream — its own
+        // AudioContext, only used for the visualizer, never in the monitor's audio path above.
+        ctx = new AudioContext();
+        ctx.resume().catch(() => {});
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 128;
+        source.connect(analyser);
+        analyserRef.current = analyser;
 
         const data = new Uint8Array(analyser.frequencyBinCount);
         const tick = () => {
@@ -166,8 +146,6 @@ function useMicLevels(active: boolean, monitor: boolean) {
       cancelled = true;
       cancelAnimationFrame(rafRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
-      monitorGainRef.current = null;
-      ctxRef.current = null;
       ctx?.close();
       if (monitorAudioElRef.current) {
         monitorAudioElRef.current.pause();
@@ -177,25 +155,21 @@ function useMicLevels(active: boolean, monitor: boolean) {
       }
       setLevels(Array(BAR_COUNT).fill(6));
     };
-    // monitor intentionally excluded: this effect opens the mic stream/AudioContext, which we
-    // don't want to tear down and recreate (audible glitch) every time the toggle flips — the
-    // separate effect below rides the gain node instead, using the initial value here only to
-    // seed it correctly for whatever the toggle's state was when the stream opened.
+    // monitor intentionally excluded: this effect opens the mic stream, which we don't want to
+    // tear down and reopen (audible glitch, re-prompts permission on some setups) every time the
+    // toggle flips — the separate effect below rides the audio element's mute state instead,
+    // using the initial value here only to seed it correctly for whatever the toggle's state was
+    // when the stream opened.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
-  // Toggling monitoring shouldn't tear down and reopen the mic stream — just ride the gain
-  // node up or down live. Also re-resumes the context on the way up: some browsers suspend an
-  // inactive-tab or long-idle AudioContext on their own, and flipping the toggle back on is the
-  // moment the user expects to actually hear themselves again.
+  // Toggling monitoring shouldn't tear down and reopen the mic stream — just flip the existing
+  // element's mute state live, and nudge playback in case the browser had paused it.
   useEffect(() => {
-    if (monitor) {
-      ctxRef.current?.resume().catch(() => {});
-      monitorAudioElRef.current?.play().catch(() => {});
-    }
-    if (monitorGainRef.current) {
-      monitorGainRef.current.gain.value = monitor ? MONITOR_GAIN : 0;
-    }
+    const el = monitorAudioElRef.current;
+    if (!el) return;
+    el.muted = !monitor;
+    if (monitor) el.play().catch(() => {});
   }, [monitor]);
 
   return { levels, stream: streamRef };
