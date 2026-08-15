@@ -9,7 +9,7 @@ import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { getDraft, updateDraftAudio } from "@/functions/posts";
 import { smartUploadMedia } from "@/lib/blob-upload";
-import { processRecording } from "@/lib/mix-recording";
+import { processRecording, analyzeSignal } from "@/lib/mix-recording";
 import { audioBufferToWavBlob } from "@/lib/wav-encoder";
 import { generateImpulseResponse } from "@/lib/impulse-response";
 import { translateServerError } from "@/lib/i18n";
@@ -316,17 +316,41 @@ function StudioPage() {
     setE(60);
     toast.success(t("studio.enhanceApplied"));
   };
-  // The one-tap "get me as close to a finished studio vocal as possible" preset — touches every
-  // knob that matters (autotune, noise/rumble cleanup, room reverb, EQ, compression) instead of
-  // just EQ/compression/reverb, so it's a real starting point rather than a partial polish. It
-  // writes into the same state the manual sliders below read from, so they immediately reflect
-  // what it did and you can keep nudging from there instead of starting over.
+  // The one-tap "get me as close to a finished studio vocal as possible" preset. Rather than
+  // writing the same fixed numbers into every take, it runs analyzeSignal (mix-recording.ts) on
+  // whatever's actually loaded — this take's own noise floor, dynamic range, and rough tonal
+  // brightness — and derives the highpass/compression/EQ/reverb knobs from that, so a noisy room
+  // and a clean one, or a dull-sounding take and a bright one, come out tuned differently instead
+  // of identically. Writes into the same state the manual sliders below read from, so they
+  // immediately reflect what it did and you can keep nudging from there instead of starting over.
   const applyMaster = () => {
-    setA(65);
-    setN(55);
-    setR(25);
-    setE(58);
-    setC(72);
+    const buffer = chainRef.current?.player.buffer.get();
+    if (!buffer) {
+      toast.error(t("studio.loadTrackFirst"));
+      return;
+    }
+    const { noiseFloorDb, vocalLevelDb, brightness } = analyzeSignal(buffer);
+    const clamp = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)));
+
+    // Noisier room (higher noise floor) → lean harder on the highpass; an already-clean take
+    // gets to keep more of its low end.
+    const noiseAmt = clamp(((noiseFloorDb + 55) / 30) * 100, 35, 85);
+    // Wider gap between the quiet and loud parts of the performance → more compression to even
+    // it out; an already-consistent take doesn't need it pushed as hard.
+    const dynamicRangeDb = vocalLevelDb - noiseFloorDb;
+    const compAmt = clamp(((dynamicRangeDb - 12) / 23) * 100, 35, 85);
+    // Duller-sounding take gets pushed brighter; an already-bright one is left closer to flat
+    // instead of getting pushed further and turning harsh.
+    const eqAmt = clamp(70 - brightness * 90, 40, 68);
+    // A noisier/livelier room already carries its own ambience — stacking a full reverb send on
+    // top just adds more echo on top of echo, so it gets less; a clean, dry capture can take more.
+    const reverbAmt = clamp(22 - (noiseFloorDb + 55) * 0.3, 8, 22);
+
+    setA(60);
+    setN(noiseAmt);
+    setR(reverbAmt);
+    setE(eqAmt);
+    setC(compAmt);
     toast.success(t("studio.masterApplied"));
   };
 

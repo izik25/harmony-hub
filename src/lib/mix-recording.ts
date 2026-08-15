@@ -20,35 +20,61 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-type SignalProfile = {
+export type SignalProfile = {
   noiseFloorDb: number;
   vocalLevelDb: number;
+  /** Relative high-frequency energy of the take's voiced (non-noise) windows, from a simple
+   * first-difference proxy — roughly 0 (dull/muffled) to 0.5+ (bright/airy). Not a real spectral
+   * analysis, just enough signal to tell a dull take from a bright one. */
+  brightness: number;
 };
 
 /**
- * Measures this specific take's actual noise floor and typical singing level from real
- * short-window RMS data, instead of assuming every recording behaves the same. The gate's
- * threshold and the auto-leveling gain below are both derived from these numbers, so a quiet
- * room and a noisy one — or a soft singer and a loud one — each get treated for what they
- * actually are rather than run through one fixed setting regardless of content.
+ * Measures this specific take's actual noise floor, typical singing level, and rough tonal
+ * brightness from real short-window data, instead of assuming every recording behaves the same.
+ * The gate's threshold and the auto-leveling gain in processRecording, and Studio's "Auto Master"
+ * preset, are all derived from these numbers — so a quiet room and a noisy one, or a soft singer
+ * and a loud one, each get treated for what they actually are rather than run through one fixed
+ * setting regardless of content.
  */
-function analyzeSignal(buffer: AudioBuffer): SignalProfile {
+export function analyzeSignal(buffer: AudioBuffer): SignalProfile {
   const data = buffer.getChannelData(0);
   const windowSize = Math.max(1, Math.floor(buffer.sampleRate * 0.02)); // 20ms windows
   const windowDb: number[] = [];
+  const windowBrightness: number[] = [];
   for (let i = 0; i < data.length; i += windowSize) {
     const end = Math.min(data.length, i + windowSize);
     let sumSquares = 0;
-    for (let j = i; j < end; j++) sumSquares += data[j] * data[j];
+    let diffSumSquares = 0;
+    for (let j = i; j < end; j++) {
+      sumSquares += data[j] * data[j];
+      if (j > i) {
+        const d = data[j] - data[j - 1];
+        diffSumSquares += d * d;
+      }
+    }
     const rms = Math.sqrt(sumSquares / (end - i));
     windowDb.push(rms > 0 ? 20 * Math.log10(rms) : -100);
+    // A sample-to-sample difference is a crude high-pass — energy in the diff relative to energy
+    // in the raw window is a cheap stand-in for "how much high end is actually in here."
+    windowBrightness.push(sumSquares > 0 ? diffSumSquares / sumSquares : 0);
   }
-  windowDb.sort((a, b) => a - b);
-  const percentile = (p: number) => windowDb[Math.floor(p * (windowDb.length - 1))] ?? -100;
-  return {
-    noiseFloorDb: percentile(0.1), // quietest tenth of the take — the room/hiss floor between phrases
-    vocalLevelDb: percentile(0.85), // near the loud end without being skewed by rare transient peaks
-  };
+  const sortedDb = [...windowDb].sort((a, b) => a - b);
+  const percentile = (p: number) => sortedDb[Math.floor(p * (sortedDb.length - 1))] ?? -100;
+  const noiseFloorDb = percentile(0.1); // quietest tenth of the take — the room/hiss floor between phrases
+  const vocalLevelDb = percentile(0.85); // near the loud end without being skewed by rare transient peaks
+
+  // Brightness only means something on windows that are actually voice, not silence/hiss —
+  // averaging just the loud-enough ones keeps a quiet room's noise character from skewing it.
+  const activeBrightness = windowDb
+    .map((db, i) => (db >= noiseFloorDb + 6 ? windowBrightness[i] : null))
+    .filter((v): v is number => v != null);
+  const brightness =
+    activeBrightness.length > 0
+      ? activeBrightness.reduce((a, b) => a + b, 0) / activeBrightness.length
+      : 0.3;
+
+  return { noiseFloorDb, vocalLevelDb, brightness };
 }
 
 /**
@@ -188,22 +214,24 @@ export async function processRecording(
   // A phone mic recording on its own is thin and boxy — no low end, no space — which is exactly
   // what makes it read as "a voice message" instead of a vocal take. warmth adds a little body
   // back in; presence lifts clarity; the reverb send further down adds a touch of room instead
-  // of the completely dry, right-on-the-capsule sound phone mics produce.
+  // of the completely dry, right-on-the-capsule sound phone mics produce. Kept deliberately
+  // light — warmth's low-mid boost and airRolloff's high cut both read as "muffled" if pushed too
+  // far, and stack with whatever the browser's own noise suppression already darkened.
   const warmth = offlineCtx.createBiquadFilter();
   warmth.type = "lowshelf";
   warmth.frequency.value = 200;
-  warmth.gain.value = 2.5;
+  warmth.gain.value = 1.3;
 
   const presence = offlineCtx.createBiquadFilter();
   presence.type = "peaking";
   presence.frequency.value = 3000;
   presence.Q.value = 1;
-  presence.gain.value = 3; // gentle clarity/intelligibility lift, not a full EQ makeover
+  presence.gain.value = 3.5; // gentle clarity/intelligibility lift, not a full EQ makeover
 
   const airRolloff = offlineCtx.createBiquadFilter();
   airRolloff.type = "highshelf";
-  airRolloff.frequency.value = 9000;
-  airRolloff.gain.value = -3; // takes the edge off harsh phone-mic sibilance/hiss
+  airRolloff.frequency.value = 10_000;
+  airRolloff.gain.value = -1.2; // just takes the edge off sibilance, not the sparkle
 
   const compressor = offlineCtx.createDynamicsCompressor();
   compressor.threshold.value = -20;
@@ -225,11 +253,13 @@ export async function processRecording(
   limiter.release.value = 0.1;
   limiter.connect(offlineCtx.destination);
 
-  // Short, subtle room send on the vocal only — enough to feel produced, not an obvious effect.
+  // Short, subtle room send on the vocal only — enough to feel produced, not an audible echo. A
+  // longer/louder send than this reads as slapback on anything with clear consonants, which is
+  // exactly the "echo-y" complaint a heavier send produces.
   const reverbSend = offlineCtx.createGain();
-  reverbSend.gain.value = 0.16;
+  reverbSend.gain.value = 0.07;
   const convolver = offlineCtx.createConvolver();
-  convolver.buffer = generateImpulseResponse(offlineCtx, 1.1, 3.2);
+  convolver.buffer = generateImpulseResponse(offlineCtx, 0.55, 4);
   convolver.normalize = true;
 
   micSource

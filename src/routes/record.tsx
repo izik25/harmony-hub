@@ -62,7 +62,7 @@ const MIC_CONSTRAINTS: ChromeAudioConstraints = {
   noiseSuppression: true,
   autoGainControl: true,
   sampleRate: { ideal: 48000 },
-  channelCount: { exact: 1 },
+  channelCount: { ideal: 1 },
   googEchoCancellation: true,
   googEchoCancellation2: true,
   googAutoGainControl: true,
@@ -128,9 +128,22 @@ function useMicLevels(active: boolean, monitor: boolean) {
         monitorGain.connect(monitorDestination);
         monitorGainRef.current = monitorGain;
 
-        const monitorAudioEl = new Audio();
-        monitorAudioEl.srcObject = monitorDestination.stream;
+        // Some browsers only reliably route/play a srcObject stream through a media element
+        // that's actually attached to the document — an element built with `new Audio()` and
+        // never inserted can silently produce no output despite `.play()` resolving normally.
+        // Hidden (not display:none, which some browsers also treat as "not rendering, don't
+        // play") off-screen instead.
+        const monitorAudioEl = document.createElement("audio");
         monitorAudioEl.autoplay = true;
+        monitorAudioEl.muted = false;
+        monitorAudioEl.volume = 1;
+        monitorAudioEl.style.position = "fixed";
+        monitorAudioEl.style.width = "0";
+        monitorAudioEl.style.height = "0";
+        monitorAudioEl.style.opacity = "0";
+        monitorAudioEl.style.pointerEvents = "none";
+        document.body.appendChild(monitorAudioEl);
+        monitorAudioEl.srcObject = monitorDestination.stream;
         monitorAudioEl.play().catch(() => {});
         monitorAudioElRef.current = monitorAudioEl;
 
@@ -159,6 +172,7 @@ function useMicLevels(active: boolean, monitor: boolean) {
       if (monitorAudioElRef.current) {
         monitorAudioElRef.current.pause();
         monitorAudioElRef.current.srcObject = null;
+        monitorAudioElRef.current.remove();
         monitorAudioElRef.current = null;
       }
       setLevels(Array(BAR_COUNT).fill(6));
