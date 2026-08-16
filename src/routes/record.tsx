@@ -22,6 +22,7 @@ import { createDraft } from "@/functions/posts";
 import { listKaraokeTracks } from "@/functions/karaoke";
 import { processRecording } from "@/lib/mix-recording";
 import { commitCheckpoint, trimCheckpoint } from "@/lib/audio-splice";
+import { routeToHeadphonesIfAvailable } from "@/lib/audio-output";
 
 export const Route = createFileRoute("/record")({
   component: RecordPage,
@@ -172,6 +173,9 @@ function useMicLevels(active: boolean, monitor: boolean) {
         monitorStream = stream;
         audioEl.srcObject = stream;
         audioEl.play().catch(() => {});
+        // The mic getUserMedia() above (MIC_CONSTRAINTS) just granted permission, which is what
+        // makes real device labels available — safe to attempt the headphone-routing fix now.
+        routeToHeadphonesIfAvailable(audioEl);
       })
       .catch(() => {}); // monitor is optional — a failure here shouldn't interrupt recording
 
@@ -348,6 +352,10 @@ function RecordPage() {
           // a pause/scrub checkpoint should carry on from wherever it already is.
           if (!baseBlobRef.current) videoRef.current.currentTime = 0;
           videoRef.current.play().catch(() => {});
+          // The mic stream just became ready, meaning getUserMedia (with echoCancellation) just
+          // granted permission — Android may have switched to voice-call routing as a result, so
+          // (re-)pin playback to a connected headset if one's available.
+          routeToHeadphonesIfAvailable(videoRef.current);
         }
         // Explicit bitrate — MediaRecorder's default Opus encoding is conservative enough that
         // the raw capture itself can come out sounding thin/"voice memo"-like before any
