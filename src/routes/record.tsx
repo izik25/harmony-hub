@@ -73,6 +73,20 @@ const MIC_CONSTRAINTS: ChromeAudioConstraints = {
   googTypingNoiseDetection: true,
 };
 
+// The monitor's own capture deliberately skips everything MIC_CONSTRAINTS turns on. AEC/NS/AGC
+// are real-time DSP chains with their own lookahead/processing buffers — exactly what shows up
+// as "hearing myself a beat late" — and none of it needs to be clean, since this stream is never
+// recorded, only listened to live. `latency: 0` additionally asks the capture layer itself for
+// the shortest buffering it can manage instead of its default (smoothness-favoring) buffer size.
+const MONITOR_CONSTRAINTS: MediaTrackConstraints & { latency?: ConstrainDouble } = {
+  echoCancellation: false,
+  noiseSuppression: false,
+  autoGainControl: false,
+  sampleRate: { ideal: 48000 },
+  channelCount: { ideal: 1 },
+  latency: { ideal: 0 },
+};
+
 function useMicLevels(active: boolean, monitor: boolean) {
   const [levels, setLevels] = useState<number[]>(() => Array(BAR_COUNT).fill(6));
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -149,7 +163,7 @@ function useMicLevels(active: boolean, monitor: boolean) {
     document.body.appendChild(audioEl);
 
     navigator.mediaDevices
-      .getUserMedia({ audio: MIC_CONSTRAINTS })
+      .getUserMedia({ audio: MONITOR_CONSTRAINTS })
       .then((stream) => {
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());

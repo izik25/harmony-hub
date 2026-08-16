@@ -222,16 +222,46 @@ export async function processRecording(
   warmth.frequency.value = 200;
   warmth.gain.value = 1.3;
 
+  // Presence/air used to be one fixed amount applied to every take alike. A dull/muffled
+  // recording and an already-bright one need different treatment — pushing a bright take by the
+  // same amount that helps a dull one just turns it harsh/sibilant. profile.brightness (0 = dull,
+  // 0.5+ = airy, from analyzeSignal above) scales both: duller takes get more presence lift and a
+  // gentler high cut, brighter takes get less lift and more high cut.
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  const presenceDb = clamp(4.5 - profile.brightness * 6, 1.5, 4.5);
+  const airRolloffDb = clamp(-1 - profile.brightness * 4, -5, -1);
+
   const presence = offlineCtx.createBiquadFilter();
   presence.type = "peaking";
   presence.frequency.value = 3000;
   presence.Q.value = 1;
-  presence.gain.value = 3.5; // gentle clarity/intelligibility lift, not a full EQ makeover
+  presence.gain.value = presenceDb; // gentle clarity/intelligibility lift, not a full EQ makeover
 
   const airRolloff = offlineCtx.createBiquadFilter();
   airRolloff.type = "highshelf";
   airRolloff.frequency.value = 10_000;
-  airRolloff.gain.value = -1.2; // just takes the edge off sibilance, not the sparkle
+  airRolloff.gain.value = airRolloffDb; // takes the edge off sibilance, not the sparkle
+
+  // De-esser: a phone mic's sibilant peaks (5-9kHz "s"/"t" sounds) are exactly what reads as
+  // harsh/lo-fi even after everything else is clean, and a blanket high-shelf cut (airRolloff
+  // above) can't tame just the sibilant spikes without also dulling the rest of the top end.
+  // Splitting into two bands and compressing only the sibilant one hard/fast — then summing back
+  // with the untouched low band — ducks harsh S's without touching normal high-frequency detail.
+  const deEssSplitHz = 6000;
+  const deEssLow = offlineCtx.createBiquadFilter();
+  deEssLow.type = "lowpass";
+  deEssLow.frequency.value = deEssSplitHz;
+  const deEssHigh = offlineCtx.createBiquadFilter();
+  deEssHigh.type = "highpass";
+  deEssHigh.frequency.value = deEssSplitHz;
+  const deEsser = offlineCtx.createDynamicsCompressor();
+  deEsser.threshold.value = -34; // sibilant band sits well above normal voiced energy, so this
+  // mostly leaves speech alone and only grabs the spikes
+  deEsser.knee.value = 6;
+  deEsser.ratio.value = 6;
+  deEsser.attack.value = 0.001; // fast enough to catch a sibilant transient before it registers
+  deEsser.release.value = 0.05;
+  const deEssSum = offlineCtx.createGain();
 
   const compressor = offlineCtx.createDynamicsCompressor();
   compressor.threshold.value = -20;
@@ -261,9 +291,10 @@ export async function processRecording(
     .connect(autoGain)
     .connect(warmth)
     .connect(presence)
-    .connect(airRolloff)
-    .connect(compressor)
-    .connect(makeupGain);
+    .connect(airRolloff);
+  airRolloff.connect(deEssLow).connect(deEssSum);
+  airRolloff.connect(deEssHigh).connect(deEsser).connect(deEssSum);
+  deEssSum.connect(compressor).connect(makeupGain);
   makeupGain.connect(limiter);
   micSource.start(0);
 
