@@ -85,7 +85,10 @@ function applyParams(chain: VocalChain, p: Params) {
   chain.eq3.high.value = eqDb;
   chain.compressor.threshold.value = -6 - (p.compression / 100) * 30;
   chain.compressor.ratio.value = 1 + (p.compression / 100) * 15;
-  const wetAmt = (p.reverb / 100) * 0.7;
+  // Capped at 0.45 (was 0.7) so even the slider maxed out reads as a small room/plate, not a
+  // hall — combined with the shorter impulse response below, this keeps reverb from crossing into
+  // audible discrete echo.
+  const wetAmt = (p.reverb / 100) * 0.45;
   chain.reverbWet.gain.value = wetAmt;
   chain.reverbDry.gain.value = 1 - wetAmt * 0.5;
 }
@@ -109,8 +112,15 @@ function StudioPage() {
   const draftId = search.draftId;
   const pitchRef = useRef(0);
 
-  const [autotune, setA] = useState(40);
-  const [reverbAmt, setR] = useState(30);
+  // Autotune defaults to off: there's no pitch-detection anywhere in this app (pitchRef never
+  // moves off 0), so wet autotune runs every take through Tone.PitchShift's granular delay lines
+  // for zero actual pitch correction — and that algorithm modulates delay taps up to its
+  // windowSize (100ms) even at 0 semitones, which is audible as flutter/slapback echo. Leaving it
+  // at 0 by default means a take is clean until someone deliberately reaches for the effect.
+  const [autotune, setA] = useState(0);
+  // A light touch, not a hall: 30 through the old 2.5s impulse response read as an audible echo
+  // on every take by default, since Studio is where every recording lands after record.tsx.
+  const [reverbAmt, setR] = useState(10);
   const [eq, setE] = useState(50);
   const [comp, setC] = useState(30);
   // Defaults to 50 rather than 0 — this is a plain highpass filter for rumble/hum, and it turns
@@ -344,9 +354,11 @@ function StudioPage() {
     const eqAmt = clamp(70 - brightness * 90, 40, 68);
     // A noisier/livelier room already carries its own ambience — stacking a full reverb send on
     // top just adds more echo on top of echo, so it gets less; a clean, dry capture can take more.
-    const reverbAmt = clamp(22 - (noiseFloorDb + 55) * 0.3, 8, 22);
+    const reverbAmt = clamp(14 - (noiseFloorDb + 55) * 0.2, 5, 14);
 
-    setA(60);
+    // Autotune stays off here too — see the note by its default state above. Forcing it to 60%
+    // regardless of the take's actual pitch (there's no pitch-detection to correct toward) was
+    // just injecting the same delay-modulation artifact into every "Auto Master" pass.
     setN(noiseAmt);
     setR(reverbAmt);
     setE(eqAmt);

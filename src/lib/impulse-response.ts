@@ -1,8 +1,13 @@
-/** Synthesizes a decaying-noise impulse response for convolution reverb — no async IR loading required. */
+/**
+ * Synthesizes a decaying-noise impulse response for convolution reverb — no async IR loading
+ * required. Kept short and fast-decaying (a small room/plate, not a hall): a longer tail here
+ * reads as a distinct slapback echo rather than ambience once it's mixed back with the dry vocal,
+ * which is what the default reverb send in studio.tsx was doing at the old 2.5s/decay-2.2 setting.
+ */
 export function generateImpulseResponse(
   context: BaseAudioContext,
-  duration = 2.5,
-  decay = 2.2,
+  duration = 1.3,
+  decay = 3.2,
 ): AudioBuffer {
   const rate = context.sampleRate;
   const length = Math.max(1, Math.floor(rate * duration));

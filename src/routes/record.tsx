@@ -198,7 +198,10 @@ function RecordPage() {
   const [seconds, setSeconds] = useState(0);
   const [karaokeOpen, setKaraokeOpen] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<KaraokeTrack | null>(null);
-  const [monitorEnabled, setMonitorEnabled] = useState(false);
+  // Defaults to on — hearing yourself as you sing is the point, so it should just work the
+  // moment you start recording rather than requiring a tap to discover. localStorage still lets
+  // an explicit "no" from a previous session stick.
+  const [monitorEnabled, setMonitorEnabled] = useState(true);
   // Rewind-and-punch-in: previewSeconds tracks the live drag position while the user is
   // scrubbing the timeline backward; cutConfirm holds the target once they release, gating the
   // "delete back to here and re-record?" dialog.
@@ -230,9 +233,14 @@ function RecordPage() {
     monitorEnabled,
   );
 
-  // Remember the monitor preference across visits, same as any other studio setting.
+  // Remember the monitor preference across visits, same as any other studio setting — but only
+  // once someone's actually made a choice. No stored value yet means "first time here," which
+  // keeps the on-by-default above rather than snapping it back off.
   useEffect(() => {
-    setMonitorEnabled(localStorage.getItem("hh:monitorEnabled") === "1");
+    const stored = localStorage.getItem("hh:monitorEnabled");
+    if (stored != null) setMonitorEnabled(stored === "1");
+    else toast.info(t("record.monitorFeedbackWarning"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const toggleMonitor = () => {
