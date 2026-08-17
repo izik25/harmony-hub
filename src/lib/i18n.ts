@@ -423,6 +423,12 @@ const en = {
       ctaSecondary: "I have an account",
       trust: "Real recording • Real DSP effects • Real competitions",
     },
+    marquee: "Sing • Record • Produce • Compete • Publish • Discover",
+    stats: {
+      languages: "Languages, fully RTL",
+      features: "Real features, shipped",
+      dsp: "Real DSP, not filters",
+    },
     features: {
       kicker: "Everything in one app",
       title: "Built for artists, not just uploads",
@@ -472,7 +478,10 @@ const en = {
     howItWorks: {
       kicker: "How it works",
       title: "From first take to release, in three steps",
-      step1: { title: "Record", desc: "Freestyle with your mic or pick a karaoke track and sing along in sync." },
+      step1: {
+        title: "Record",
+        desc: "Freestyle with your mic or pick a karaoke track and sing along in sync.",
+      },
       step2: {
         title: "Produce",
         desc: "Shape your vocal in the AI studio with real-time effects and mix it against the playback.",
@@ -915,6 +924,12 @@ const he = {
       ctaPrimary: "התחילו בחינם",
       ctaSecondary: "יש לי כבר חשבון",
       trust: "הקלטה אמיתית • אפקטי DSP אמיתיים • תחרויות אמיתיות",
+    },
+    marquee: "שירה • הקלטה • הפקה • תחרות • פרסום • גילוי",
+    stats: {
+      languages: "שפות, RTL מלא",
+      features: "פיצ'רים אמיתיים שעובדים",
+      dsp: "DSP אמיתי, לא פילטרים",
     },
     features: {
       kicker: "הכול באפליקציה אחת",
@@ -1410,6 +1425,12 @@ const ar = {
       ctaPrimary: "ابدأ مجاناً",
       ctaSecondary: "لدي حساب بالفعل",
       trust: "تسجيل حقيقي • مؤثرات DSP حقيقية • مسابقات حقيقية",
+    },
+    marquee: "الغناء • التسجيل • الإنتاج • المنافسة • النشر • الاكتشاف",
+    stats: {
+      languages: "لغات، RTL كامل",
+      features: "ميزات حقيقية تعمل",
+      dsp: "معالجة صوت حقيقية، وليست فلاتر",
     },
     features: {
       kicker: "كل شيء في تطبيق واحد",
