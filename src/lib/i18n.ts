@@ -412,6 +412,87 @@ const en = {
     connectSuccess: "Connected {{platform}}.",
     connectFailed: "Couldn't connect {{platform}}. Try again.",
   },
+  landing: {
+    nav: { login: "Log in", signup: "Sign up" },
+    hero: {
+      kicker: "A social network built for music",
+      title: "Where your voice becomes a track",
+      subtitle:
+        "SONA is the social network for music — record karaoke, produce your vocals with real studio effects, compete, and publish everywhere from one app.",
+      ctaPrimary: "Get started free",
+      ctaSecondary: "I have an account",
+      trust: "Real recording • Real DSP effects • Real competitions",
+    },
+    features: {
+      kicker: "Everything in one app",
+      title: "Built for artists, not just uploads",
+      subtitle: "From your first take to a released, cross-posted single.",
+      feed: {
+        title: "Live vertical feed",
+        desc: "Scroll a TikTok-style feed where the song actually plays as you scroll — real likes, comments, shares and follows.",
+      },
+      karaoke: {
+        title: "Record & karaoke",
+        desc: "Sing over a real microphone, pick a karaoke track from the library, and record in sync with the video.",
+      },
+      studio: {
+        title: "AI-powered studio",
+        desc: "Real DSP, not filters: pitch shift, 3-band EQ, compressor and convolution reverb, mixed live on your vocal.",
+      },
+      competitions: {
+        title: "Competitions",
+        desc: "Enter live competitions, get voted on by the community, and climb the leaderboard.",
+      },
+      wallet: {
+        title: "Coins & gifts",
+        desc: "Buy coins, send virtual gifts to your favorite artists, and cash out your balance.",
+      },
+      messages: {
+        title: "Direct messages",
+        desc: "Chat privately with other artists and fans, right inside the app.",
+      },
+      labelHub: {
+        title: "Label Hub",
+        desc: "Labels and scouts search real talent and open auditions — get discovered.",
+      },
+      publish: {
+        title: "Publish everywhere",
+        desc: "One tap to cross-post to YouTube Shorts, TikTok and Instagram Reels — or send straight to Spotify, Apple Music and SoundCloud.",
+      },
+      languages: {
+        title: "Built multilingual",
+        desc: "Full Hebrew, English and Arabic — including right-to-left layout, not just translated labels.",
+      },
+      live: {
+        title: "Live streaming",
+        desc: "Broadcast live to your fans in real time.",
+        badge: "Coming soon",
+      },
+    },
+    howItWorks: {
+      kicker: "How it works",
+      title: "From first take to release, in three steps",
+      step1: { title: "Record", desc: "Freestyle with your mic or pick a karaoke track and sing along in sync." },
+      step2: {
+        title: "Produce",
+        desc: "Shape your vocal in the AI studio with real-time effects and mix it against the playback.",
+      },
+      step3: {
+        title: "Release",
+        desc: "Publish to your feed, enter a competition, and cross-post to every platform that matters.",
+      },
+    },
+    cta: {
+      title: "Your voice is one recording away from a real release.",
+      subtitle: "Join SONA free — no credit card required.",
+      button: "Create your account",
+      loginHint: "Already have an account? Log in",
+    },
+    footer: {
+      tagline: "SONA — the social network for music.",
+      rights: "© {{year}} SONA. All rights reserved.",
+    },
+  },
 };
 
 const he = {
@@ -823,6 +904,87 @@ const he = {
     instagramNeedsMp4: "אינסטגרם דורש וידאו MP4 — נסה זאת בכרום לתוצאה הכי טובה.",
     connectSuccess: "{{platform}} חובר בהצלחה.",
     connectFailed: "החיבור ל-{{platform}} נכשל. נסה שוב.",
+  },
+  landing: {
+    nav: { login: "התחברות", signup: "הרשמה" },
+    hero: {
+      kicker: "רשת חברתית שנבנתה למוזיקה",
+      title: "המקום שבו הקול שלכם הופך לטראק",
+      subtitle:
+        "SONA היא הרשת החברתית של המוזיקה — הקליטו קריוקי, עבדו את הווקאל שלכם עם אפקטי אולפן אמיתיים, התחרו, ופרסמו לכל מקום מתוך אפליקציה אחת.",
+      ctaPrimary: "התחילו בחינם",
+      ctaSecondary: "יש לי כבר חשבון",
+      trust: "הקלטה אמיתית • אפקטי DSP אמיתיים • תחרויות אמיתיות",
+    },
+    features: {
+      kicker: "הכול באפליקציה אחת",
+      title: "בנוי לאמנים, לא רק להעלאות",
+      subtitle: "מהטייק הראשון ועד סינגל שיצא לאור ופורסם בכל מקום.",
+      feed: {
+        title: "פיד חי ואנכי",
+        desc: "גללו פיד בסגנון טיקטוק שבו השיר באמת מתנגן תוך כדי גלילה — לייקים, תגובות, שיתופים ועוקבים אמיתיים.",
+      },
+      karaoke: {
+        title: "הקלטה וקריוקי",
+        desc: "שירו עם מיקרופון אמיתי, בחרו שיר קריוקי מהמאגר, והקליטו בסנכרון מלא עם הווידאו.",
+      },
+      studio: {
+        title: "אולפן מבוסס AI",
+        desc: "לא פילטרים — DSP אמיתי: Pitch Shift, EQ בשלושה פסים, קומפרסור וריוורב קונבולוציה, ממוקסים בזמן אמת על הווקאל שלכם.",
+      },
+      competitions: {
+        title: "תחרויות",
+        desc: "השתתפו בתחרויות חיות, קבלו הצבעות מהקהילה, וטפסו בלוח המובילים.",
+      },
+      wallet: {
+        title: "מטבעות ומתנות",
+        desc: "קנו מטבעות, שלחו מתנות וירטואליות לאמנים האהובים עליכם, ומשכו את היתרה שלכם.",
+      },
+      messages: {
+        title: "הודעות פרטיות",
+        desc: "שוחחו באופן פרטי עם אמנים ומעריצים אחרים, ישירות בתוך האפליקציה.",
+      },
+      labelHub: {
+        title: "Label Hub",
+        desc: "לייבלים וסקאוטים מחפשים כישרון אמיתי ופותחים אודישנים — הזדמנות אמיתית להתגלות.",
+      },
+      publish: {
+        title: "פרסום לכל מקום",
+        desc: "הקשה אחת לפרסם ליוטיוב שורטס, טיקטוק ואינסטגרם רילס — או לשלוח ישר לספוטיפיי, אפל מיוזיק וסאונדקלאוד.",
+      },
+      languages: {
+        title: "בנוי רב-לשוני",
+        desc: "עברית, אנגלית וערבית מלאות — כולל פריסת RTL אמיתית, לא רק תוויות מתורגמות.",
+      },
+      live: {
+        title: "שידור חי",
+        desc: "שדרו לייב למעריצים שלכם בזמן אמת.",
+        badge: "בקרוב",
+      },
+    },
+    howItWorks: {
+      kicker: "איך זה עובד",
+      title: "מהטייק הראשון ועד לפרסום, בשלושה צעדים",
+      step1: { title: "הקליטו", desc: "שירו חופשי עם המיקרופון או בחרו שיר קריוקי ושירו בסנכרון." },
+      step2: {
+        title: "עבדו באולפן",
+        desc: "עצבו את הווקאל שלכם באולפן ה-AI עם אפקטים בזמן אמת, ומקסו אותו מול הפלייבק.",
+      },
+      step3: {
+        title: "פרסמו",
+        desc: "שתפו בפיד, היכנסו לתחרות, ופרסמו בבת אחת לכל הפלטפורמות שחשובות לכם.",
+      },
+    },
+    cta: {
+      title: "הקול שלכם רחוק הקלטה אחת מפרסום אמיתי.",
+      subtitle: "הצטרפו ל-SONA בחינם — בלי כרטיס אשראי.",
+      button: "צרו חשבון",
+      loginHint: "כבר יש לכם חשבון? התחברו",
+    },
+    footer: {
+      tagline: "SONA — הרשת החברתית של המוזיקה.",
+      rights: "© {{year}} SONA. כל הזכויות שמורות.",
+    },
   },
 };
 
@@ -1237,6 +1399,87 @@ const ar = {
     instagramNeedsMp4: "إنستغرام يتطلب فيديو MP4 — جرّب هذا في كروم لأفضل نتيجة.",
     connectSuccess: "تم ربط {{platform}} بنجاح.",
     connectFailed: "تعذّر ربط {{platform}}. حاول مرة أخرى.",
+  },
+  landing: {
+    nav: { login: "تسجيل الدخول", signup: "إنشاء حساب" },
+    hero: {
+      kicker: "شبكة اجتماعية بُنيت للموسيقى",
+      title: "المكان الذي يتحول فيه صوتك إلى أغنية",
+      subtitle:
+        "SONA هي الشبكة الاجتماعية للموسيقى — سجّل كاريوكي، أنتج صوتك بمؤثرات استوديو حقيقية، تنافس، وانشر في كل مكان من تطبيق واحد.",
+      ctaPrimary: "ابدأ مجاناً",
+      ctaSecondary: "لدي حساب بالفعل",
+      trust: "تسجيل حقيقي • مؤثرات DSP حقيقية • مسابقات حقيقية",
+    },
+    features: {
+      kicker: "كل شيء في تطبيق واحد",
+      title: "مبني للفنانين، وليس فقط للرفع",
+      subtitle: "من أول تسجيلة وحتى أغنية منشورة في كل مكان.",
+      feed: {
+        title: "بث مباشر عمودي",
+        desc: "مرّر خلاصة على طراز تيك توك حيث تُشغَّل الأغنية فعلياً أثناء التمرير — إعجابات وتعليقات ومشاركات ومتابعون حقيقيون.",
+      },
+      karaoke: {
+        title: "تسجيل وكاريوكي",
+        desc: "غنِّ بميكروفون حقيقي، اختر أغنية كاريوكي من المكتبة، وسجّل بتزامن كامل مع الفيديو.",
+      },
+      studio: {
+        title: "استوديو مدعوم بالذكاء الاصطناعي",
+        desc: "ليست فلاتر — معالجة صوت رقمية حقيقية: تغيير طبقة الصوت، معادل ثلاثي النطاقات، ضاغط وصدى التفافي، تُمزج مباشرة على صوتك.",
+      },
+      competitions: {
+        title: "مسابقات",
+        desc: "شارك في مسابقات مباشرة، احصل على تصويت من المجتمع، وتصاعد في لوحة المتصدرين.",
+      },
+      wallet: {
+        title: "عملات وهدايا",
+        desc: "اشترِ عملات، أرسل هدايا افتراضية لفنانيك المفضلين، واسحب رصيدك.",
+      },
+      messages: {
+        title: "رسائل خاصة",
+        desc: "تحدّث بشكل خاص مع فنانين ومعجبين آخرين، مباشرة داخل التطبيق.",
+      },
+      labelHub: {
+        title: "Label Hub",
+        desc: "شركات الإنتاج والكشّافون يبحثون عن مواهب حقيقية ويفتحون تجارب أداء — فرصة حقيقية للاكتشاف.",
+      },
+      publish: {
+        title: "النشر في كل مكان",
+        desc: "نقرة واحدة للنشر على يوتيوب شورتس وتيك توك وإنستغرام ريلز — أو الإرسال مباشرة إلى سبوتيفاي وآبل ميوزيك وساوندكلاود.",
+      },
+      languages: {
+        title: "مبني متعدد اللغات",
+        desc: "عربية وعبرية وإنجليزية كاملة — بما في ذلك تخطيط RTL حقيقي، وليس مجرد تسميات مترجمة.",
+      },
+      live: {
+        title: "بث مباشر",
+        desc: "ابثّ مباشرة لمعجبيك في الوقت الفعلي.",
+        badge: "قريباً",
+      },
+    },
+    howItWorks: {
+      kicker: "كيف يعمل",
+      title: "من أول تسجيلة إلى النشر، في ثلاث خطوات",
+      step1: { title: "سجّل", desc: "غنِّ بحرية بالميكروفون أو اختر أغنية كاريوكي وغنِّ بتزامن." },
+      step2: {
+        title: "أنتج",
+        desc: "شكّل صوتك في استوديو الذكاء الاصطناعي بمؤثرات فورية، وامزجه مع الموسيقى المصاحبة.",
+      },
+      step3: {
+        title: "انشر",
+        desc: "شارك في الخلاصة، ادخل مسابقة، وانشر دفعة واحدة على كل المنصات المهمة لك.",
+      },
+    },
+    cta: {
+      title: "صوتك على بعد تسجيلة واحدة من نشر حقيقي.",
+      subtitle: "انضم إلى SONA مجاناً — بدون بطاقة ائتمان.",
+      button: "أنشئ حسابك",
+      loginHint: "لديك حساب بالفعل؟ سجّل الدخول",
+    },
+    footer: {
+      tagline: "SONA — الشبكة الاجتماعية للموسيقى.",
+      rights: "© {{year}} SONA. جميع الحقوق محفوظة.",
+    },
   },
 };
 

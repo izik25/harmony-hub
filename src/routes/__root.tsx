@@ -19,7 +19,7 @@ import { detectServerLanguage } from "../functions/locale";
 import i18n, { isRTL, reconcileClientLanguage } from "../lib/i18n";
 import { Toaster } from "../components/ui/sonner";
 
-const PUBLIC_PATHS = new Set(["/login", "/signup"]);
+const PUBLIC_PATHS = new Set(["/login", "/signup", "/welcome"]);
 
 function NotFoundComponent() {
   const { t } = useTranslation();
@@ -91,7 +91,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     context.queryClient.setQueryData(["currentUser"], user);
 
     const isPublic = PUBLIC_PATHS.has(location.pathname);
-    if (!user && !isPublic) throw redirect({ to: "/login" });
+    if (!user && !isPublic) throw redirect({ to: "/welcome" });
     if (user && isPublic) throw redirect({ to: "/" });
 
     return { user, lang };

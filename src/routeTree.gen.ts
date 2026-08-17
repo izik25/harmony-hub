@@ -23,6 +23,7 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as UploadRouteImport } from './routes/upload'
 import { Route as WalletRouteImport } from './routes/wallet'
+import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as CompetitionsIdRouteImport } from './routes/competitions_.$id'
 import { Route as LiveRoomIdRouteImport } from './routes/live_.$roomId'
 import { Route as MessagesConversationIdRouteImport } from './routes/messages_.$conversationId'
@@ -98,6 +99,11 @@ const WalletRoute = WalletRouteImport.update({
   path: '/wallet',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WelcomeRoute = WelcomeRouteImport.update({
+  id: '/welcome',
+  path: '/welcome',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CompetitionsIdRoute = CompetitionsIdRouteImport.update({
   id: '/competitions_/$id',
   path: '/competitions/$id',
@@ -134,6 +140,7 @@ export interface FileRoutesByFullPath {
   '/studio': typeof StudioRoute
   '/upload': typeof UploadRoute
   '/wallet': typeof WalletRoute
+  '/welcome': typeof WelcomeRoute
   '/competitions/$id': typeof CompetitionsIdRoute
   '/live/$roomId': typeof LiveRoomIdRoute
   '/messages/$conversationId': typeof MessagesConversationIdRoute
@@ -154,6 +161,7 @@ export interface FileRoutesByTo {
   '/studio': typeof StudioRoute
   '/upload': typeof UploadRoute
   '/wallet': typeof WalletRoute
+  '/welcome': typeof WelcomeRoute
   '/competitions/$id': typeof CompetitionsIdRoute
   '/live/$roomId': typeof LiveRoomIdRoute
   '/messages/$conversationId': typeof MessagesConversationIdRoute
@@ -175,6 +183,7 @@ export interface FileRoutesById {
   '/studio': typeof StudioRoute
   '/upload': typeof UploadRoute
   '/wallet': typeof WalletRoute
+  '/welcome': typeof WelcomeRoute
   '/competitions_/$id': typeof CompetitionsIdRoute
   '/live_/$roomId': typeof LiveRoomIdRoute
   '/messages_/$conversationId': typeof MessagesConversationIdRoute
@@ -197,6 +206,7 @@ export interface FileRouteTypes {
     | '/studio'
     | '/upload'
     | '/wallet'
+    | '/welcome'
     | '/competitions/$id'
     | '/live/$roomId'
     | '/messages/$conversationId'
@@ -217,6 +227,7 @@ export interface FileRouteTypes {
     | '/studio'
     | '/upload'
     | '/wallet'
+    | '/welcome'
     | '/competitions/$id'
     | '/live/$roomId'
     | '/messages/$conversationId'
@@ -237,6 +248,7 @@ export interface FileRouteTypes {
     | '/studio'
     | '/upload'
     | '/wallet'
+    | '/welcome'
     | '/competitions_/$id'
     | '/live_/$roomId'
     | '/messages_/$conversationId'
@@ -258,6 +270,7 @@ export interface RootRouteChildren {
   StudioRoute: typeof StudioRoute
   UploadRoute: typeof UploadRoute
   WalletRoute: typeof WalletRoute
+  WelcomeRoute: typeof WelcomeRoute
   CompetitionsIdRoute: typeof CompetitionsIdRoute
   LiveRoomIdRoute: typeof LiveRoomIdRoute
   MessagesConversationIdRoute: typeof MessagesConversationIdRoute
@@ -364,6 +377,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WalletRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/welcome': {
+      id: '/welcome'
+      path: '/welcome'
+      fullPath: '/welcome'
+      preLoaderRoute: typeof WelcomeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/competitions_/$id': {
       id: '/competitions_/$id'
       path: '/competitions/$id'
@@ -410,6 +430,7 @@ const rootRouteChildren: RootRouteChildren = {
   StudioRoute: StudioRoute,
   UploadRoute: UploadRoute,
   WalletRoute: WalletRoute,
+  WelcomeRoute: WelcomeRoute,
   CompetitionsIdRoute: CompetitionsIdRoute,
   LiveRoomIdRoute: LiveRoomIdRoute,
   MessagesConversationIdRoute: MessagesConversationIdRoute,
