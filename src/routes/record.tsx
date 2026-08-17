@@ -44,9 +44,8 @@ const MONITOR_GAIN = 0.8;
 
 // Legacy Chromium-only constraint names ("goog*") aren't in the standard MediaTrackConstraints
 // type, but are still honored today and are the only way to reach past the conservative default
-// AEC/NS tuning the plain boolean flags below ask for — AEC3 specifically, plus a second-stage
-// noise suppressor and a capture-side highpass to cut room rumble before it ever hits the gate in
-// mix-recording.ts.
+// NS tuning the plain boolean flags below ask for — a second-stage noise suppressor and a
+// capture-side highpass to cut room rumble before it ever hits the gate in mix-recording.ts.
 type ChromeAudioConstraints = MediaTrackConstraints & {
   googEchoCancellation?: boolean;
   googEchoCancellation2?: boolean;
@@ -58,14 +57,24 @@ type ChromeAudioConstraints = MediaTrackConstraints & {
   googTypingNoiseDetection?: boolean;
 };
 
+// echoCancellation is deliberately off (it was on before). On Android, requesting it makes
+// Chromium open the mic on the platform's VOICE_COMMUNICATION audio source instead of a plain
+// MIC source — that's the only way to get the phone's own hardware AEC, but that audio source
+// forces Android into a "call" audio session, and that session is what silently routes playback
+// through the phone's built-in earpiece/speaker instead of a connected Bluetooth headset, even
+// though the headset stays genuinely connected. noiseSuppression/autoGainControl don't need that
+// special audio source and can stay on safely. What we lose by dropping AEC is its help with
+// backing-track bleed into the mic — already covered by ducking the karaoke video to 35% volume
+// during recording (below) and by the noise gate in mix-recording.ts, so this isn't relying on
+// AEC as the only line of defense against that.
 const MIC_CONSTRAINTS: ChromeAudioConstraints = {
-  echoCancellation: true,
+  echoCancellation: false,
   noiseSuppression: true,
   autoGainControl: true,
   sampleRate: { ideal: 48000 },
   channelCount: { ideal: 1 },
-  googEchoCancellation: true,
-  googEchoCancellation2: true,
+  googEchoCancellation: false,
+  googEchoCancellation2: false,
   googAutoGainControl: true,
   googAutoGainControl2: true,
   googNoiseSuppression: true,
