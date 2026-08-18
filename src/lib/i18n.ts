@@ -431,8 +431,9 @@ const en = {
     },
     features: {
       kicker: "Everything in one app",
-      title: "Built for artists, not just uploads",
-      subtitle: "From your first take to a released, cross-posted single.",
+      title: "Sing it. Shape it. Share it.",
+      subtitle:
+        "From your first take to wherever you want to take it — a cover, a freestyle, or something fully original.",
       feed: {
         title: "Live vertical feed",
         desc: "Scroll a TikTok-style feed where the song actually plays as you scroll — real likes, comments, shares and follows.",
@@ -933,8 +934,8 @@ const he = {
     },
     features: {
       kicker: "הכול באפליקציה אחת",
-      title: "בנוי לאמנים, לא רק להעלאות",
-      subtitle: "מהטייק הראשון ועד סינגל שיצא לאור ופורסם בכל מקום.",
+      title: "שירו. עצבו. שתפו.",
+      subtitle: "מהטייק הראשון ועד לאן שתרצו לקחת אותו — קאבר, פרילסטייל, או שיר מקורי לגמרי.",
       feed: {
         title: "פיד חי ואנכי",
         desc: "גללו פיד בסגנון טיקטוק שבו השיר באמת מתנגן תוך כדי גלילה — לייקים, תגובות, שיתופים ועוקבים אמיתיים.",
@@ -1434,8 +1435,8 @@ const ar = {
     },
     features: {
       kicker: "كل شيء في تطبيق واحد",
-      title: "مبني للفنانين، وليس فقط للرفع",
-      subtitle: "من أول تسجيلة وحتى أغنية منشورة في كل مكان.",
+      title: "غنِّ. شكِّل. شارك.",
+      subtitle: "من أول تسجيلة إلى أينما تريد أن تأخذها — كفر، فريستايل، أو أغنية أصلية بالكامل.",
       feed: {
         title: "بث مباشر عمودي",
         desc: "مرّر خلاصة على طراز تيك توك حيث تُشغَّل الأغنية فعلياً أثناء التمرير — إعجابات وتعليقات ومشاركات ومتابعون حقيقيون.",

@@ -116,6 +116,29 @@ function WelcomePage() {
     offset: ["start 85%", "end 65%"],
   });
 
+  const heroRef = useRef<HTMLElement>(null);
+  const { scrollYProgress: heroProgress } = useScroll({
+    target: heroRef,
+    offset: ["start start", "end start"],
+  });
+  const phoneParallaxY = useTransform(heroProgress, [0, 1], [0, 130]);
+  const phoneParallaxScale = useTransform(heroProgress, [0, 1], [1, 0.86]);
+  const phoneParallaxOpacity = useTransform(heroProgress, [0, 0.85], [1, 0.25]);
+
+  const featuresRef = useRef<HTMLElement>(null);
+  const { scrollYProgress: featuresProgress } = useScroll({
+    target: featuresRef,
+    offset: ["start end", "end start"],
+  });
+  const featuresFloatY = useTransform(featuresProgress, [0, 1], [90, -90]);
+
+  const ctaRef = useRef<HTMLElement>(null);
+  const { scrollYProgress: ctaProgress } = useScroll({
+    target: ctaRef,
+    offset: ["start end", "end start"],
+  });
+  const ctaFloatY = useTransform(ctaProgress, [0, 1], [70, -70]);
+
   const titleContainer = {
     hidden: {},
     visible: { transition: { staggerChildren: 0.07, delayChildren: 0.1 } },
@@ -139,13 +162,17 @@ function WelcomePage() {
         className="pointer-events-none fixed inset-0 -z-10 opacity-80"
         style={{ background: "var(--gradient-glow)" }}
       />
-      <div
+      <motion.div
         aria-hidden
+        animate={reduceMotion ? undefined : { x: [0, -30, 0], y: [0, 40, 0] }}
+        transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
         className="pointer-events-none fixed -right-40 top-[38vh] -z-10 h-[520px] w-[520px] rounded-full opacity-25 blur-[120px]"
         style={{ background: "var(--neon-purple)" }}
       />
-      <div
+      <motion.div
         aria-hidden
+        animate={reduceMotion ? undefined : { x: [0, 25, 0], y: [0, -35, 0] }}
+        transition={{ duration: 18, repeat: Infinity, ease: "easeInOut", delay: 1 }}
         className="pointer-events-none fixed -left-40 top-[2vh] -z-10 h-[420px] w-[420px] rounded-full opacity-20 blur-[120px]"
         style={{ background: "var(--neon-cyan)" }}
       />
@@ -191,6 +218,7 @@ function WelcomePage() {
 
       {/* hero */}
       <section
+        ref={heroRef}
         onMouseMove={handleHeroMove}
         className="relative mx-auto max-w-6xl overflow-clip px-5 pb-16 pt-14 sm:px-8 sm:pb-24 sm:pt-20"
       >
@@ -200,37 +228,39 @@ function WelcomePage() {
           style={{ background: heroSpotlight }}
         />
 
+        {!reduceMotion && <AmbientNotes count={7} />}
+
         {!reduceMotion && (
           <>
             <FloatingIcon
               Icon={Headphones}
               top="6%"
               left="3%"
-              size={26}
+              size={22}
               delay={0}
               parallaxY={parallax1}
             />
             <FloatingIcon
               Icon={Disc3}
-              top="14%"
-              left="90%"
-              size={30}
+              top="12%"
+              left="88%"
+              size={26}
               delay={0.4}
               parallaxY={parallax2}
             />
             <FloatingIcon
               Icon={Music4}
-              top="72%"
-              left="6%"
-              size={22}
+              top="66%"
+              left="5%"
+              size={20}
               delay={0.8}
               parallaxY={parallax3}
             />
             <FloatingIcon
               Icon={Waves}
-              top="80%"
-              left="84%"
-              size={24}
+              top="74%"
+              left="90%"
+              size={22}
               delay={1.2}
               parallaxY={parallax4}
             />
@@ -313,62 +343,73 @@ function WelcomePage() {
           </motion.div>
 
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
+            style={
+              reduceMotion
+                ? undefined
+                : { y: phoneParallaxY, scale: phoneParallaxScale, opacity: phoneParallaxOpacity }
+            }
             className="relative mx-auto w-full max-w-[280px]"
-            style={{ perspective: 1200 }}
           >
             <motion.div
-              aria-hidden
-              animate={reduceMotion ? undefined : { opacity: [0.3, 0.55, 0.3] }}
-              transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
-              className="absolute inset-0 -z-10 scale-95 rounded-[2.5rem] gradient-neon opacity-40 blur-2xl"
-            />
-            <motion.div
-              onMouseMove={handlePhoneMove}
-              onMouseLeave={resetTilt}
-              style={{
-                rotateX: springTiltX,
-                rotateY: springTiltY,
-                transformStyle: "preserve-3d",
-              }}
-              className="relative aspect-[9/17.5] w-full overflow-hidden rounded-[2.5rem] border border-white/10 shadow-2xl"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
+              className="relative"
+              style={{ perspective: 1200 }}
             >
-              <PostCoverBg hue={162} seed="landing-hero" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/40" />
-
-              <div className="absolute end-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-5">
-                {[
-                  { Icon: Heart, value: "48.2K" },
-                  { Icon: MessageCircle, value: "1,204" },
-                  { Icon: Gift, value: "962" },
-                  { Icon: Share2, value: "310" },
-                ].map(({ Icon, value }, i) => (
-                  <div key={i} className="flex flex-col items-center gap-1">
-                    <span className="grid h-10 w-10 place-items-center rounded-full bg-white/10 backdrop-blur-md">
-                      <Icon className="h-5 w-5 text-white" />
-                    </span>
-                    <span className="text-[10px] font-semibold text-white/90">{value}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="absolute inset-x-4 bottom-4 flex items-center gap-2">
-                <span className="grid h-11 w-11 shrink-0 animate-spin-slow place-items-center rounded-full border-2 border-white/70 bg-black/30">
-                  <Music2 className="h-4 w-4 text-white" />
-                </span>
-                <div className="min-w-0">
-                  <p className="flex items-center gap-1 truncate text-sm font-bold text-white">
-                    Nova Ray <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-primary" />
-                  </p>
-                  <p className="truncate text-xs text-white/75">Midnight Echo — Original</p>
+              <motion.div
+                aria-hidden
+                animate={reduceMotion ? undefined : { opacity: [0.3, 0.55, 0.3] }}
+                transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
+                className="absolute inset-0 -z-10 scale-95 rounded-[2.5rem] gradient-neon opacity-40 blur-2xl"
+              />
+              <motion.div
+                onMouseMove={handlePhoneMove}
+                onMouseLeave={resetTilt}
+                style={{
+                  rotateX: springTiltX,
+                  rotateY: springTiltY,
+                  transformStyle: "preserve-3d",
+                }}
+                className="relative aspect-[9/17.5] w-full overflow-hidden rounded-[2.5rem] border border-white/10 shadow-2xl"
+              >
+                <div className="absolute inset-0 animate-cover-breathe">
+                  <PostCoverBg hue={162} seed="landing-hero" />
                 </div>
-              </div>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/40" />
 
-              <span className="absolute left-1/2 top-1/2 grid h-14 w-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-white/15 backdrop-blur-md">
-                <Play className="h-6 w-6 fill-white text-white" />
-              </span>
+                <div className="absolute end-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-5">
+                  {[
+                    { Icon: Heart, value: "48.2K" },
+                    { Icon: MessageCircle, value: "1,204" },
+                    { Icon: Gift, value: "962" },
+                    { Icon: Share2, value: "310" },
+                  ].map(({ Icon, value }, i) => (
+                    <div key={i} className="flex flex-col items-center gap-1">
+                      <span className="grid h-10 w-10 place-items-center rounded-full bg-white/10 backdrop-blur-md">
+                        <Icon className="h-5 w-5 text-white" />
+                      </span>
+                      <span className="text-[10px] font-semibold text-white/90">{value}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="absolute inset-x-4 bottom-4 flex items-center gap-2">
+                  <span className="grid h-11 w-11 shrink-0 animate-spin-slow place-items-center rounded-full border-2 border-white/70 bg-black/30">
+                    <Music2 className="h-4 w-4 text-white" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1 truncate text-sm font-bold text-white">
+                      Nova Ray <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    </p>
+                    <p className="truncate text-xs text-white/75">Midnight Echo — Original</p>
+                  </div>
+                </div>
+
+                <span className="absolute left-1/2 top-1/2 grid h-14 w-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-white/15 backdrop-blur-md">
+                  <Play className="h-6 w-6 fill-white text-white" />
+                </span>
+              </motion.div>
             </motion.div>
           </motion.div>
         </div>
@@ -403,6 +444,7 @@ function WelcomePage() {
               whileInView="visible"
               viewport={{ once: true, amount: 0.5 }}
               variants={fadeUp}
+              whileTap={{ scale: 0.97 }}
               transition={{ duration: 0.45, delay: i * 0.08 }}
               className="flex items-center gap-4 rounded-2xl border border-border/60 bg-card/40 p-5"
             >
@@ -421,7 +463,20 @@ function WelcomePage() {
       </section>
 
       {/* features */}
-      <section className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-24">
+      <section
+        ref={featuresRef}
+        className="relative mx-auto max-w-6xl overflow-clip px-5 py-16 sm:px-8 sm:py-24"
+      >
+        {!reduceMotion && (
+          <FloatingIcon
+            Icon={Sparkles}
+            top="4%"
+            left="90%"
+            size={20}
+            delay={0.2}
+            parallaxY={featuresFloatY}
+          />
+        )}
         <motion.div
           initial="hidden"
           whileInView="visible"
@@ -450,6 +505,7 @@ function WelcomePage() {
                 whileInView="visible"
                 viewport={{ once: true, amount: 0.3 }}
                 variants={fadeUp}
+                whileTap={{ scale: 0.97 }}
                 transition={{ duration: 0.45, delay: (i % 3) * 0.08 }}
               >
                 <SpotlightCard>
@@ -526,7 +582,20 @@ function WelcomePage() {
       </section>
 
       {/* final CTA */}
-      <section className="mx-auto max-w-6xl px-5 pb-20 sm:px-8 sm:pb-28">
+      <section
+        ref={ctaRef}
+        className="relative mx-auto max-w-6xl overflow-clip px-5 pb-20 sm:px-8 sm:pb-28"
+      >
+        {!reduceMotion && (
+          <FloatingIcon
+            Icon={Headphones}
+            top="2%"
+            left="8%"
+            size={20}
+            delay={0.3}
+            parallaxY={ctaFloatY}
+          />
+        )}
         <motion.div
           initial="hidden"
           whileInView="visible"
@@ -637,17 +706,44 @@ function FloatingIcon({
   return (
     <motion.div
       aria-hidden
-      className="pointer-events-none absolute z-0 hidden sm:block"
+      className="pointer-events-none absolute z-0"
       style={{ top, left, y: parallaxY }}
     >
       <motion.div
         animate={{ y: [0, -14, 0], rotate: [0, 6, 0] }}
         transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay }}
-        className="grid place-items-center rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-md"
+        className="grid place-items-center rounded-2xl border border-white/10 bg-white/5 p-2 backdrop-blur-md sm:p-3"
       >
         <Icon style={{ width: size, height: size }} className="text-primary/70" />
       </motion.div>
     </motion.div>
+  );
+}
+
+const AMBIENT_ICONS = [Music2, Sparkles, Music4, Waves] as const;
+
+function AmbientNotes({ count = 6 }: { count?: number }) {
+  const notes = Array.from({ length: count }).map((_, i) => ({
+    Icon: AMBIENT_ICONS[i % AMBIENT_ICONS.length],
+    left: `${8 + ((i * 97) % 84)}%`,
+    size: 12 + (i % 3) * 4,
+    duration: 6 + (i % 4) * 1.6,
+    delay: i * 0.55,
+  }));
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+      {notes.map((n, i) => (
+        <motion.span
+          key={i}
+          className="absolute bottom-0 text-primary/40"
+          style={{ left: n.left }}
+          animate={{ y: ["0%", "-380%"], opacity: [0, 0.75, 0], rotate: [0, 20, -12, 0] }}
+          transition={{ duration: n.duration, repeat: Infinity, ease: "easeInOut", delay: n.delay }}
+        >
+          <n.Icon style={{ width: n.size, height: n.size }} />
+        </motion.span>
+      ))}
+    </div>
   );
 }
 
@@ -688,6 +784,7 @@ function Magnetic({ children, strength = 0.3 }: { children: ReactNode; strength?
     <motion.div
       onMouseMove={handleMove}
       onMouseLeave={reset}
+      whileTap={{ scale: 0.95 }}
       style={{ x: springX, y: springY }}
       className="inline-block"
     >
