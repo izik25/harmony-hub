@@ -957,25 +957,38 @@ function KaraokeArtistGrid({
   onSelect: (artist: KaraokeArtist) => void;
 }) {
   const { t } = useTranslation();
+  const [query, setQuery] = useState("");
   const { data: artists } = useQuery({
     queryKey: ["karaokeArtists"],
     queryFn: () => listKaraokeArtists(),
     enabled: open,
   });
+  const filtered = artists?.filter((a) =>
+    a.name.toLowerCase().includes(query.trim().toLowerCase()),
+  );
 
   return (
     <>
       <SheetHeader>
         <SheetTitle>{t("record.chooseArtist")}</SheetTitle>
       </SheetHeader>
+      <label className="mt-2 flex items-center gap-2 rounded-full bg-muted/60 px-4 py-2.5 ring-1 ring-border">
+        <Search className="h-4 w-4 text-muted-foreground" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("record.karaokeSearchPlaceholder")}
+          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        />
+      </label>
       <div className="mt-3 flex-1 overflow-y-auto">
-        {artists?.length === 0 && (
+        {filtered?.length === 0 && (
           <div className="p-4 text-center text-sm text-muted-foreground">
             <p>{t("record.noArtists")}</p>
           </div>
         )}
         <div className="grid grid-cols-3 gap-3">
-          {artists?.map((a) => (
+          {filtered?.map((a) => (
             <button
               key={a.id}
               onClick={() => onSelect(a)}

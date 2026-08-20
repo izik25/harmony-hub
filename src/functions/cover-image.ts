@@ -39,11 +39,15 @@ export const generateCoverImage = createServerFn({ method: "POST" })
       });
 
       if (!res.ok) {
-        console.error(
-          "OpenAI image generation failed",
-          res.status,
-          await res.text().catch(() => ""),
-        );
+        const body = await res.text().catch(() => "");
+        console.error("OpenAI image generation failed", res.status, body);
+        if (
+          res.status === 429 ||
+          body.includes("insufficient_quota") ||
+          body.includes("credit_balance_exhausted")
+        ) {
+          throw new Error("imageGenNoCredits");
+        }
         throw new Error("imageGenFailed");
       }
 

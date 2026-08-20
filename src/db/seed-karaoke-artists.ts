@@ -6,7 +6,8 @@ import { karaokeArtists } from "./schema";
 // Placeholder portraits until real artist photos are uploaded — same dicebear pattern seed.ts
 // already uses for demo user avatars, just a more face-like style since these render as a photo
 // grid rather than small avatar bubbles.
-const photo = (seed: string) => `https://api.dicebear.com/9.x/personas/svg?seed=${seed}`;
+const photo = (seed: string) =>
+  `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(seed)}`;
 
 // Phase 1: 10 singers to prove out the artist-grid flow end-to-end. Add the rest of the roster
 // here later — sync-karaoke.ts matches karaoke_tracks.artist to this table's `name` by plain text,

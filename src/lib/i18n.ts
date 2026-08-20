@@ -433,6 +433,8 @@ const en = {
     emptyFile: "Empty file.",
     fileTooLarge: "File too large (max 100MB).",
     imageGenNotConfigured: "AI cover images aren't configured yet.",
+    imageGenNoCredits:
+      "The AI image account is out of credits — add billing credits at platform.openai.com.",
     imageGenFailed: "Couldn't generate a cover image. Please try again.",
     unknownPackage: "Unknown coin package.",
     invalidAmount: "Enter a valid amount.",
@@ -991,6 +993,8 @@ const he = {
     emptyFile: "הקובץ ריק.",
     fileTooLarge: "הקובץ גדול מדי (מקסימום 100MB).",
     imageGenNotConfigured: "יצירת תמונות קאבר בעזרת AI עדיין לא הוגדרה.",
+    imageGenNoCredits:
+      "אין יתרת קרדיט בחשבון ה-AI ליצירת תמונות — צריך להוסיף אמצעי תשלום ב-platform.openai.com.",
     imageGenFailed: "לא הצלחנו לייצר תמונת קאבר. נסה שוב.",
     unknownPackage: "חבילת מטבעות לא ידועה.",
     invalidAmount: "הזן סכום תקין.",
@@ -1550,6 +1554,8 @@ const ar = {
     emptyFile: "الملف فارغ.",
     fileTooLarge: "الملف كبير جداً (الحد الأقصى 100MB).",
     imageGenNotConfigured: "لم يتم إعداد إنشاء صور الغلاف بالذكاء الاصطناعي بعد.",
+    imageGenNoCredits:
+      "لا يوجد رصيد في حساب الذكاء الاصطناعي — أضف وسيلة دفع على platform.openai.com.",
     imageGenFailed: "تعذر إنشاء صورة الغلاف. حاول مرة أخرى.",
     unknownPackage: "حزمة عملات غير معروفة.",
     invalidAmount: "أدخل مبلغاً صالحاً.",
