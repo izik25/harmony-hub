@@ -329,7 +329,7 @@ export function ProfileView({ handle }: { handle: string }) {
             )}
             {shownPosts?.map((p) => (
               <div key={p.id} className="relative aspect-[3/4] overflow-hidden">
-                <PostCoverBg hue={p.hue} seed={p.id} />
+                <PostCoverBg hue={p.hue} seed={p.id} imageUrl={p.coverUrl} />
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1.5 text-[10px] font-semibold text-white">
                   ▶ {formatCount(p.likesCount)}
                 </div>

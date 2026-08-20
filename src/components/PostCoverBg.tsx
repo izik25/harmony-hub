@@ -1,7 +1,24 @@
 /**
- * Generated animated gradient stand-in for a video thumbnail — no external images required.
+ * Post thumbnail: renders the AI-generated cover image when the post has one, otherwise falls
+ * back to a generated animated gradient stand-in — no external image required.
  */
-export function PostCoverBg({ hue, seed }: { hue: number; seed: string }) {
+export function PostCoverBg({
+  hue,
+  seed,
+  imageUrl,
+}: {
+  hue: number;
+  seed: string;
+  imageUrl?: string;
+}) {
+  if (imageUrl) {
+    return (
+      <div className="absolute inset-0" data-seed={seed}>
+        <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+      </div>
+    );
+  }
+
   const h2 = (hue + 60) % 360;
   const h3 = (hue + 200) % 360;
   return (

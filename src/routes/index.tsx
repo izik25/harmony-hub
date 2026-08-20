@@ -256,7 +256,7 @@ function FeedItem({
         />
       )}
       <div className={isPlaying ? "absolute inset-0 animate-cover-breathe" : "absolute inset-0"}>
-        <PostCoverBg hue={post.hue} seed={post.id} />
+        <PostCoverBg hue={post.hue} seed={post.id} imageUrl={post.coverUrl} />
       </div>
       <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80" />
 

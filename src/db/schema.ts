@@ -296,6 +296,19 @@ export const karaokeTracks = pgTable("karaoke_tracks", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// The curated singer roster shown on the "choose karaoke" artist grid. Deliberately a separate
+// table from karaokeTracks (matched by `name` == karaokeTracks.artist, not a FK) so the roster —
+// with its photo — can be curated ahead of any actual .mp4s existing for that singer, and so
+// sync-karaoke.ts (which only ever touches karaokeTracks, keyed by videoUrl) doesn't need to
+// change at all.
+export const karaokeArtists = pgTable("karaoke_artists", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull().unique(),
+  imageUrl: text("image_url").notNull().default(""),
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // One row per (user, external platform) OAuth connection used by the "Publish everywhere" flow.
 // Tokens are stored as-is (no app-level encryption) — acceptable for now since this whole table
 // is only ever read from trusted server code (functions/platforms.ts, lib/social-platforms/*),

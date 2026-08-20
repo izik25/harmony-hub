@@ -3,7 +3,19 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Mic, Music2, Search, X, Check, Pause, Loader2, Headphones, Scissors } from "lucide-react";
+import {
+  Mic,
+  Music2,
+  Search,
+  X,
+  Check,
+  Pause,
+  Loader2,
+  Headphones,
+  Scissors,
+  ArrowLeft,
+  User,
+} from "lucide-react";
 import i18n, { translateServerError } from "@/lib/i18n";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
@@ -19,16 +31,20 @@ import {
 import { Button } from "@/components/ui/button";
 import { smartUploadMedia } from "@/lib/blob-upload";
 import { createDraft } from "@/functions/posts";
-import { listKaraokeTracks } from "@/functions/karaoke";
+import { listKaraokeArtists, listKaraokeTracks } from "@/functions/karaoke";
 import { processRecording } from "@/lib/mix-recording";
 import { commitCheckpoint, trimCheckpoint } from "@/lib/audio-splice";
-import { routeToHeadphonesIfAvailable } from "@/lib/audio-output";
+import {
+  routeToHeadphonesIfAvailable,
+  routeAudioContextToHeadphonesIfAvailable,
+} from "@/lib/audio-output";
 
 export const Route = createFileRoute("/record")({
   component: RecordPage,
 });
 
 type KaraokeTrack = Awaited<ReturnType<typeof listKaraokeTracks>>[number];
+type KaraokeArtist = Awaited<ReturnType<typeof listKaraokeArtists>>[number];
 
 const BAR_COUNT = 48;
 // Starting balance for the initial auto-mix — matches the Mix Balance defaults in studio.tsx, a
@@ -158,19 +174,18 @@ function useMicLevels(active: boolean, monitor: boolean) {
   // reference signal, which can corrupt the actual recorded audio (duplicated/phased-sounding
   // takes) independently of whether the monitor was even audible. A second, unrelated capture
   // can't do that — whatever happens to it has no path back into the track being recorded.
+  //
+  // The monitor is rendered through a raw Web Audio graph (source -> gain -> ctx.destination)
+  // rather than an <audio> element. HTMLMediaElement playback runs through a separate, much more
+  // heavily buffered rendering pipeline (built for smooth *network* playback), which is where most
+  // of "hearing myself a beat late" was actually coming from — MONITOR_CONSTRAINTS' `latency: 0`
+  // only shortens the *capture* side. `latencyHint: "interactive"` asks the output side for the
+  // shortest buffer it can manage too, so both ends of the loop are tuned for immediacy.
   useEffect(() => {
     if (!active || !monitor) return;
     let cancelled = false;
     let monitorStream: MediaStream | undefined;
-    const audioEl = document.createElement("audio");
-    audioEl.autoplay = true;
-    audioEl.volume = MONITOR_GAIN;
-    audioEl.style.position = "fixed";
-    audioEl.style.width = "0";
-    audioEl.style.height = "0";
-    audioEl.style.opacity = "0";
-    audioEl.style.pointerEvents = "none";
-    document.body.appendChild(audioEl);
+    let ctx: AudioContext | undefined;
 
     navigator.mediaDevices
       .getUserMedia({ audio: MONITOR_CONSTRAINTS })
@@ -180,19 +195,21 @@ function useMicLevels(active: boolean, monitor: boolean) {
           return;
         }
         monitorStream = stream;
-        audioEl.srcObject = stream;
-        audioEl.play().catch(() => {});
+        ctx = new AudioContext({ latencyHint: "interactive" });
+        ctx.resume().catch(() => {});
+        const source = ctx.createMediaStreamSource(stream);
+        const gain = ctx.createGain();
+        gain.gain.value = MONITOR_GAIN;
+        source.connect(gain).connect(ctx.destination);
         // The mic getUserMedia() above (MIC_CONSTRAINTS) just granted permission, which is what
         // makes real device labels available — safe to attempt the headphone-routing fix now.
-        routeToHeadphonesIfAvailable(audioEl);
+        routeAudioContextToHeadphonesIfAvailable(ctx);
       })
       .catch(() => {}); // monitor is optional — a failure here shouldn't interrupt recording
 
     return () => {
       cancelled = true;
-      audioEl.pause();
-      audioEl.srcObject = null;
-      audioEl.remove();
+      ctx?.close();
       monitorStream?.getTracks().forEach((t) => t.stop());
     };
   }, [active, monitor]);
@@ -897,6 +914,11 @@ function ScrubBar({
   );
 }
 
+// Entry point for "Choose Karaoke": lands on a photo grid of artists first, and only drops into
+// that artist's own track list once one is tapped — browsing 2M+ tracks by scrolling a flat list
+// was the thing this replaced. `artist` (not just a boolean) drives which sheet is showing, so the
+// track list can render its header/query scoped to that artist and the back arrow can return to
+// the grid without closing the sheet.
 function KaraokePickerSheet({
   open,
   onClose,
@@ -906,56 +928,146 @@ function KaraokePickerSheet({
   onClose: () => void;
   onSelect: (track: KaraokeTrack) => void;
 }) {
-  const { t } = useTranslation();
-  const [query, setQuery] = useState("");
-  const { data: tracks } = useQuery({
-    queryKey: ["karaokeTracks", query],
-    queryFn: () => listKaraokeTracks({ data: { query } }),
-    enabled: open,
-  });
+  const [artist, setArtist] = useState<KaraokeArtist | null>(null);
+
+  // Reset back to the artist grid every time the sheet is (re)opened, so closing mid-browse and
+  // reopening later doesn't strand the user on a stale track list.
+  useEffect(() => {
+    if (open) setArtist(null);
+  }, [open]);
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent side="bottom" className="flex h-[70vh] flex-col rounded-t-3xl">
-        <SheetHeader>
-          <SheetTitle>{t("record.karaoke")}</SheetTitle>
-        </SheetHeader>
-        <label className="mt-2 flex items-center gap-2 rounded-full bg-muted/60 px-4 py-2.5 ring-1 ring-border">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("record.karaokeSearchPlaceholder")}
-            className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          />
-        </label>
-        <div className="mt-3 flex-1 space-y-2 overflow-y-auto">
-          {tracks?.length === 0 && (
-            <div className="p-4 text-center text-sm text-muted-foreground">
-              <p>{t("record.noKaraokeTracks")}</p>
-              <p className="mt-2 text-[11px]">{t("record.noKaraokeTracksHint")}</p>
-            </div>
-          )}
-          {tracks?.map((track) => (
+        {artist ? (
+          <KaraokeTrackList artist={artist} onBack={() => setArtist(null)} onSelect={onSelect} />
+        ) : (
+          <KaraokeArtistGrid open={open} onSelect={setArtist} />
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function KaraokeArtistGrid({
+  open,
+  onSelect,
+}: {
+  open: boolean;
+  onSelect: (artist: KaraokeArtist) => void;
+}) {
+  const { t } = useTranslation();
+  const { data: artists } = useQuery({
+    queryKey: ["karaokeArtists"],
+    queryFn: () => listKaraokeArtists(),
+    enabled: open,
+  });
+
+  return (
+    <>
+      <SheetHeader>
+        <SheetTitle>{t("record.chooseArtist")}</SheetTitle>
+      </SheetHeader>
+      <div className="mt-3 flex-1 overflow-y-auto">
+        {artists?.length === 0 && (
+          <div className="p-4 text-center text-sm text-muted-foreground">
+            <p>{t("record.noArtists")}</p>
+          </div>
+        )}
+        <div className="grid grid-cols-3 gap-3">
+          {artists?.map((a) => (
             <button
-              key={track.id}
-              onClick={() => onSelect(track)}
-              className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card/60 p-3 text-start hover:border-primary/50"
+              key={a.id}
+              onClick={() => onSelect(a)}
+              className="flex flex-col items-center gap-1.5 rounded-2xl p-2 text-center hover:bg-card/60"
             >
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl gradient-neon">
-                <Music2 className="h-5 w-5 text-white" />
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <p className="line-clamp-1 text-sm font-semibold">{track.title}</p>
-                {track.artist && (
-                  <p className="line-clamp-1 text-xs text-muted-foreground">{track.artist}</p>
+              <div className="grid aspect-square w-full place-items-center overflow-hidden rounded-2xl border border-border bg-card/60">
+                {a.imageUrl ? (
+                  <img
+                    src={a.imageUrl}
+                    alt={a.name}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <User className="h-6 w-6 text-muted-foreground" />
                 )}
               </div>
+              <p className="line-clamp-1 text-xs font-semibold">{a.name}</p>
+              <p className="text-[10px] text-muted-foreground">
+                {t("record.songsCount", { count: a.trackCount })}
+              </p>
             </button>
           ))}
         </div>
-      </SheetContent>
-    </Sheet>
+      </div>
+    </>
+  );
+}
+
+function KaraokeTrackList({
+  artist,
+  onBack,
+  onSelect,
+}: {
+  artist: KaraokeArtist;
+  onBack: () => void;
+  onSelect: (track: KaraokeTrack) => void;
+}) {
+  const { t } = useTranslation();
+  const [query, setQuery] = useState("");
+  const { data: tracks } = useQuery({
+    queryKey: ["karaokeTracks", artist.name, query],
+    queryFn: () => listKaraokeTracks({ data: { artist: artist.name, query } }),
+  });
+
+  return (
+    <>
+      <SheetHeader>
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {t("record.backToArtists")}
+        </button>
+        <SheetTitle>{artist.name}</SheetTitle>
+      </SheetHeader>
+      <label className="mt-2 flex items-center gap-2 rounded-full bg-muted/60 px-4 py-2.5 ring-1 ring-border">
+        <Search className="h-4 w-4 text-muted-foreground" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("record.karaokeSearchPlaceholder")}
+          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        />
+      </label>
+      <div className="mt-3 flex-1 space-y-2 overflow-y-auto">
+        {tracks?.length === 0 && (
+          <div className="p-4 text-center text-sm text-muted-foreground">
+            <p>{t("record.noTracksForArtist")}</p>
+            <p className="mt-2 text-[11px]">{t("record.noKaraokeTracksHint")}</p>
+          </div>
+        )}
+        {tracks?.map((track) => (
+          <button
+            key={track.id}
+            onClick={() => onSelect(track)}
+            className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card/60 p-3 text-start hover:border-primary/50"
+          >
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl gradient-neon">
+              <Music2 className="h-5 w-5 text-white" />
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <p className="line-clamp-1 text-sm font-semibold">{track.title}</p>
+              {track.artist && (
+                <p className="line-clamp-1 text-xs text-muted-foreground">{track.artist}</p>
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
+    </>
   );
 }
 

@@ -23,16 +23,40 @@ export async function routeToHeadphonesIfAvailable(
   if (typeof HTMLMediaElement === "undefined" || !("setSinkId" in HTMLMediaElement.prototype)) {
     return;
   }
+  const match = await findHeadphoneOutput();
+  if (!match) return;
+  await Promise.all(targets.map((el) => el.setSinkId(match.deviceId).catch(() => {})));
+}
+
+/**
+ * Same fix as routeToHeadphonesIfAvailable, but for an AudioContext's own output instead of an
+ * <audio> element — see useMicLevels' monitor graph in record.tsx, which renders straight to
+ * ctx.destination (skipping HTMLMediaElement's higher-latency playback pipeline) and so needs its
+ * own sink routing. AudioContext.setSinkId is a newer, Chromium-only addition to the same Audio
+ * Output Devices API HTMLMediaElement has had for longer, so this no-ops just as quietly wherever
+ * it isn't supported.
+ */
+export async function routeAudioContextToHeadphonesIfAvailable(
+  ctx: AudioContext | null | undefined,
+): Promise<void> {
+  if (!ctx || !("setSinkId" in ctx)) return;
+  const match = await findHeadphoneOutput();
+  if (!match) return;
+  await (ctx as AudioContext & { setSinkId: (id: string) => Promise<void> })
+    .setSinkId(match.deviceId)
+    .catch(() => {});
+}
+
+async function findHeadphoneOutput(): Promise<MediaDeviceInfo | undefined> {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const outputs = devices.filter((d) => d.kind === "audiooutput");
     const isHeadphoneLike = (label: string) =>
       /headset|headphone|bluetooth|earbud|airpods|wired/i.test(label);
     const isBuiltInRoute = (label: string) => /speakerphone|earpiece|receiver/i.test(label);
-    const match = outputs.find((d) => isHeadphoneLike(d.label) && !isBuiltInRoute(d.label));
-    if (!match) return;
-    await Promise.all(targets.map((el) => el.setSinkId(match.deviceId).catch(() => {})));
+    return outputs.find((d) => isHeadphoneLike(d.label) && !isBuiltInRoute(d.label));
   } catch {
     // Best-effort — recording still works fine even if output routing couldn't be fixed here.
+    return undefined;
   }
 }

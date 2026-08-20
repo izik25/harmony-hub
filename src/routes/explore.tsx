@@ -97,7 +97,7 @@ function ExplorePage() {
                   key={p.id}
                   className="group relative aspect-[3/4] overflow-hidden rounded-2xl"
                 >
-                  <PostCoverBg hue={p.hue} seed={p.id} />
+                  <PostCoverBg hue={p.hue} seed={p.id} imageUrl={p.coverUrl} />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent" />
                   <div className="absolute inset-x-0 bottom-0 p-3">
                     <p className="line-clamp-1 text-sm font-semibold text-white">{p.title}</p>
@@ -159,7 +159,7 @@ function ExplorePage() {
                 )}
                 {(tab === "songs" ? songResults : djResults).map((p) => (
                   <article key={p.id} className="relative aspect-[3/4] overflow-hidden rounded-2xl">
-                    <PostCoverBg hue={p.hue} seed={p.id} />
+                    <PostCoverBg hue={p.hue} seed={p.id} imageUrl={p.coverUrl} />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent" />
                     <div className="absolute inset-x-0 bottom-0 p-3">
                       <p className="line-clamp-1 text-sm font-semibold text-white">{p.title}</p>

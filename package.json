@@ -13,6 +13,7 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/db/seed.ts",
     "db:seed-demo-audio": "tsx src/db/seed-demo-audio.ts",
+    "db:seed-karaoke-artists": "tsx src/db/seed-karaoke-artists.ts",
     "db:sync-karaoke": "tsx src/db/sync-karaoke.ts"
   },
   "dependencies": {

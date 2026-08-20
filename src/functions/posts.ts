@@ -234,6 +234,7 @@ export const publishPost = createServerFn({ method: "POST" })
       input as {
         draftId?: string;
         audioUrl?: string;
+        coverUrl?: string;
         type: string;
         title: string;
         songTitle?: string;
@@ -254,6 +255,7 @@ export const publishPost = createServerFn({ method: "POST" })
       credits: data.credits,
       visibility: data.visibility,
       status: "published" as const,
+      ...(data.coverUrl ? { coverUrl: data.coverUrl } : {}),
     };
 
     if (data.draftId) {

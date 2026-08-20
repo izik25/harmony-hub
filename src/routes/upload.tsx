@@ -11,14 +11,18 @@ import {
   Lock,
   CheckCircle2,
   Share2,
+  Sparkles,
+  RefreshCw,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
+import { PostCoverBg } from "@/components/PostCoverBg";
 import { PublishEverywhereModal } from "@/components/PublishEverywhereModal";
 import { getDraft, publishPost } from "@/functions/posts";
+import { generateCoverImage } from "@/functions/cover-image";
 import { smartUploadMedia } from "@/lib/blob-upload";
 import { translateServerError } from "@/lib/i18n";
 
@@ -103,6 +107,7 @@ function UploadPage() {
   const [composer, setComposer] = useState("");
   const [producer, setProducer] = useState("");
   const [pickedFile, setPickedFile] = useState<{ url: string; name: string } | null>(null);
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -117,6 +122,13 @@ function UploadPage() {
   });
 
   const audioUrl = draftId ? draft?.audioUrl : pickedFile?.url;
+  const coverSubject = title.trim() || draft?.title || draft?.songTitle || "";
+
+  const coverMutation = useMutation({
+    mutationFn: () => generateCoverImage({ data: { songTitle: coverSubject, category } }),
+    onSuccess: (result) => setCoverUrl(result.url),
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
+  });
 
   const togglePreview = () => {
     if (!audioUrl) return;
@@ -139,6 +151,7 @@ function UploadPage() {
         data: {
           draftId,
           audioUrl: draftId ? undefined : pickedFile?.url,
+          coverUrl: coverUrl ?? undefined,
           type,
           title: title.trim() || t("upload.untitled"),
           songTitle: title.trim(),
@@ -325,6 +338,39 @@ function UploadPage() {
               />
             </div>
           </fieldset>
+
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              {t("upload.coverImage")}
+            </p>
+            <div className="flex items-center gap-3 rounded-2xl border border-border bg-card/40 p-3">
+              <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl">
+                <PostCoverBg hue={280} seed={draftId ?? "new"} imageUrl={coverUrl ?? undefined} />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs text-muted-foreground">
+                  {coverUrl ? t("upload.coverReady") : t("upload.coverHint")}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => coverMutation.mutate()}
+                  disabled={coverMutation.isPending}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary disabled:opacity-60"
+                >
+                  {coverMutation.isPending ? (
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  )}
+                  {coverMutation.isPending
+                    ? t("upload.generatingCover")
+                    : coverUrl
+                      ? t("upload.regenerateCover")
+                      : t("upload.generateCover")}
+                </button>
+              </div>
+            </div>
+          </div>
 
           <div>
             <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">

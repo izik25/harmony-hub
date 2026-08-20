@@ -77,6 +77,17 @@ export function analyzeSignal(buffer: AudioBuffer): SignalProfile {
 }
 
 /**
+ * Where the gate in applyNoiseGate kicks in, derived from a take's own measured noise floor
+ * rather than one fixed number — clamped so a very noisy room doesn't push the threshold up into
+ * the vocal itself, and a very quiet one doesn't leave it so low the gate never engages. Shared by
+ * processRecording (below) and Studio's "AI Mastering" so both land on the same threshold for the
+ * same take.
+ */
+export function noiseGateThresholdFor(profile: SignalProfile): number {
+  return Math.min(-25, Math.max(-55, profile.noiseFloorDb + 8));
+}
+
+/**
  * Attenuates (not silences — a hard cut sounds choppier than a gentle dip) whatever's below the
  * threshold, with a short attack and a slower release so it doesn't chop the tails off words.
  * On phones especially, the backing track playing out of the speaker leaks straight into the
@@ -84,7 +95,7 @@ export function analyzeSignal(buffer: AudioBuffer): SignalProfile {
  * Nothing here can remove bleed that overlaps the voice itself; see the volume ducking and
  * headphone hint in record.tsx for that half of the fix.
  */
-function applyNoiseGate(
+export function applyNoiseGate(
   buffer: AudioBuffer,
   thresholdDb: number,
   attackMs = 4,
@@ -174,8 +185,7 @@ export async function processRecording(
   // Analyze this take before touching it — the gate threshold and the auto-leveling gain below
   // both come from what's actually in the recording, not a fixed guess.
   const profile = analyzeSignal(micBuffer);
-  const gateThresholdDb = Math.min(-25, Math.max(-55, profile.noiseFloorDb + 8));
-  applyNoiseGate(micBuffer, gateThresholdDb);
+  applyNoiseGate(micBuffer, noiseGateThresholdFor(profile));
 
   // Levels the take toward the compressor's own threshold before the caller's vocalGain
   // multiplier goes on top, so a naturally soft take and a naturally hot one both land in the

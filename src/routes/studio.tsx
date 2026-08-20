@@ -1,6 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Sliders, Wand2, Waves, Download, Send, Play, Pause, Loader2 } from "lucide-react";
+import {
+  Sliders,
+  Wand2,
+  Waves,
+  Download,
+  Send,
+  Play,
+  Pause,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -9,7 +20,12 @@ import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { getDraft, updateDraftAudio } from "@/functions/posts";
 import { smartUploadMedia } from "@/lib/blob-upload";
-import { processRecording, analyzeSignal } from "@/lib/mix-recording";
+import {
+  processRecording,
+  analyzeSignal,
+  applyNoiseGate,
+  noiseGateThresholdFor,
+} from "@/lib/mix-recording";
 import { audioBufferToWavBlob } from "@/lib/wav-encoder";
 import { generateImpulseResponse } from "@/lib/impulse-response";
 import { translateServerError } from "@/lib/i18n";
@@ -129,6 +145,12 @@ function StudioPage() {
   const [speed, setSpeed] = useState(100);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  // Whether AI Mastering's noise gate has been baked into the currently-loaded buffer. Read by
+  // renderProcessed to reapply the same gate on export/publish's independent offline decode (that
+  // decode never sees the live in-memory buffer AI Mastering mutated), and reset whenever a fresh
+  // audioUrl loads since a new take hasn't been mastered yet.
+  const gateAppliedRef = useRef(false);
 
   // 125/75 match record.tsx's initial auto-mix — a touch under the vocal / a touch over the
   // backing track so the instrumental doesn't get buried under it, expressed as % so the sliders
@@ -172,6 +194,7 @@ function StudioPage() {
     let disposed = false;
     const chain = buildChain(() => setPlaying(false));
     chainRef.current = chain;
+    gateAppliedRef.current = false;
     setReady(false);
     const loadWithRetry = async (url: string, attempts = 4): Promise<void> => {
       for (let i = 0; i < attempts; i++) {
@@ -242,6 +265,7 @@ function StudioPage() {
       compression: comp,
     };
     const audioUrl = draft.audioUrl;
+    const gateApplied = gateAppliedRef.current;
 
     const rendered = await Tone.Offline(
       async () => {
@@ -250,6 +274,16 @@ function StudioPage() {
         // buffer — Chromium can silently stall OfflineAudioContext rendering when a source node
         // references an AudioBuffer decoded by a different context.
         await offlineChain.player.load(audioUrl);
+        // This decode is independent of the live buffer AI Mastering gated in place — reapply the
+        // same gate here so export/publish actually carries the noise cleanup, not just the slider
+        // values. Deterministic: same source audio in both places always analyzes to the same
+        // threshold.
+        if (gateApplied) {
+          const offlineBuffer = offlineChain.player.buffer.get();
+          if (offlineBuffer) {
+            applyNoiseGate(offlineBuffer, noiseGateThresholdFor(analyzeSignal(offlineBuffer)));
+          }
+        }
         applyParams(offlineChain, params);
         offlineChain.player.start(0);
       },
@@ -320,50 +354,66 @@ function StudioPage() {
     onError: (e: Error) => toast.error(translateServerError(e.message)),
   });
 
-  const applyEnhance = () => {
-    setN(70);
-    setC(60);
-    setE(60);
-    toast.success(t("studio.enhanceApplied"));
-  };
-  // The one-tap "get me as close to a finished studio vocal as possible" preset. Rather than
-  // writing the same fixed numbers into every take, it runs analyzeSignal (mix-recording.ts) on
-  // whatever's actually loaded — this take's own noise floor, dynamic range, and rough tonal
-  // brightness — and derives the highpass/compression/EQ/reverb knobs from that, so a noisy room
-  // and a clean one, or a dull-sounding take and a bright one, come out tuned differently instead
-  // of identically. Writes into the same state the manual sliders below read from, so they
-  // immediately reflect what it did and you can keep nudging from there instead of starting over.
+  // The one-tap "get me as close to a finished studio vocal as possible" pass. Runs analyzeSignal
+  // (mix-recording.ts) on whatever's actually loaded first — this take's own noise floor, dynamic
+  // range, and rough tonal brightness — so it can tell an already-clean take from a noisy one
+  // instead of processing every recording identically:
+  //  - already studio-clean (quiet floor + wide dynamic range): the noise gate is skipped
+  //    entirely — running it on a take with no noise to remove just risks chopping quiet
+  //    syllables — and only a light EQ/compression polish is applied.
+  //  - anything noisier: the same destructive gate processRecording uses (applyNoiseGate) runs
+  //    directly on the loaded buffer, actually removing the room/hiss between phrases rather than
+  //    just raising the highpass slider, and the reverb send is pulled down (not up) since a
+  //    noisy/live room already carries its own ambience.
+  // Reverb in particular is capped well under the manual slider's own ceiling either way, so
+  // "AI Mastering" always reads as tightening a take up, never adding more room on top of it.
   const applyMaster = () => {
-    const buffer = chainRef.current?.player.buffer.get();
-    if (!buffer) {
+    const chain = chainRef.current;
+    const buffer = chain?.player.buffer.get();
+    if (!chain || !buffer) {
       toast.error(t("studio.loadTrackFirst"));
       return;
     }
-    const { noiseFloorDb, vocalLevelDb, brightness } = analyzeSignal(buffer);
     const clamp = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)));
+
+    const before = analyzeSignal(buffer);
+    const dynamicRangeDb = before.vocalLevelDb - before.noiseFloorDb;
+    const alreadyExcellent = before.noiseFloorDb <= -42 && dynamicRangeDb >= 20;
+
+    if (!alreadyExcellent) {
+      applyNoiseGate(buffer, noiseGateThresholdFor(before));
+    }
+    gateAppliedRef.current = !alreadyExcellent;
+
+    // Re-measure after gating — the gate itself lowers the noise floor, and the knobs below
+    // should react to what the take sounds like now, not what it sounded like before cleanup.
+    const after = alreadyExcellent ? before : analyzeSignal(buffer);
+    const afterDynamicRangeDb = after.vocalLevelDb - after.noiseFloorDb;
 
     // Noisier room (higher noise floor) → lean harder on the highpass; an already-clean take
     // gets to keep more of its low end.
-    const noiseAmt = clamp(((noiseFloorDb + 55) / 30) * 100, 35, 85);
+    const noiseAmt = clamp(((after.noiseFloorDb + 55) / 30) * 100, 35, 85);
     // Wider gap between the quiet and loud parts of the performance → more compression to even
     // it out; an already-consistent take doesn't need it pushed as hard.
-    const dynamicRangeDb = vocalLevelDb - noiseFloorDb;
-    const compAmt = clamp(((dynamicRangeDb - 12) / 23) * 100, 35, 85);
+    const compAmt = clamp(((afterDynamicRangeDb - 12) / 23) * 100, 35, 85);
     // Duller-sounding take gets pushed brighter; an already-bright one is left closer to flat
     // instead of getting pushed further and turning harsh.
-    const eqAmt = clamp(70 - brightness * 90, 40, 68);
-    // A noisier/livelier room already carries its own ambience — stacking a full reverb send on
-    // top just adds more echo on top of echo, so it gets less; a clean, dry capture can take more.
-    const reverbAmt = clamp(14 - (noiseFloorDb + 55) * 0.2, 5, 14);
+    const eqAmt = clamp(70 - after.brightness * 90, 40, 68);
+    // Mastering tightens a take up rather than adding ambience on top of it — a noisy/live room
+    // gets pulled down the hardest since it already carries its own ambience, and even a clean,
+    // dry capture is capped well under the manual slider's own range.
+    const reverbAmt = clamp(8 - (after.noiseFloorDb + 55) * 0.15, 2, 8);
 
-    // Autotune stays off here too — see the note by its default state above. Forcing it to 60%
+    // Autotune stays off here too — see the note by its default state above. Forcing it on
     // regardless of the take's actual pitch (there's no pitch-detection to correct toward) was
-    // just injecting the same delay-modulation artifact into every "Auto Master" pass.
+    // just injecting a delay-modulation artifact into every mastering pass.
     setN(noiseAmt);
     setR(reverbAmt);
     setE(eqAmt);
     setC(compAmt);
-    toast.success(t("studio.masterApplied"));
+    toast.success(
+      alreadyExcellent ? t("studio.masterAppliedClean") : t("studio.masterAppliedCleaned"),
+    );
   };
 
   return (
@@ -478,31 +528,39 @@ function StudioPage() {
             </section>
 
             <section className="mt-4 rounded-3xl border border-border bg-card/50 p-4">
-              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                <Sliders className="h-4 w-4 text-accent" /> {t("studio.vocalChain")}
-              </h2>
-              <Slider label={t("record.autotune")} v={autotune} onChange={setA} />
-              <Slider label={t("record.noise")} v={noise} onChange={setN} />
-              <Slider label={t("record.reverb")} v={reverbAmt} onChange={setR} />
-              <Slider label={t("record.eq")} v={eq} onChange={setE} />
-              <Slider label={t("record.compression")} v={comp} onChange={setC} />
-              <Slider
-                label={t("record.speed")}
-                v={speed}
-                onChange={setSpeed}
-                min={50}
-                max={150}
-                suffix="%"
-              />
+              <button
+                onClick={() => setManualOpen((v) => !v)}
+                className="flex w-full items-center justify-between text-sm font-semibold"
+              >
+                <span className="flex items-center gap-2">
+                  <Sliders className="h-4 w-4 text-accent" /> {t("record.manualEdit")}
+                </span>
+                {manualOpen ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                )}
+              </button>
+              {manualOpen && (
+                <div className="mt-3">
+                  <Slider label={t("record.autotune")} v={autotune} onChange={setA} />
+                  <Slider label={t("record.noise")} v={noise} onChange={setN} />
+                  <Slider label={t("record.reverb")} v={reverbAmt} onChange={setR} />
+                  <Slider label={t("record.eq")} v={eq} onChange={setE} />
+                  <Slider label={t("record.compression")} v={comp} onChange={setC} />
+                  <Slider
+                    label={t("record.speed")}
+                    v={speed}
+                    onChange={setSpeed}
+                    min={50}
+                    max={150}
+                    suffix="%"
+                  />
+                </div>
+              )}
             </section>
 
-            <div className="mt-5 grid grid-cols-4 gap-2">
-              <button
-                onClick={applyEnhance}
-                className="flex flex-col items-center gap-1 rounded-2xl border border-border bg-card/60 p-3 text-[11px] font-semibold"
-              >
-                <Wand2 className="h-4 w-4" /> {t("record.enhance")}
-              </button>
+            <div className="mt-5 grid grid-cols-3 gap-2">
               <button
                 onClick={() => exportMutation.mutate()}
                 disabled={!ready || exportMutation.isPending}
