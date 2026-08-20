@@ -22,6 +22,7 @@ export const users = pgTable("users", {
   country: text("country").notNull().default(""),
   openToLabel: boolean("open_to_label").notNull().default(false),
   coinsBalance: integer("coins_balance").notNull().default(500),
+  accountType: text("account_type").notNull().default("user"), // user | artist
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -336,4 +337,60 @@ export const platformPublishes = pgTable("platform_publishes", {
   error: text("error").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// One row per artist (users.accountType === "artist") holding the channel/profile-level links
+// shown on their public "artist card" — as opposed to platformConnections, which is OAuth
+// upload credentials for the publish flow. These are plain link-out URLs the artist pastes in.
+export const artistProfiles = pgTable("artist_profiles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  genre: text("genre").notNull().default(""),
+  label: text("label").notNull().default(""),
+  spotifyUrl: text("spotify_url").notNull().default(""),
+  youtubeUrl: text("youtube_url").notNull().default(""),
+  appleMusicUrl: text("apple_music_url").notNull().default(""),
+  soundcloudUrl: text("soundcloud_url").notNull().default(""),
+  instagramUrl: text("instagram_url").notNull().default(""),
+  tiktokUrl: text("tiktok_url").notNull().default(""),
+  websiteUrl: text("website_url").notNull().default(""),
+  wikipediaUrl: text("wikipedia_url").notNull().default(""),
+  ticketsUrl: text("tickets_url").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Discography entries shown on the artist card — link-outs to where the song lives on each
+// platform, not playable in-app (that's what `posts` is for).
+export const artistSongs = pgTable("artist_songs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  artistUserId: uuid("artist_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  coverUrl: text("cover_url").notNull().default(""),
+  releaseYear: integer("release_year"),
+  spotifyUrl: text("spotify_url").notNull().default(""),
+  youtubeUrl: text("youtube_url").notNull().default(""),
+  appleMusicUrl: text("apple_music_url").notNull().default(""),
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Upcoming show/tour dates with a per-show ticket link, shown on the artist card.
+export const artistShows = pgTable("artist_shows", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  artistUserId: uuid("artist_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  venue: text("venue").notNull().default(""),
+  city: text("city").notNull().default(""),
+  showDate: timestamp("show_date", { withTimezone: true }),
+  ticketUrl: text("ticket_url").notNull().default(""),
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

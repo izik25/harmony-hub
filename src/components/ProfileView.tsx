@@ -1,6 +1,23 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Settings, BadgeCheck, MessageSquare, Share2, X } from "lucide-react";
+import {
+  Settings,
+  BadgeCheck,
+  MessageSquare,
+  Share2,
+  X,
+  Youtube,
+  Music2,
+  Disc3,
+  Ticket,
+  BookOpen,
+  Globe,
+  Instagram,
+  Plus,
+  Trash2,
+  CalendarDays,
+  MapPin,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -8,7 +25,25 @@ import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { PostCoverBg } from "@/components/PostCoverBg";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { getProfileByHandle, listUserPosts, updateProfile } from "@/functions/profile";
+import {
+  updateArtistLinks,
+  listArtistSongs,
+  addArtistSong,
+  deleteArtistSong,
+  listArtistShows,
+  addArtistShow,
+  deleteArtistShow,
+} from "@/functions/artist";
 import { listUserCompetitionEntries } from "@/functions/competitions";
 import { toggleFollow, listMyDrafts } from "@/functions/posts";
 import { getOrCreateConversation } from "@/functions/messages";
@@ -44,8 +79,46 @@ export function ProfileView({ handle }: { handle: string }) {
     queryFn: () => listMyDrafts(),
     enabled: tab === "drafts" && !!profile?.isMe,
   });
+  const isArtist = profile?.accountType === "artist";
+  const { data: artistSongs } = useQuery({
+    queryKey: ["artistSongs", handle],
+    queryFn: () => listArtistSongs({ data: { handle } }),
+    enabled: tab === "about" && isArtist,
+  });
+  const { data: artistShows } = useQuery({
+    queryKey: ["artistShows", handle],
+    queryFn: () => listArtistShows({ data: { handle } }),
+    enabled: tab === "about" && isArtist,
+  });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["profile", handle] });
+  const invalidateSongs = () => queryClient.invalidateQueries({ queryKey: ["artistSongs", handle] });
+  const invalidateShows = () => queryClient.invalidateQueries({ queryKey: ["artistShows", handle] });
+
+  const addSongMutation = useMutation({
+    mutationFn: (input: { title: string; releaseYear?: number }) =>
+      addArtistSong({ data: input }),
+    onSuccess: () => {
+      invalidateSongs();
+      toast.success(t("profile.artist.songAdded"));
+    },
+  });
+  const deleteSongMutation = useMutation({
+    mutationFn: (id: string) => deleteArtistSong({ data: { id } }),
+    onSuccess: invalidateSongs,
+  });
+  const addShowMutation = useMutation({
+    mutationFn: (input: { title: string; venue?: string; city?: string; ticketUrl?: string }) =>
+      addArtistShow({ data: input }),
+    onSuccess: () => {
+      invalidateShows();
+      toast.success(t("profile.artist.showAdded"));
+    },
+  });
+  const deleteShowMutation = useMutation({
+    mutationFn: (id: string) => deleteArtistShow({ data: { id } }),
+    onSuccess: invalidateShows,
+  });
 
   const followMutation = useMutation({
     mutationFn: () => toggleFollow({ data: { userId: profile!.id } }),
@@ -149,6 +222,8 @@ export function ProfileView({ handle }: { handle: string }) {
               </button>
             </div>
           )}
+
+          {isArtist && <ArtistLinksRow links={profile.artistLinks} />}
         </div>
 
         <div className="mt-6 flex gap-1 overflow-x-auto border-b border-border px-2 no-scrollbar">
@@ -181,6 +256,24 @@ export function ProfileView({ handle }: { handle: string }) {
             )}
             {profile.openToLabel && (
               <p className="mt-2 text-accent">{t("profile.openToLabelOffers")}</p>
+            )}
+
+            {isArtist && (
+              <ArtistDiscography
+                songs={artistSongs}
+                canEdit={!!profile.isMe}
+                onAdd={(input) => addSongMutation.mutate(input)}
+                onDelete={(id) => deleteSongMutation.mutate(id)}
+              />
+            )}
+
+            {isArtist && (
+              <ArtistShows
+                shows={artistShows}
+                canEdit={!!profile.isMe}
+                onAdd={(input) => addShowMutation.mutate(input)}
+                onDelete={(id) => deleteShowMutation.mutate(id)}
+              />
             )}
           </div>
         ) : tab === "live" ? (
@@ -267,6 +360,296 @@ function Stat({ n, k }: { n: number; k: string }) {
 }
 
 type Profile = NonNullable<Awaited<ReturnType<typeof getProfileByHandle>>>;
+type ArtistSongList = Awaited<ReturnType<typeof listArtistSongs>>;
+type ArtistShowList = Awaited<ReturnType<typeof listArtistShows>>;
+
+function ArtistLinksRow({ links }: { links: Profile["artistLinks"] }) {
+  const { t } = useTranslation();
+  if (!links) return null;
+
+  const pills = [
+    { label: t("profile.artist.spotify"), icon: <Music2 className="h-3.5 w-3.5" />, url: links.spotifyUrl },
+    { label: t("profile.artist.youtube"), icon: <Youtube className="h-3.5 w-3.5" />, url: links.youtubeUrl },
+    { label: t("profile.artist.appleMusic"), icon: <Disc3 className="h-3.5 w-3.5" />, url: links.appleMusicUrl },
+    { label: t("profile.artist.soundcloud"), icon: <Music2 className="h-3.5 w-3.5" />, url: links.soundcloudUrl },
+    { label: t("profile.artist.instagram"), icon: <Instagram className="h-3.5 w-3.5" />, url: links.instagramUrl },
+    { label: t("profile.artist.tiktok"), icon: <Disc3 className="h-3.5 w-3.5" />, url: links.tiktokUrl },
+    { label: t("profile.artist.website"), icon: <Globe className="h-3.5 w-3.5" />, url: links.websiteUrl },
+    { label: t("profile.artist.wikipedia"), icon: <BookOpen className="h-3.5 w-3.5" />, url: links.wikipediaUrl },
+  ].filter((p) => p.url);
+
+  if (pills.length === 0 && !links.ticketsUrl && !links.genre && !links.label) return null;
+
+  return (
+    <div className="mt-4 rounded-2xl border border-border bg-card/60 p-3">
+      {(links.genre || links.label) && (
+        <p className="text-xs text-muted-foreground">
+          {[links.genre, links.label].filter(Boolean).join(" · ")}
+        </p>
+      )}
+      {pills.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {pills.map((p) => (
+            <a
+              key={p.label}
+              href={p.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold"
+            >
+              {p.icon}
+              {p.label}
+            </a>
+          ))}
+        </div>
+      )}
+      {links.ticketsUrl && (
+        <a
+          href={links.ticketsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 flex items-center justify-center gap-2 rounded-full gradient-neon py-2 text-sm font-bold text-white glow-pink"
+        >
+          <Ticket className="h-4 w-4" />
+          {t("profile.artist.buyTickets")}
+        </a>
+      )}
+    </div>
+  );
+}
+
+function ArtistDiscography({
+  songs,
+  canEdit,
+  onAdd,
+  onDelete,
+}: {
+  songs: ArtistSongList | undefined;
+  canEdit: boolean;
+  onAdd: (input: { title: string; releaseYear?: number }) => void;
+  onDelete: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [year, setYear] = useState("");
+
+  return (
+    <div className="mt-5">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">{t("profile.artist.songs")}</h3>
+        {canEdit && (
+          <button
+            onClick={() => setOpen(true)}
+            className="flex items-center gap-1 text-xs font-semibold text-accent"
+          >
+            <Plus className="h-3.5 w-3.5" /> {t("profile.artist.addSong")}
+          </button>
+        )}
+      </div>
+      {(!songs || songs.length === 0) && (
+        <p className="mt-1 text-muted-foreground">{t("profile.artist.noSongs")}</p>
+      )}
+      <div className="mt-2 space-y-2">
+        {songs?.map((s) => (
+          <div
+            key={s.id}
+            className="flex items-center justify-between rounded-2xl border border-border bg-card/60 p-3"
+          >
+            <div>
+              <p className="text-sm font-semibold">{s.title}</p>
+              {s.releaseYear ? (
+                <p className="text-xs text-muted-foreground">{s.releaseYear}</p>
+              ) : null}
+              <div className="mt-1 flex gap-2">
+                {s.spotifyUrl && (
+                  <a href={s.spotifyUrl} target="_blank" rel="noopener noreferrer">
+                    <Music2 className="h-4 w-4 text-muted-foreground" />
+                  </a>
+                )}
+                {s.youtubeUrl && (
+                  <a href={s.youtubeUrl} target="_blank" rel="noopener noreferrer">
+                    <Youtube className="h-4 w-4 text-muted-foreground" />
+                  </a>
+                )}
+                {s.appleMusicUrl && (
+                  <a href={s.appleMusicUrl} target="_blank" rel="noopener noreferrer">
+                    <Disc3 className="h-4 w-4 text-muted-foreground" />
+                  </a>
+                )}
+              </div>
+            </div>
+            {canEdit && (
+              <button onClick={() => onDelete(s.id)} className="shrink-0 text-muted-foreground">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("profile.artist.addSong")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={t("profile.artist.songTitlePlaceholder")}
+            />
+            <Input
+              value={year}
+              onChange={(e) => setYear(e.target.value.replace(/[^0-9]/g, ""))}
+              placeholder={t("profile.artist.yearPlaceholder")}
+              inputMode="numeric"
+            />
+          </div>
+          <DialogFooter>
+            <button
+              onClick={() => {
+                if (!title.trim()) return;
+                onAdd({ title, releaseYear: year ? Number(year) : undefined });
+                setTitle("");
+                setYear("");
+                setOpen(false);
+              }}
+              className="w-full rounded-full gradient-neon py-2.5 text-sm font-bold text-white glow-pink"
+            >
+              {t("common.save")}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function ArtistShows({
+  shows,
+  canEdit,
+  onAdd,
+  onDelete,
+}: {
+  shows: ArtistShowList | undefined;
+  canEdit: boolean;
+  onAdd: (input: { title: string; venue?: string; city?: string; ticketUrl?: string }) => void;
+  onDelete: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [venue, setVenue] = useState("");
+  const [city, setCity] = useState("");
+  const [ticketUrl, setTicketUrl] = useState("");
+
+  return (
+    <div className="mt-5">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">{t("profile.artist.shows")}</h3>
+        {canEdit && (
+          <button
+            onClick={() => setOpen(true)}
+            className="flex items-center gap-1 text-xs font-semibold text-accent"
+          >
+            <Plus className="h-3.5 w-3.5" /> {t("profile.artist.addShow")}
+          </button>
+        )}
+      </div>
+      {(!shows || shows.length === 0) && (
+        <p className="mt-1 text-muted-foreground">{t("profile.artist.noShows")}</p>
+      )}
+      <div className="mt-2 space-y-2">
+        {shows?.map((s) => (
+          <div
+            key={s.id}
+            className="flex items-center justify-between rounded-2xl border border-border bg-card/60 p-3"
+          >
+            <div>
+              <p className="text-sm font-semibold">{s.title}</p>
+              {(s.venue || s.city) && (
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <MapPin className="h-3 w-3" />
+                  {[s.venue, s.city].filter(Boolean).join(" · ")}
+                </p>
+              )}
+              {s.showDate && (
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <CalendarDays className="h-3 w-3" />
+                  {new Date(s.showDate).toLocaleDateString()}
+                </p>
+              )}
+              {s.ticketUrl && (
+                <a
+                  href={s.ticketUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-accent"
+                >
+                  <Ticket className="h-3 w-3" /> {t("profile.artist.buyTickets")}
+                </a>
+              )}
+            </div>
+            {canEdit && (
+              <button onClick={() => onDelete(s.id)} className="shrink-0 text-muted-foreground">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("profile.artist.addShow")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={t("profile.artist.showTitlePlaceholder")}
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                value={venue}
+                onChange={(e) => setVenue(e.target.value)}
+                placeholder={t("profile.artist.venuePlaceholder")}
+              />
+              <Input
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                placeholder={t("profile.artist.cityPlaceholder")}
+              />
+            </div>
+            <Input
+              value={ticketUrl}
+              onChange={(e) => setTicketUrl(e.target.value)}
+              placeholder={t("profile.artist.ticketsPlaceholder")}
+            />
+          </div>
+          <DialogFooter>
+            <button
+              onClick={() => {
+                if (!title.trim()) return;
+                onAdd({ title, venue, city, ticketUrl });
+                setTitle("");
+                setVenue("");
+                setCity("");
+                setTicketUrl("");
+                setOpen(false);
+              }}
+              className="w-full rounded-full gradient-neon py-2.5 text-sm font-bold text-white glow-pink"
+            >
+              {t("common.save")}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 function SettingsSheet({
   open,
@@ -286,6 +669,22 @@ function SettingsSheet({
   const [country, setCountry] = useState(profile.country);
   const [openToLabel, setOpenToLabel] = useState(profile.openToLabel);
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
+  const [isArtistAccount, setIsArtistAccount] = useState(profile.accountType === "artist");
+  const [artistLinks, setArtistLinks] = useState({
+    genre: profile.artistLinks?.genre ?? "",
+    label: profile.artistLinks?.label ?? "",
+    spotifyUrl: profile.artistLinks?.spotifyUrl ?? "",
+    youtubeUrl: profile.artistLinks?.youtubeUrl ?? "",
+    appleMusicUrl: profile.artistLinks?.appleMusicUrl ?? "",
+    soundcloudUrl: profile.artistLinks?.soundcloudUrl ?? "",
+    instagramUrl: profile.artistLinks?.instagramUrl ?? "",
+    tiktokUrl: profile.artistLinks?.tiktokUrl ?? "",
+    websiteUrl: profile.artistLinks?.websiteUrl ?? "",
+    wikipediaUrl: profile.artistLinks?.wikipediaUrl ?? "",
+    ticketsUrl: profile.artistLinks?.ticketsUrl ?? "",
+  });
+  const setArtistLink = (key: keyof typeof artistLinks) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setArtistLinks((prev) => ({ ...prev, [key]: e.target.value }));
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const avatarMutation = useMutation({
@@ -297,8 +696,20 @@ function SettingsSheet({
   });
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      updateProfile({ data: { name, bio, avatarUrl, voiceType, country, openToLabel } }),
+    mutationFn: async () => {
+      await updateProfile({
+        data: {
+          name,
+          bio,
+          avatarUrl,
+          voiceType,
+          country,
+          openToLabel,
+          accountType: isArtistAccount ? "artist" : "user",
+        },
+      });
+      if (isArtistAccount) await updateArtistLinks({ data: artistLinks });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["profile", profile.handle] });
       toast.success(t("profile.updated"));
@@ -375,6 +786,89 @@ function SettingsSheet({
             />
             {t("profile.openToLabelCheckbox")}
           </label>
+
+          <div className="flex items-center justify-between rounded-2xl border border-border bg-card/60 p-3">
+            <div>
+              <p className="text-sm font-semibold">{t("profile.artist.accountToggle")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("profile.artist.accountToggleHint")}
+              </p>
+            </div>
+            <Switch checked={isArtistAccount} onCheckedChange={setIsArtistAccount} />
+          </div>
+
+          {isArtistAccount && (
+            <div className="space-y-2 rounded-2xl border border-border bg-card/60 p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={artistLinks.genre}
+                  onChange={setArtistLink("genre")}
+                  className="input"
+                  placeholder={t("profile.artist.genrePlaceholder")}
+                />
+                <input
+                  value={artistLinks.label}
+                  onChange={setArtistLink("label")}
+                  className="input"
+                  placeholder={t("profile.artist.labelPlaceholder")}
+                />
+              </div>
+              <input
+                value={artistLinks.spotifyUrl}
+                onChange={setArtistLink("spotifyUrl")}
+                className="input"
+                placeholder={t("profile.artist.spotifyPlaceholder")}
+              />
+              <input
+                value={artistLinks.youtubeUrl}
+                onChange={setArtistLink("youtubeUrl")}
+                className="input"
+                placeholder={t("profile.artist.youtubePlaceholder")}
+              />
+              <input
+                value={artistLinks.appleMusicUrl}
+                onChange={setArtistLink("appleMusicUrl")}
+                className="input"
+                placeholder={t("profile.artist.appleMusicPlaceholder")}
+              />
+              <input
+                value={artistLinks.soundcloudUrl}
+                onChange={setArtistLink("soundcloudUrl")}
+                className="input"
+                placeholder={t("profile.artist.soundcloudPlaceholder")}
+              />
+              <input
+                value={artistLinks.instagramUrl}
+                onChange={setArtistLink("instagramUrl")}
+                className="input"
+                placeholder={t("profile.artist.instagramPlaceholder")}
+              />
+              <input
+                value={artistLinks.tiktokUrl}
+                onChange={setArtistLink("tiktokUrl")}
+                className="input"
+                placeholder={t("profile.artist.tiktokPlaceholder")}
+              />
+              <input
+                value={artistLinks.websiteUrl}
+                onChange={setArtistLink("websiteUrl")}
+                className="input"
+                placeholder={t("profile.artist.websitePlaceholder")}
+              />
+              <input
+                value={artistLinks.wikipediaUrl}
+                onChange={setArtistLink("wikipediaUrl")}
+                className="input"
+                placeholder={t("profile.artist.wikipediaPlaceholder")}
+              />
+              <input
+                value={artistLinks.ticketsUrl}
+                onChange={setArtistLink("ticketsUrl")}
+                className="input"
+                placeholder={t("profile.artist.ticketsPlaceholder")}
+              />
+            </div>
+          )}
 
           <button
             onClick={() => saveMutation.mutate()}

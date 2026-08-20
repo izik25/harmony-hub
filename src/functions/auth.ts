@@ -22,6 +22,7 @@ export type SessionUser = {
   country: string;
   openToLabel: boolean;
   coinsBalance: number;
+  accountType: string;
 };
 
 function toSessionUser(u: typeof users.$inferSelect): SessionUser {
@@ -37,6 +38,7 @@ function toSessionUser(u: typeof users.$inferSelect): SessionUser {
     country: u.country,
     openToLabel: u.openToLabel,
     coinsBalance: u.coinsBalance,
+    accountType: u.accountType,
   };
 }
 
