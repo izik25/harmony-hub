@@ -26,13 +26,13 @@ function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
-        <h1 className="font-display text-7xl font-bold gradient-neon-text">404</h1>
+        <h1 className="font-display text-7xl font-bold text-brand-coral animate-pop-in">404</h1>
         <h2 className="mt-4 text-xl font-semibold text-foreground">{t("error.notFoundTitle")}</h2>
         <p className="mt-2 text-sm text-muted-foreground">{t("error.notFoundBody")}</p>
         <div className="mt-6">
           <Link
             to="/"
-            className="inline-flex items-center justify-center rounded-full gradient-neon px-6 py-2.5 text-sm font-semibold text-white glow-pink"
+            className="inline-flex items-center justify-center rounded-full bg-brand-coral px-6 py-2.5 text-sm font-semibold text-white shadow-pop-coral press-scale hover-lift"
           >
             {t("error.backToFeed")}
           </Link>
@@ -63,7 +63,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
               router.invalidate();
               reset();
             }}
-            className="rounded-full gradient-neon px-5 py-2 text-sm font-semibold text-white glow-pink"
+            className="rounded-full bg-brand-coral px-5 py-2 text-sm font-semibold text-white shadow-pop-coral press-scale hover-lift"
           >
             {t("error.tryAgain")}
           </button>
@@ -100,7 +100,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { name: "theme-color", content: "#0a100e" },
+      { name: "theme-color", content: "#f9f6f0" },
       { title: "SONA — Music Social Network" },
       {
         name: "description",
@@ -139,7 +139,7 @@ function RootShell({ children }: { children: ReactNode }) {
     typeof document === "undefined" && lang ? i18n.cloneInstance({ lng: lang }) : i18n;
   const resolvedLang = requestI18n.language;
   return (
-    <html lang={resolvedLang} dir={isRTL(resolvedLang) ? "rtl" : "ltr"} className="dark">
+    <html lang={resolvedLang} dir={isRTL(resolvedLang) ? "rtl" : "ltr"}>
       <head>
         <HeadContent />
       </head>

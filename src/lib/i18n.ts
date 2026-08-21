@@ -117,6 +117,8 @@ const en = {
     monitorOff: "Monitoring Off",
     monitorFeedbackWarning:
       "Live monitoring is on — use headphones, or you'll get feedback/howling.",
+    monitorBluetoothLatency:
+      "Bluetooth audio has a built-in delay (100-300ms) — for real-time monitoring, try wired headphones instead.",
     mixBalance: "Mix Balance",
     vocalVolume: "Vocal Volume",
     playbackVolume: "Playback Volume",
@@ -676,6 +678,8 @@ const he = {
     monitorOn: "שמיעה עצמית",
     monitorOff: "ניטור כבוי",
     monitorFeedbackWarning: "ניטור חי פעיל — השתמש באוזניות, אחרת יתקבל פידבק (צפצוף).",
+    monitorBluetoothLatency:
+      "לאוזניות בלוטות' יש השהיה מובנית (100-300ms) — לניטור בזמן אמת, נסה אוזניות חוטיות.",
     mixBalance: "איזון מיקס",
     vocalVolume: "עוצמת קול",
     playbackVolume: "עוצמת פלייבק",
@@ -1234,6 +1238,8 @@ const ar = {
     monitorOn: "استمع لنفسك",
     monitorOff: "المراقبة متوقفة",
     monitorFeedbackWarning: "المراقبة الحية مفعّلة — استخدم سماعات وإلا ستحصل على صدى/صفير.",
+    monitorBluetoothLatency:
+      "لسماعات البلوتوث تأخير مدمج (100-300ms) — للمراقبة بالوقت الفعلي، جرّب سماعات سلكية.",
     mixBalance: "توازن المزيج",
     vocalVolume: "مستوى الصوت",
     playbackVolume: "مستوى التشغيل",

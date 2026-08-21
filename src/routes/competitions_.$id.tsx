@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Trophy, Users, Award, ArrowLeft, ThumbsUp, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
@@ -16,6 +17,8 @@ import { translateServerError } from "@/lib/i18n";
 export const Route = createFileRoute("/competitions_/$id")({
   component: CompetitionDetailPage,
 });
+
+const staggerClasses = ["stagger-1", "stagger-2", "stagger-3", "stagger-4", "stagger-5", "stagger-6"];
 
 function CompetitionDetailPage() {
   const { t } = useTranslation();
@@ -77,11 +80,11 @@ function CompetitionDetailPage() {
           <ArrowLeft className="h-3.5 w-3.5" /> {t("comp.title")}
         </Link>
 
-        <article className="relative h-48 overflow-hidden rounded-3xl">
+        <article className="relative h-48 overflow-hidden rounded-3xl shadow-pop-lg">
           <PostCoverBg hue={competition.hue} seed={competition.coverSeed} />
           <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent" />
           <div className="absolute inset-x-0 bottom-0 p-4">
-            <span className="rounded-full bg-primary/90 px-2 py-0.5 text-[10px] font-bold uppercase text-primary-foreground">
+            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-primary-foreground">
               {t(`comp.${competition.stage}`)}
             </span>
             <h1 className="mt-2 font-display text-2xl font-bold text-white">{competition.title}</h1>
@@ -99,7 +102,7 @@ function CompetitionDetailPage() {
         <button
           onClick={() => setJoinOpen(true)}
           disabled={alreadyEntered}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-full gradient-neon py-2.5 text-sm font-bold text-white glow-pink disabled:opacity-50"
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-50"
         >
           <Trophy className="h-4 w-4" />{" "}
           {alreadyEntered ? t("comp.alreadyEntered") : t("comp.join")}
@@ -112,10 +115,10 @@ function CompetitionDetailPage() {
           <p className="mt-2 text-sm text-muted-foreground">{t("comp.noEntriesYet")}</p>
         )}
         <div className="mt-2 space-y-2">
-          {entries.map((e) => (
+          {entries.map((e, i) => (
             <div
               key={e.id}
-              className="flex items-center gap-3 rounded-2xl border border-border bg-card/60 p-3"
+              className={`flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-pop animate-fade-up ${staggerClasses[i % 6]}`}
             >
               <img src={e.user.avatarUrl} className="h-10 w-10 rounded-full" alt="" />
               <div className="flex-1">
@@ -124,19 +127,29 @@ function CompetitionDetailPage() {
                   {e.user.name} · {t("comp.votesCount", { n: e.votesCount })}
                 </p>
               </div>
-              {myVoteEntryId === e.id ? (
-                <span className="flex items-center gap-1 text-xs font-semibold text-accent">
-                  <CheckCircle2 className="h-4 w-4" /> {t("comp.voted")}
-                </span>
-              ) : (
-                <button
-                  onClick={() => voteMutation.mutate(e.id)}
-                  disabled={!!myVoteEntryId || e.user.id === me?.id || voteMutation.isPending}
-                  className="flex items-center gap-1 rounded-full border border-primary/60 px-3 py-1.5 text-xs font-semibold text-primary disabled:opacity-40"
-                >
-                  <ThumbsUp className="h-3.5 w-3.5" /> {t("common.vote")}
-                </button>
-              )}
+              <AnimatePresence mode="wait" initial={false}>
+                {myVoteEntryId === e.id ? (
+                  <motion.span
+                    key="voted"
+                    initial={{ opacity: 0, scale: 0.7 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 25 }}
+                    className="flex items-center gap-1 text-xs font-semibold text-accent"
+                  >
+                    <CheckCircle2 className="h-4 w-4" /> {t("comp.voted")}
+                  </motion.span>
+                ) : (
+                  <motion.button
+                    key="vote"
+                    whileTap={{ scale: 0.88 }}
+                    onClick={() => voteMutation.mutate(e.id)}
+                    disabled={!!myVoteEntryId || e.user.id === me?.id || voteMutation.isPending}
+                    className="flex items-center gap-1 rounded-full border border-primary/60 px-3 py-1.5 text-xs font-semibold text-primary disabled:opacity-40"
+                  >
+                    <ThumbsUp className="h-3.5 w-3.5" /> {t("common.vote")}
+                  </motion.button>
+                )}
+              </AnimatePresence>
             </div>
           ))}
         </div>
@@ -162,7 +175,7 @@ function CompetitionDetailPage() {
                 key={p.id}
                 disabled={joinMutation.isPending}
                 onClick={() => joinMutation.mutate(p.id)}
-                className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card/60 p-3 text-start hover:border-primary/50"
+                className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card p-3 text-start press-scale hover:border-primary/50"
               >
                 <div className="relative h-10 w-10 overflow-hidden rounded-lg">
                   <PostCoverBg hue={p.hue} seed={p.id} />

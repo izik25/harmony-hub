@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ArrowLeft, Send } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { listConversations, listMessages, sendMessage } from "@/functions/messages";
@@ -62,22 +63,27 @@ function ConversationPage() {
         </div>
 
         <div className="flex-1 space-y-2 overflow-y-auto pb-3">
-          {msgs?.map((m) => (
-            <div
-              key={m.id}
-              className={`flex ${m.senderId === me?.id ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
-                  m.senderId === me?.id
-                    ? "gradient-neon text-white"
-                    : "border border-border bg-card/60"
-                }`}
+          <AnimatePresence initial={false}>
+            {msgs?.map((m) => (
+              <motion.div
+                key={m.id}
+                initial={{ opacity: 0, y: 10, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ type: "spring", stiffness: 460, damping: 30 }}
+                className={`flex ${m.senderId === me?.id ? "justify-end" : "justify-start"}`}
               >
-                {m.body}
-              </div>
-            </div>
-          ))}
+                <div
+                  className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                    m.senderId === me?.id
+                      ? "bg-brand-coral text-white shadow-pop"
+                      : "border border-border bg-card"
+                  }`}
+                >
+                  {m.body}
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
           <div ref={endRef} />
         </div>
 
@@ -92,14 +98,17 @@ function ConversationPage() {
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder={t("messages.placeholder")}
-            className="flex-1 rounded-full bg-background/70 px-4 py-2 text-sm outline-none ring-1 ring-border"
+            className="flex-1 rounded-full bg-muted px-4 py-2 text-sm outline-none ring-1 ring-border"
           />
-          <button
+          <motion.button
             type="submit"
-            className="grid h-10 w-10 place-items-center rounded-full gradient-neon"
+            whileTap={{ scale: 0.9 }}
+            whileHover={{ scale: 1.05 }}
+            transition={{ type: "spring", stiffness: 450, damping: 22 }}
+            className="grid h-10 w-10 place-items-center rounded-full bg-brand-coral shadow-pop-coral"
           >
             <Send className="h-4 w-4 text-white" />
-          </button>
+          </motion.button>
         </form>
       </div>
     </AppShell>

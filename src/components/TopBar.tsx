@@ -37,10 +37,10 @@ export function TopBar({ transparent = false }: { transparent?: boolean }) {
   return (
     <div
       className={`sticky top-0 z-30 flex items-center justify-between px-4 py-3 ${
-        transparent ? "" : "glass border-b border-border/60"
+        transparent ? "" : "glass border-b border-border"
       }`}
     >
-      <Link to="/" className="font-display text-xl font-bold gradient-neon-text">
+      <Link to="/" className="font-display text-xl font-bold text-brand-coral transition-transform duration-200 ease-out hover:-translate-y-0.5">
         SONA
       </Link>
       <div className="flex items-center gap-1">

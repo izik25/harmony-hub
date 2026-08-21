@@ -281,7 +281,11 @@ function FeedItem({
           {typeLabel[post.type] ?? post.type}
         </span>
         {post.type === "competition" && (
-          <span className="rounded-full bg-primary px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-primary-foreground animate-pulse-glow">
+          <span className="flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-primary-foreground">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ring-pulse rounded-full bg-white" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+            </span>
             {t("common.live")}
           </span>
         )}
@@ -296,8 +300,8 @@ function FeedItem({
           />
           <button
             onClick={() => followMutation.mutate()}
-            className={`absolute -bottom-2 left-1/2 -translate-x-1/2 grid h-5 w-5 place-items-center rounded-full text-[12px] font-bold text-white ${
-              post.followingAuthor ? "bg-secondary" : "gradient-neon glow-pink"
+            className={`absolute -bottom-2 left-1/2 -translate-x-1/2 grid h-5 w-5 place-items-center rounded-full text-[12px] font-bold text-white press-scale ${
+              post.followingAuthor ? "bg-secondary" : "bg-brand-coral shadow-pop-coral"
             }`}
           >
             {post.followingAuthor ? "✓" : "+"}
@@ -326,7 +330,7 @@ function FeedItem({
           count={formatCount(post.shares)}
         />
         <button
-          className={`grid h-10 w-10 place-items-center rounded-full glass ${isPlaying ? "animate-spin-slow" : ""}`}
+          className={`grid h-10 w-10 place-items-center rounded-full glass ${isPlaying ? "animate-spin-fast" : ""}`}
         >
           <Music className="h-5 w-5 text-white" />
         </button>
@@ -364,7 +368,7 @@ function FeedItem({
           <button
             className={
               post.type === "competition"
-                ? "rounded-full gradient-neon px-4 py-1.5 text-xs font-bold text-white glow-pink"
+                ? "rounded-full bg-brand-coral px-4 py-1.5 text-xs font-bold text-white shadow-pop-coral press-scale"
                 : "rounded-full glass border border-white/20 px-4 py-1.5 text-xs font-bold text-white"
             }
           >
@@ -493,7 +497,7 @@ function CommentsSheet({ postId, onClose }: { postId: string | null; onClose: ()
           />
           <button
             type="submit"
-            className="grid h-10 w-10 place-items-center rounded-full gradient-neon"
+            className="grid h-10 w-10 place-items-center rounded-full bg-brand-coral press-scale"
           >
             <Send className="h-4 w-4 text-white" />
           </button>

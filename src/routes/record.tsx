@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   User,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import i18n, { translateServerError } from "@/lib/i18n";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
@@ -52,7 +53,7 @@ const BAR_COUNT = 48;
 // instrumental out of the gate. The user re-balances (and hears the result) from Studio, which
 // now owns this entirely; record.tsx's only job is to get a take onto the Studio screen fast.
 const DEFAULT_VOCAL_GAIN = 1.25;
-const DEFAULT_BACKING_GAIN = 0.75;
+const DEFAULT_BACKING_GAIN = 0.85;
 // Studio-style cue: how loud the mic is fed back into the monitor tap, relative to the raw
 // signal. Kept under unity so a live "hear yourself" mix doesn't come in hotter than the
 // backing track and isn't right at the edge of feedback if headphones seal imperfectly.
@@ -203,7 +204,9 @@ function useMicLevels(active: boolean, monitor: boolean) {
         source.connect(gain).connect(ctx.destination);
         // The mic getUserMedia() above (MIC_CONSTRAINTS) just granted permission, which is what
         // makes real device labels available — safe to attempt the headphone-routing fix now.
-        routeAudioContextToHeadphonesIfAvailable(ctx);
+        routeAudioContextToHeadphonesIfAvailable(ctx).then((routed) => {
+          if (routed?.isBluetooth) toast.info(i18n.t("record.monitorBluetoothLatency"));
+        });
       })
       .catch(() => {}); // monitor is optional — a failure here shouldn't interrupt recording
 
@@ -234,6 +237,11 @@ function pickTickInterval(totalSeconds: number): number {
 }
 
 type Phase = "idle" | "recording" | "paused" | "finished";
+
+// Flat brand colors rotated across same-purpose elements (avatar rings, icon badges, level-meter
+// bars) so a grid, list, or equalizer reads as lively rather than monotonous, without ever
+// blending two into a gradient on a single element.
+const BRAND_COLOR_ROTATION = ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold", "bg-brand-teal"];
 
 function RecordPage() {
   const { t } = useTranslation();
@@ -561,9 +569,9 @@ function RecordPage() {
         <div className="mt-4 flex items-center gap-2">
           <button
             onClick={() => setKaraokeOpen(true)}
-            className="flex flex-1 items-center gap-3 rounded-2xl border border-border bg-card/60 p-3 text-start"
+            className="press-scale flex flex-1 items-center gap-3 rounded-2xl border border-border bg-card/60 p-3 text-start"
           >
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl gradient-neon">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand-indigo">
               <Music2 className="h-5 w-5 text-white" />
             </div>
             <div className="flex-1 overflow-hidden">
@@ -581,19 +589,19 @@ function RecordPage() {
             <button
               onClick={() => setSelectedTrack(null)}
               aria-label={t("record.clearTrack")}
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-border bg-card/60"
+              className="press-scale grid h-11 w-11 shrink-0 place-items-center rounded-full border border-border bg-card/60"
             >
               <X className="h-4 w-4" />
             </button>
           )}
         </div>
 
-        <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-card/50">
+        <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-card shadow-pop">
           {/* No padding around the video itself — every extra pixel here is a pixel of lyrics
               you can actually read. Controls sit in a slim strip along the bottom edge instead
               of floating in the middle, so they never block the words. */}
           <div
-            className={`relative overflow-hidden bg-background/70 ${selectedTrack ? "aspect-video" : "h-48"}`}
+            className={`relative overflow-hidden bg-muted ${selectedTrack ? "aspect-video" : "h-48"}`}
           >
             {selectedTrack ? (
               <video
@@ -608,8 +616,8 @@ function RecordPage() {
                 {levels.map((h, i) => (
                   <span
                     key={i}
-                    className="w-1 rounded-full transition-[height] duration-75"
-                    style={{ height: h, background: `hsl(${300 + ((i * 3) % 60)} 90% 60%)` }}
+                    className={`w-1 rounded-full transition-[height] duration-75 ${BRAND_COLOR_ROTATION[i % BRAND_COLOR_ROTATION.length]}`}
+                    style={{ height: h }}
                   />
                 ))}
               </div>
@@ -617,7 +625,10 @@ function RecordPage() {
 
             {recording && (
               <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse-glow" />
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ring-pulse rounded-full bg-white" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+                </span>
                 {mm}:{ss}
               </span>
             )}
@@ -627,8 +638,8 @@ function RecordPage() {
               aria-pressed={monitorEnabled}
               aria-label={monitorEnabled ? t("record.monitorOff") : t("record.monitorOn")}
               title={monitorEnabled ? t("record.monitorOff") : t("record.monitorOn")}
-              className={`absolute right-3 top-3 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold backdrop-blur-sm transition-colors ${
-                monitorEnabled ? "gradient-neon text-white" : "bg-black/60 text-white/70"
+              className={`press-scale absolute right-3 top-3 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold backdrop-blur-sm transition-colors ${
+                monitorEnabled ? "bg-brand-teal text-white shadow-pop" : "bg-black/60 text-white/70"
               }`}
             >
               <Headphones className="h-3.5 w-3.5" />
@@ -692,11 +703,8 @@ function RecordPage() {
                 {levels.map((h, i) => (
                   <span
                     key={i}
-                    className="w-0.5 rounded-full transition-[height] duration-75"
-                    style={{
-                      height: Math.min(h, 24),
-                      background: `hsl(${300 + ((i * 3) % 60)} 90% 60%)`,
-                    }}
+                    className={`w-0.5 rounded-full transition-[height] duration-75 ${BRAND_COLOR_ROTATION[i % BRAND_COLOR_ROTATION.length]}`}
+                    style={{ height: Math.min(h, 24) }}
                   />
                 ))}
               </div>
@@ -987,24 +995,31 @@ function KaraokeArtistGrid({
             <p>{t("record.noArtists")}</p>
           </div>
         )}
-        <div className="grid grid-cols-3 gap-3">
-          {filtered?.map((a) => (
+        <div className="grid grid-cols-3 gap-x-3 gap-y-6">
+          {filtered?.map((a, i) => (
             <button
               key={a.id}
               onClick={() => onSelect(a)}
-              className="flex flex-col items-center gap-1.5 rounded-2xl p-2 text-center hover:bg-card/60"
+              className="press-scale flex flex-col items-center gap-2 rounded-2xl p-1 text-center"
             >
-              <div className="grid aspect-square w-full place-items-center overflow-hidden rounded-2xl border border-border bg-card/60">
-                {a.imageUrl ? (
-                  <img
-                    src={a.imageUrl}
-                    alt={a.name}
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                  />
-                ) : (
-                  <User className="h-6 w-6 text-muted-foreground" />
-                )}
+              <div
+                className={`animate-float-avatar grid aspect-square w-full place-items-center rounded-full p-[2px] shadow-pop ${
+                  BRAND_COLOR_ROTATION[i % BRAND_COLOR_ROTATION.length]
+                }`}
+                style={{ animationDelay: `${(i % 6) * 0.35}s` }}
+              >
+                <div className="grid h-full w-full place-items-center overflow-hidden rounded-full bg-card ring-2 ring-background">
+                  {a.imageUrl ? (
+                    <img
+                      src={a.imageUrl}
+                      alt={a.name}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <User className="h-6 w-6 text-muted-foreground" />
+                  )}
+                </div>
               </div>
               <p className="line-clamp-1 text-xs font-semibold">{a.name}</p>
               <p className="text-[10px] text-muted-foreground">
@@ -1062,13 +1077,17 @@ function KaraokeTrackList({
             <p className="mt-2 text-[11px]">{t("record.noKaraokeTracksHint")}</p>
           </div>
         )}
-        {tracks?.map((track) => (
+        {tracks?.map((track, i) => (
           <button
             key={track.id}
             onClick={() => onSelect(track)}
-            className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card/60 p-3 text-start hover:border-primary/50"
+            className="press-scale flex w-full items-center gap-3 rounded-2xl border border-border bg-card/60 p-3 text-start hover:border-primary/50"
           >
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl gradient-neon">
+            <div
+              className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${
+                i % 2 === 0 ? "bg-brand-teal" : "bg-brand-gold"
+              }`}
+            >
               <Music2 className="h-5 w-5 text-white" />
             </div>
             <div className="flex-1 overflow-hidden">
@@ -1099,19 +1118,22 @@ function ControlButton({
 }) {
   const variantClass =
     variant === "primary"
-      ? "gradient-neon glow-pink text-white"
+      ? "bg-brand-coral text-white shadow-pop-coral"
       : variant === "accent"
         ? "border border-accent bg-accent/20 text-accent"
-        : "glass text-white";
+        : "glass text-foreground";
   return (
-    <button
+    <motion.button
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
       title={label}
+      whileTap={disabled ? undefined : { scale: 0.9 }}
+      whileHover={disabled ? undefined : { scale: 1.05 }}
+      transition={{ type: "spring", stiffness: 450, damping: 25 }}
       className={`grid h-12 w-12 shrink-0 place-items-center rounded-full disabled:opacity-50 ${variantClass}`}
     >
       {icon}
-    </button>
+    </motion.button>
   );
 }

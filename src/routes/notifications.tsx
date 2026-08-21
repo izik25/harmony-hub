@@ -13,6 +13,7 @@ import {
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
+import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { listNotifications, markAllNotificationsRead } from "@/functions/notifications";
@@ -23,15 +24,17 @@ export const Route = createFileRoute("/notifications")({
 });
 
 const iconMap: Record<string, React.ReactNode> = {
-  like: <Heart className="h-4 w-4 text-primary" />,
-  follow: <UserPlus className="h-4 w-4 text-accent" />,
-  gift: <Gift className="h-4 w-4 text-accent" />,
-  comment: <MessageCircle className="h-4 w-4 text-foreground" />,
-  invited: <Trophy className="h-4 w-4 text-primary" />,
-  vote: <ThumbsUp className="h-4 w-4 text-accent" />,
-  contact_request: <Mail className="h-4 w-4 text-accent" />,
-  audition_application: <Briefcase className="h-4 w-4 text-accent" />,
+  like: <Heart className="h-4 w-4 text-brand-coral" />,
+  follow: <UserPlus className="h-4 w-4 text-brand-indigo" />,
+  gift: <Gift className="h-4 w-4 text-brand-gold" />,
+  comment: <MessageCircle className="h-4 w-4 text-brand-teal" />,
+  invited: <Trophy className="h-4 w-4 text-brand-gold" />,
+  vote: <ThumbsUp className="h-4 w-4 text-brand-indigo" />,
+  contact_request: <Mail className="h-4 w-4 text-brand-teal" />,
+  audition_application: <Briefcase className="h-4 w-4 text-brand-coral" />,
 };
+
+const staggerClasses = ["stagger-1", "stagger-2", "stagger-3", "stagger-4", "stagger-5", "stagger-6"];
 
 const textKeyMap: Record<string, string> = {
   like: "liked",
@@ -76,8 +79,11 @@ function NotifPage() {
           <p className="mt-6 text-center text-sm text-muted-foreground">{t("notif.empty")}</p>
         )}
         <ul className="mt-4 divide-y divide-border">
-          {notifications?.map((n) => (
-            <li key={n.id} className="flex items-center gap-3 py-3">
+          {notifications?.map((n, i) => (
+            <li
+              key={n.id}
+              className={`flex items-center gap-3 py-3 animate-fade-up ${staggerClasses[i % 6]}`}
+            >
               <div className="relative">
                 <img src={n.actor.avatarUrl} className="h-11 w-11 rounded-full" alt="" />
                 <span className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full bg-card ring-2 ring-background">
@@ -99,13 +105,14 @@ function NotifPage() {
                 </p>
               </div>
               {n.type === "follow" && (
-                <button
+                <motion.button
+                  whileTap={{ scale: 0.9 }}
                   onClick={() => followMutation.mutate(n.actor.id)}
                   disabled={followMutation.isPending}
-                  className="rounded-full gradient-neon px-3 py-1 text-xs font-bold text-white disabled:opacity-60"
+                  className="rounded-full bg-brand-coral px-3 py-1 text-xs font-bold text-white shadow-pop-coral disabled:opacity-60"
                 >
                   {t("common.follow")}
-                </button>
+                </motion.button>
               )}
             </li>
           ))}

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
+import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -74,7 +75,12 @@ function WalletPage() {
       <div className="px-4 pt-3 pb-6">
         <h1 className="font-display text-2xl font-bold">{t("wallet.title")}</h1>
 
-        <div className="mt-4 overflow-hidden rounded-3xl gradient-neon p-5 text-white glow-pink">
+        <motion.div
+          initial={{ opacity: 0, y: 14, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: "spring", stiffness: 380, damping: 28 }}
+          className="mt-4 overflow-hidden rounded-3xl bg-brand-coral p-5 text-white shadow-pop-coral"
+        >
           <p className="text-xs uppercase tracking-widest opacity-90">{t("common.balance")}</p>
           <div className="mt-2 flex items-end gap-2">
             <Coins className="h-7 w-7" />
@@ -85,29 +91,35 @@ function WalletPage() {
           </div>
           <p className="mt-1 text-sm opacity-90">{t("wallet.virtualCurrency")}</p>
           <div className="mt-4 flex gap-2">
-            <button
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              whileHover={{ scale: 1.02 }}
+              transition={{ type: "spring", stiffness: 420, damping: 24 }}
               onClick={() => setWithdrawOpen(true)}
               className="flex-1 rounded-full bg-white/20 backdrop-blur px-3 py-2 text-xs font-bold"
             >
               {t("common.withdraw")}
-            </button>
-            <button
+            </motion.button>
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              whileHover={{ scale: 1.02 }}
+              transition={{ type: "spring", stiffness: 420, damping: 24 }}
               onClick={() => setBuyOpen(true)}
               className="flex-1 rounded-full bg-white text-primary px-3 py-2 text-xs font-bold"
             >
               {t("common.buy")}
-            </button>
+            </motion.button>
           </div>
-        </div>
+        </motion.div>
 
         <h2 className="mt-6 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           {t("wallet.giftsHeading")}
         </h2>
         <div className="mt-3 grid grid-cols-3 gap-2">
-          {gifts?.map((g) => (
+          {gifts?.map((g, i) => (
             <div
               key={g.id}
-              className="flex flex-col items-center gap-1 rounded-2xl border border-border bg-card/60 p-3"
+              className={`flex flex-col items-center gap-1 rounded-2xl border border-border bg-card p-3 shadow-pop hover-lift animate-fade-up stagger-${(i % 6) + 1}`}
             >
               <span className="text-3xl">{g.emoji}</span>
               <span className="text-[11px] font-semibold capitalize">
@@ -121,7 +133,7 @@ function WalletPage() {
         <h2 className="mt-6 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           {t("wallet.history")}
         </h2>
-        <ul className="mt-2 divide-y divide-border rounded-2xl border border-border bg-card/40">
+        <ul className="mt-2 divide-y divide-border rounded-2xl border border-border bg-card shadow-pop">
           {wallet?.history.length === 0 && (
             <li className="p-3 text-sm text-muted-foreground">{t("wallet.noTransactions")}</li>
           )}
@@ -160,18 +172,21 @@ function WalletPage() {
           </DialogHeader>
           <div className="grid gap-2">
             {COIN_PACKAGES.map((pkg) => (
-              <button
+              <motion.button
                 key={pkg.id}
+                whileTap={{ scale: 0.97 }}
+                whileHover={{ y: -2 }}
+                transition={{ type: "spring", stiffness: 420, damping: 26 }}
                 disabled={buyMutation.isPending}
                 onClick={() => buyMutation.mutate(pkg.id)}
-                className="flex items-center justify-between rounded-2xl border border-border bg-card/60 p-4 text-sm font-semibold hover:border-primary/50"
+                className="flex items-center justify-between rounded-2xl border border-border bg-card p-4 text-sm font-semibold shadow-pop hover:border-primary/50"
               >
                 <span className="flex items-center gap-2">
                   <Plus className="h-4 w-4 text-accent" /> {pkg.coins.toLocaleString()}{" "}
                   {t("wallet.coins")}
                 </span>
                 <span className="text-muted-foreground">{t("wallet.addToBalance")}</span>
-              </button>
+              </motion.button>
             ))}
           </div>
         </DialogContent>
@@ -198,13 +213,16 @@ function WalletPage() {
               placeholder={t("wallet.upTo", { n: wallet?.balance ?? 0 })}
               className="w-full rounded-full border border-border bg-input px-4 py-2.5 text-sm outline-none focus:border-primary"
             />
-            <button
+            <motion.button
               type="submit"
+              whileTap={{ scale: 0.96 }}
+              whileHover={{ scale: 1.01 }}
+              transition={{ type: "spring", stiffness: 420, damping: 24 }}
               disabled={withdrawMutation.isPending}
-              className="w-full rounded-full gradient-neon py-2.5 text-sm font-bold text-white glow-pink disabled:opacity-60"
+              className="w-full rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral disabled:opacity-60"
             >
               {t("common.withdraw")}
-            </button>
+            </motion.button>
           </form>
         </DialogContent>
       </Dialog>

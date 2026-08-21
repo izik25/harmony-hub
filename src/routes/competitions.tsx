@@ -12,6 +12,8 @@ export const Route = createFileRoute("/competitions")({
   component: CompetitionsPage,
 });
 
+const staggerClasses = ["stagger-1", "stagger-2", "stagger-3", "stagger-4", "stagger-5", "stagger-6"];
+
 function CompetitionsPage() {
   const { t } = useTranslation();
   const [tab, setTab] = useState<"active" | "upcoming" | "finished">("active");
@@ -37,10 +39,10 @@ function CompetitionsPage() {
             <button
               key={k}
               onClick={() => setTab(k)}
-              className={`rounded-full px-3 py-2 text-xs font-semibold ${
+              className={`rounded-full px-3 py-2 text-xs font-semibold transition-all duration-200 ease-out press-scale ${
                 tab === k
-                  ? "gradient-neon text-white glow-pink"
-                  : "border border-border bg-card/60 text-muted-foreground"
+                  ? "bg-brand-coral text-white shadow-pop-coral"
+                  : "border border-border bg-card text-muted-foreground"
               }`}
             >
               {t(`comp.${k}`)}
@@ -56,11 +58,11 @@ function CompetitionsPage() {
 
         {featured && (
           <Link to="/competitions/$id" params={{ id: featured.id }}>
-            <article className="relative mt-5 h-56 overflow-hidden rounded-3xl">
+            <article className="relative mt-5 h-56 overflow-hidden rounded-3xl shadow-pop-lg hover-lift animate-fade-up">
               <PostCoverBg hue={featured.hue} seed={featured.coverSeed} />
               <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent" />
               <div className="absolute inset-x-0 bottom-0 p-4">
-                <span className="rounded-full bg-primary/90 px-2 py-0.5 text-[10px] font-bold uppercase text-primary-foreground">
+                <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-primary-foreground">
                   {t(`comp.${featured.stage}`)}
                 </span>
                 <h2 className="mt-2 font-display text-2xl font-bold text-white">
@@ -75,7 +77,7 @@ function CompetitionsPage() {
                     <Award className="h-3.5 w-3.5 text-accent" /> {featured.prize}
                   </span>
                 </div>
-                <span className="mt-3 inline-block rounded-full gradient-neon px-4 py-2 text-xs font-bold text-white glow-pink">
+                <span className="mt-3 inline-block rounded-full bg-brand-coral px-4 py-2 text-xs font-bold text-white shadow-pop-coral">
                   {t("comp.join")}
                 </span>
               </div>
@@ -84,12 +86,12 @@ function CompetitionsPage() {
         )}
 
         <div className="mt-6 space-y-3">
-          {rest.map((c) => (
+          {rest.map((c, i) => (
             <Link
               key={c.id}
               to="/competitions/$id"
               params={{ id: c.id }}
-              className="flex items-center gap-3 rounded-2xl border border-border bg-card/60 p-3"
+              className={`flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-pop hover-lift press-scale animate-fade-up ${staggerClasses[i % 6]}`}
             >
               <div className="relative h-16 w-16 overflow-hidden rounded-xl">
                 <PostCoverBg hue={c.hue} seed={c.coverSeed} />

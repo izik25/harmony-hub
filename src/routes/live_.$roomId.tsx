@@ -52,7 +52,7 @@ function LiveRoomPage() {
           <p className="text-sm text-muted-foreground">{error}</p>
           <Link
             to="/live"
-            className="rounded-full gradient-neon px-5 py-2 text-sm font-semibold text-white glow-pink"
+            className="rounded-full bg-brand-coral px-5 py-2 text-sm font-semibold text-white shadow-pop-coral press-scale"
           >
             <ArrowLeft className="mr-1 inline h-4 w-4" /> {t("live.backToLive")}
           </Link>
@@ -89,7 +89,7 @@ function LiveRoomPage() {
         {session.isHost && (
           <button
             onClick={() => endMutation.mutate()}
-            className="absolute right-3 top-3 z-50 rounded-full bg-primary px-4 py-2 text-xs font-bold text-white"
+            className="absolute right-3 top-3 z-50 rounded-full bg-primary px-4 py-2 text-xs font-bold text-white shadow-pop-lg press-scale"
           >
             {t("live.endLive")}
           </button>

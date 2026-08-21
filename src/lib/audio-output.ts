@@ -36,15 +36,19 @@ export async function routeToHeadphonesIfAvailable(
  * Output Devices API HTMLMediaElement has had for longer, so this no-ops just as quietly wherever
  * it isn't supported.
  */
+// Returns whether the routed-to device is Bluetooth, so callers can warn about the ~100-300ms of
+// codec/radio buffering A2DP adds — a hardware/protocol delay no amount of AudioContext tuning on
+// the page can shorten, since it happens downstream of everything the Web Audio API controls.
 export async function routeAudioContextToHeadphonesIfAvailable(
   ctx: AudioContext | null | undefined,
-): Promise<void> {
-  if (!ctx || !("setSinkId" in ctx)) return;
+): Promise<{ isBluetooth: boolean } | undefined> {
+  if (!ctx || !("setSinkId" in ctx)) return undefined;
   const match = await findHeadphoneOutput();
-  if (!match) return;
+  if (!match) return undefined;
   await (ctx as AudioContext & { setSinkId: (id: string) => Promise<void> })
     .setSinkId(match.deviceId)
     .catch(() => {});
+  return { isBluetooth: /bluetooth/i.test(match.label) };
 }
 
 async function findHeadphoneOutput(): Promise<MediaDeviceInfo | undefined> {

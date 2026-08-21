@@ -1,6 +1,6 @@
 /**
  * Post thumbnail: renders the AI-generated cover image when the post has one, otherwise falls
- * back to a generated animated gradient stand-in — no external image required.
+ * back to a generated flat-color placeholder — no gradients, no external image required.
  */
 export function PostCoverBg({
   hue,
@@ -19,25 +19,29 @@ export function PostCoverBg({
     );
   }
 
-  const h2 = (hue + 60) % 360;
-  const h3 = (hue + 200) % 360;
+  // Deterministic little variety from the seed so covers don't all match.
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  const accentHue = (hue + 150 + (hash % 60)) % 360;
+  const offsetX = 15 + (hash % 55);
+  const offsetY = 10 + ((hash >> 4) % 60);
+  const shapeSize = 130 + ((hash >> 8) % 70);
+
   return (
     <div
-      className="absolute inset-0"
-      style={{
-        background: `radial-gradient(120% 80% at 20% 20%, hsl(${hue} 90% 55% / 0.9), transparent 60%),
-                     radial-gradient(120% 80% at 80% 30%, hsl(${h2} 95% 60% / 0.85), transparent 60%),
-                     radial-gradient(140% 100% at 50% 90%, hsl(${h3} 95% 55% / 0.9), transparent 55%),
-                     linear-gradient(180deg, #0a0014, #1a0033)`,
-      }}
+      className="absolute inset-0 overflow-hidden"
+      style={{ backgroundColor: `hsl(${hue} 55% 22%)` }}
       data-seed={seed}
     >
-      {/* fake film grain / scanlines */}
       <div
-        className="absolute inset-0 opacity-25 mix-blend-overlay"
+        className="absolute rounded-full"
         style={{
-          backgroundImage:
-            "repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0 1px, transparent 1px 3px)",
+          width: `${shapeSize}%`,
+          height: `${shapeSize}%`,
+          left: `${offsetX}%`,
+          top: `${offsetY}%`,
+          transform: "translate(-50%, -50%)",
+          backgroundColor: `hsl(${accentHue} 65% 45%)`,
         }}
       />
     </div>

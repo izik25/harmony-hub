@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import * as Tone from "tone";
+import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { getDraft, updateDraftAudio } from "@/functions/posts";
@@ -34,6 +35,11 @@ interface StudioSearch {
   draftId?: string;
 }
 
+// Flat brand colors rotated across the decorative waveform bars — same idiom as the equalizer
+// bars on the landing page — so the strip reads as a lively flat-color equalizer instead of the
+// old neon rainbow gradient sweep.
+const BRAND_BAR_COLORS = ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold", "bg-brand-teal"];
+
 export const Route = createFileRoute("/studio")({
   validateSearch: (search: Record<string, unknown>): StudioSearch => ({
     draftId: typeof search.draftId === "string" ? search.draftId : undefined,
@@ -50,6 +56,8 @@ type VocalChain = {
   reverbConvolver: Tone.Convolver;
   reverbDry: Tone.Gain;
   reverbWet: Tone.Gain;
+  makeupGain: Tone.Gain;
+  limiter: Tone.Limiter;
 };
 
 type DraftDTO = Awaited<ReturnType<typeof getDraft>>;
@@ -62,6 +70,11 @@ type Params = {
   reverb: number;
   eq: number;
   compression: number;
+  // Post-chain makeup gain, in dB, going into the limiter below — 0 for manual editing, only ever
+  // set above 0 by AI Mastering (see applyMaster). This is the piece that used to be missing: EQ,
+  // compression, and gating alone can tighten a take up, but none of them make it louder, and
+  // "louder" is most of what actually reads as "mastered" versus "the same raw recording."
+  gainDb: number;
 };
 
 // A hand-generated decaying-noise impulse response (see src/lib/impulse-response.ts) keeps the
@@ -78,17 +91,35 @@ function buildChain(onEnded?: () => void): VocalChain {
   const reverbConvolver = new Tone.Convolver(impulse);
   const reverbDry = new Tone.Gain(1);
   const reverbWet = new Tone.Gain(0);
-  const reverbOut = new Tone.Gain(1).toDestination();
+  const reverbOut = new Tone.Gain(1);
+  // Makeup gain + a brickwall limiter as the final stage, after everything else including the
+  // reverb send — the limiter's ceiling means gainDb can push a take audibly louder without
+  // clipping, instead of every knob above it only ever reshaping the take's dynamics/tone at the
+  // same overall loudness it was recorded at.
+  const makeupGain = new Tone.Gain(1);
+  const limiter = new Tone.Limiter(-0.5).toDestination();
 
   compressor.fan(reverbDry, reverbConvolver);
   reverbConvolver.connect(reverbWet);
   reverbDry.connect(reverbOut);
   reverbWet.connect(reverbOut);
+  reverbOut.chain(makeupGain, limiter);
 
   const player = onEnded ? new Tone.Player({ onstop: onEnded }) : new Tone.Player();
   player.chain(pitchShift, filter, eq3, compressor);
 
-  return { player, pitchShift, filter, eq3, compressor, reverbConvolver, reverbDry, reverbWet };
+  return {
+    player,
+    pitchShift,
+    filter,
+    eq3,
+    compressor,
+    reverbConvolver,
+    reverbDry,
+    reverbWet,
+    makeupGain,
+    limiter,
+  };
 }
 
 function applyParams(chain: VocalChain, p: Params) {
@@ -107,6 +138,7 @@ function applyParams(chain: VocalChain, p: Params) {
   const wetAmt = (p.reverb / 100) * 0.45;
   chain.reverbWet.gain.value = wetAmt;
   chain.reverbDry.gain.value = 1 - wetAmt * 0.5;
+  chain.makeupGain.gain.value = Tone.dbToGain(p.gainDb);
 }
 
 function disposeChain(chain: VocalChain) {
@@ -118,6 +150,8 @@ function disposeChain(chain: VocalChain) {
   chain.reverbConvolver.dispose();
   chain.reverbDry.dispose();
   chain.reverbWet.dispose();
+  chain.makeupGain.dispose();
+  chain.limiter.dispose();
 }
 
 function StudioPage() {
@@ -151,12 +185,15 @@ function StudioPage() {
   // decode never sees the live in-memory buffer AI Mastering mutated), and reset whenever a fresh
   // audioUrl loads since a new take hasn't been mastered yet.
   const gateAppliedRef = useRef(false);
+  // Post-chain makeup gain (dB) — 0 until AI Mastering sets it (see applyMaster), reset alongside
+  // gateAppliedRef whenever a fresh take loads since it hasn't been mastered yet either.
+  const [gainDb, setGainDb] = useState(0);
 
-  // 125/75 match record.tsx's initial auto-mix — a touch under the vocal / a touch over the
+  // 125/85 match record.tsx's initial auto-mix — a touch under the vocal / a touch over the
   // backing track so the instrumental doesn't get buried under it, expressed as % so the sliders
   // read naturally.
   const [vocalVolume, setVocalVolume] = useState(125);
-  const [playbackVolume, setPlaybackVolume] = useState(75);
+  const [playbackVolume, setPlaybackVolume] = useState(85);
 
   const chainRef = useRef<VocalChain | null>(null);
   // Mirrors the DSP slider state without being a dependency of the chain-(re)build effect below —
@@ -170,6 +207,7 @@ function StudioPage() {
     reverb: reverbAmt,
     eq,
     compression: comp,
+    gainDb,
   });
   useEffect(() => {
     paramsRef.current = {
@@ -180,8 +218,9 @@ function StudioPage() {
       reverb: reverbAmt,
       eq,
       compression: comp,
+      gainDb,
     };
-  }, [autotune, noise, reverbAmt, eq, comp, speed]);
+  }, [autotune, noise, reverbAmt, eq, comp, speed, gainDb]);
 
   const { data: draft } = useQuery({
     queryKey: ["draft", draftId],
@@ -195,6 +234,7 @@ function StudioPage() {
     const chain = buildChain(() => setPlaying(false));
     chainRef.current = chain;
     gateAppliedRef.current = false;
+    setGainDb(0);
     setReady(false);
     const loadWithRetry = async (url: string, attempts = 4): Promise<void> => {
       for (let i = 0; i < attempts; i++) {
@@ -234,8 +274,9 @@ function StudioPage() {
       reverb: reverbAmt,
       eq,
       compression: comp,
+      gainDb,
     });
-  }, [autotune, noise, reverbAmt, eq, comp, speed]);
+  }, [autotune, noise, reverbAmt, eq, comp, speed, gainDb]);
 
   const togglePlay = async () => {
     const chain = chainRef.current;
@@ -263,6 +304,7 @@ function StudioPage() {
       reverb: reverbAmt,
       eq,
       compression: comp,
+      gainDb,
     };
     const audioUrl = draft.audioUrl;
     const gateApplied = gateAppliedRef.current;
@@ -366,7 +408,10 @@ function StudioPage() {
   //    just raising the highpass slider, and the reverb send is pulled down (not up) since a
   //    noisy/live room already carries its own ambience.
   // Reverb in particular is capped well under the manual slider's own ceiling either way, so
-  // "AI Mastering" always reads as tightening a take up, never adding more room on top of it.
+  // "AI Mastering" always reads as tightening a take up, never adding more room on top of it. On
+  // top of the gate/EQ/compression/reverb tightening, it also pushes the take's overall loudness
+  // up toward a real mastered level through makeupGain + a limiter (see gainBoostDb below) — the
+  // one part of "mastering" that reshaping dynamics/tone alone can never produce on its own.
   const applyMaster = () => {
     const chain = chainRef.current;
     const buffer = chain?.player.buffer.get();
@@ -404,6 +449,18 @@ function StudioPage() {
     // dry capture is capped well under the manual slider's own range.
     const reverbAmt = clamp(8 - (after.noiseFloorDb + 55) * 0.15, 2, 8);
 
+    // The piece that actually makes mastering audible: push the take up toward a real "finished
+    // record" loudness rather than just reshaping its dynamics/tone at the level it happened to be
+    // recorded at. -12dB is meaningfully hotter than the -20dB target record.tsx's own auto-gain
+    // already normalized every take to (see processRecording in mix-recording.ts) — without this,
+    // AI Mastering was re-deriving a level the take had already arrived at, which is exactly why it
+    // could land on barely-perceptible knob movements for an already-decent take. Boost-only
+    // (floored at 0) so a hot take never gets turned down by hitting Master, and capped at 9dB so
+    // the limiter (buildChain, threshold -0.5dB) only ever has a sane amount of gain reduction to
+    // do, not enough to audibly squash the take.
+    const targetMasterDb = -12;
+    const gainBoostDb = clamp(targetMasterDb - after.vocalLevelDb, 0, 9);
+
     // Autotune stays off here too — see the note by its default state above. Forcing it on
     // regardless of the take's actual pitch (there's no pitch-detection to correct toward) was
     // just injecting a delay-modulation artifact into every mastering pass.
@@ -411,6 +468,7 @@ function StudioPage() {
     setR(reverbAmt);
     setE(eqAmt);
     setC(compAmt);
+    setGainDb(gainBoostDb);
     toast.success(
       alreadyExcellent ? t("studio.masterAppliedClean") : t("studio.masterAppliedCleaned"),
     );
@@ -427,7 +485,7 @@ function StudioPage() {
         <p className="text-xs text-muted-foreground">{t("studio.subtitle")}</p>
 
         {!draftId ? (
-          <div className="mt-6 rounded-3xl border border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
+          <div className="mt-6 rounded-3xl border border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-pop">
             {t("studio.noTrack")}{" "}
             <Link to="/record" className="text-accent underline">
               {t("studio.record")}
@@ -440,32 +498,32 @@ function StudioPage() {
           </div>
         ) : (
           <>
-            <div className="mt-4 rounded-3xl border border-border bg-card/50 p-4">
-              <div className="relative h-24 overflow-hidden rounded-xl bg-background/70">
+            <div className="mt-4 rounded-3xl border border-border bg-card p-4 shadow-pop">
+              <div className="relative h-24 overflow-hidden rounded-xl bg-muted">
                 <div className="absolute inset-0 flex items-center justify-around px-2">
                   {Array.from({ length: 60 }).map((_, i) => (
                     <span
                       key={i}
-                      className="w-0.5 rounded-full"
-                      style={{
-                        height: `${12 + Math.abs(Math.sin(i / 3)) * 60}%`,
-                        background: `hsl(${(i * 6) % 360} 90% 60%)`,
-                      }}
+                      className={`w-0.5 rounded-full ${BRAND_BAR_COLORS[i % BRAND_BAR_COLORS.length]}`}
+                      style={{ height: `${12 + Math.abs(Math.sin(i / 3)) * 60}%` }}
                     />
                   ))}
                 </div>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <button
+                  <motion.button
                     onClick={togglePlay}
                     disabled={!ready}
-                    className="grid h-14 w-14 place-items-center rounded-full gradient-neon glow-pink disabled:opacity-50"
+                    whileTap={{ scale: 0.92 }}
+                    whileHover={{ scale: 1.05 }}
+                    transition={{ type: "spring", stiffness: 450, damping: 25 }}
+                    className="grid h-14 w-14 place-items-center rounded-full bg-brand-coral shadow-pop-coral disabled:opacity-50"
                   >
                     {playing ? (
                       <Pause className="h-6 w-6 text-white" />
                     ) : (
                       <Play className="h-6 w-6 text-white" />
                     )}
-                  </button>
+                  </motion.button>
                 </div>
               </div>
               <div className="mt-2 flex justify-between text-[11px] text-muted-foreground font-mono">
@@ -479,7 +537,7 @@ function StudioPage() {
             </div>
 
             {draft?.rawVocalUrl && (
-              <section className="mt-5 rounded-3xl border border-border bg-card/50 p-4">
+              <section className="mt-5 rounded-3xl border border-border bg-card p-4 shadow-pop">
                 <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
                   <Sliders className="h-4 w-4 text-accent" /> {t("record.mixBalance")}
                 </h2>
@@ -502,7 +560,7 @@ function StudioPage() {
                 <button
                   onClick={() => remixMutation.mutate()}
                   disabled={remixMutation.isPending}
-                  className="mt-1 flex w-full items-center justify-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-accent disabled:opacity-40"
+                  className="press-scale mt-1 flex w-full items-center justify-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-accent disabled:opacity-40"
                 >
                   {remixMutation.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -519,15 +577,18 @@ function StudioPage() {
                 <Waves className="h-4 w-4" /> {t("studio.masteringPreset")}
               </h2>
               <p className="mt-1 text-xs text-muted-foreground">{t("studio.masteringDesc")}</p>
-              <button
+              <motion.button
                 onClick={applyMaster}
-                className="mt-3 w-full rounded-full gradient-neon py-2.5 text-sm font-bold text-white glow-pink"
+                whileTap={{ scale: 0.97 }}
+                whileHover={{ scale: 1.01, y: -1 }}
+                transition={{ type: "spring", stiffness: 450, damping: 28 }}
+                className="mt-3 w-full rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral"
               >
                 {t("record.master")}
-              </button>
+              </motion.button>
             </section>
 
-            <section className="mt-4 rounded-3xl border border-border bg-card/50 p-4">
+            <section className="mt-4 rounded-3xl border border-border bg-card p-4 shadow-pop">
               <button
                 onClick={() => setManualOpen((v) => !v)}
                 className="flex w-full items-center justify-between text-sm font-semibold"
@@ -564,21 +625,24 @@ function StudioPage() {
               <button
                 onClick={() => exportMutation.mutate()}
                 disabled={!ready || exportMutation.isPending}
-                className="flex flex-col items-center gap-1 rounded-2xl border border-border bg-card/60 p-3 text-[11px] font-semibold disabled:opacity-50"
+                className="press-scale flex flex-col items-center gap-1 rounded-2xl border border-border bg-card/60 p-3 text-[11px] font-semibold disabled:opacity-50"
               >
                 <Download className="h-4 w-4" /> {t("record.export")}
               </button>
-              <button
+              <motion.button
                 onClick={() => publishMutation.mutate(false)}
                 disabled={!ready || publishMutation.isPending}
-                className="flex flex-col items-center gap-1 rounded-2xl gradient-neon p-3 text-[11px] font-bold text-white glow-pink disabled:opacity-50"
+                whileTap={!ready || publishMutation.isPending ? undefined : { scale: 0.95 }}
+                whileHover={!ready || publishMutation.isPending ? undefined : { scale: 1.03, y: -1 }}
+                transition={{ type: "spring", stiffness: 450, damping: 28 }}
+                className="flex flex-col items-center gap-1 rounded-2xl bg-brand-coral p-3 text-[11px] font-bold text-white shadow-pop-coral disabled:opacity-50"
               >
                 <Send className="h-4 w-4" /> {t("common.continueToPublish")}
-              </button>
+              </motion.button>
               <button
                 onClick={() => publishMutation.mutate(true)}
                 disabled={!ready || publishMutation.isPending}
-                className="flex flex-col items-center gap-1 rounded-2xl border border-border bg-card/60 p-3 text-[11px] font-semibold disabled:opacity-50"
+                className="press-scale flex flex-col items-center gap-1 rounded-2xl border border-border bg-card/60 p-3 text-[11px] font-semibold disabled:opacity-50"
               >
                 <Send className="h-4 w-4" /> {t("record.sendComp")}
               </button>

@@ -21,6 +21,7 @@ import {
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { PostCoverBg } from "@/components/PostCoverBg";
@@ -152,7 +153,7 @@ export function ProfileView({ handle }: { handle: string }) {
     <AppShell>
       <TopBar />
       <div className="relative">
-        <div className="h-40 gradient-neon opacity-70" />
+        <div className="h-40 bg-brand-indigo" />
         {profile.isMe && (
           <div className="absolute right-4 top-4 flex items-center gap-2">
             <button
@@ -161,11 +162,14 @@ export function ProfileView({ handle }: { handle: string }) {
                 const result = await shareContent({ title: profile.name, url });
                 if (result === "copied") toast.success(t("profile.linkCopied"));
               }}
-              className="rounded-full glass p-2"
+              className="rounded-full glass p-2 press-scale"
             >
               <Share2 className="h-4 w-4" />
             </button>
-            <button onClick={() => setSettingsOpen(true)} className="rounded-full glass p-2">
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="rounded-full glass p-2 press-scale"
+            >
               <Settings className="h-4 w-4" />
             </button>
           </div>
@@ -187,30 +191,39 @@ export function ProfileView({ handle }: { handle: string }) {
           {profile.bio && <p className="mt-2 max-w-md text-sm">{profile.bio}</p>}
 
           <div className="mt-3 flex items-center gap-3 text-sm">
-            <Stat n={profile.followerCount} k={t("profile.followers")} />
-            <Stat n={profile.followingCount} k={t("profile.following")} />
-            <Stat n={profile.likesTotal} k={t("profile.likes")} />
+            <Stat n={profile.followerCount} k={t("profile.followers")} delay={0} />
+            <Stat n={profile.followingCount} k={t("profile.following")} delay={0.05} />
+            <Stat n={profile.likesTotal} k={t("profile.likes")} delay={0.1} />
           </div>
 
           {!profile.isMe && (
             <div className="mt-4 flex gap-2">
-              <button
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                whileHover={{ scale: 1.01 }}
+                transition={{ type: "spring", stiffness: 420, damping: 24 }}
                 onClick={() => followMutation.mutate()}
                 className={`flex-1 rounded-full py-2 text-sm font-bold ${
                   profile.isFollowing
                     ? "border border-border bg-card text-foreground"
-                    : "gradient-neon text-white glow-pink"
+                    : "bg-brand-coral text-white shadow-pop-coral"
                 }`}
               >
                 {profile.isFollowing ? t("common.following") : t("common.follow")}
-              </button>
-              <button
+              </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.92 }}
+                whileHover={{ scale: 1.05 }}
+                transition={{ type: "spring", stiffness: 420, damping: 24 }}
                 onClick={() => messageMutation.mutate()}
                 className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold"
               >
                 <MessageSquare className="h-4 w-4" />
-              </button>
-              <button
+              </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.92 }}
+                whileHover={{ scale: 1.05 }}
+                transition={{ type: "spring", stiffness: 420, damping: 24 }}
                 onClick={async () => {
                   const url = `${window.location.origin}/profile/${profile.handle}`;
                   const result = await shareContent({ title: profile.name, url });
@@ -219,7 +232,7 @@ export function ProfileView({ handle }: { handle: string }) {
                 className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold"
               >
                 <Share2 className="h-4 w-4" />
-              </button>
+              </motion.button>
             </div>
           )}
 
@@ -233,13 +246,18 @@ export function ProfileView({ handle }: { handle: string }) {
               <button
                 key={k}
                 onClick={() => setTab(k)}
-                className={`shrink-0 border-b-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider ${
-                  tab === k
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground"
+                className={`relative shrink-0 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors duration-150 ${
+                  tab === k ? "text-primary" : "text-muted-foreground"
                 }`}
               >
                 {t(`profile.${k}`)}
+                {tab === k && (
+                  <motion.span
+                    layoutId="profile-tab-underline"
+                    className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded-full bg-primary"
+                    transition={{ type: "spring", stiffness: 500, damping: 32 }}
+                  />
+                )}
               </button>
             ))}
         </div>
@@ -290,7 +308,7 @@ export function ProfileView({ handle }: { handle: string }) {
                 key={d.id}
                 to="/upload"
                 search={{ draftId: d.id }}
-                className="flex items-center justify-between rounded-2xl border border-border bg-card/60 p-3"
+                className="flex items-center justify-between rounded-2xl border border-border bg-card p-3 shadow-pop hover-lift"
               >
                 <span className="line-clamp-1 text-sm font-semibold">{d.title}</span>
                 <span className="shrink-0 text-xs text-accent">
@@ -311,7 +329,7 @@ export function ProfileView({ handle }: { handle: string }) {
                 key={e.id}
                 to="/competitions/$id"
                 params={{ id: e.competitionId }}
-                className="flex items-center justify-between rounded-2xl border border-border bg-card/60 p-3"
+                className="flex items-center justify-between rounded-2xl border border-border bg-card p-3 shadow-pop hover-lift"
               >
                 <span className="text-sm font-semibold">{e.competitionTitle}</span>
                 <span className="text-xs text-muted-foreground">
@@ -350,12 +368,17 @@ export function ProfileView({ handle }: { handle: string }) {
   );
 }
 
-function Stat({ n, k }: { n: number; k: string }) {
+function Stat({ n, k, delay = 0 }: { n: number; k: string; delay?: number }) {
   return (
-    <div className="text-center">
+    <motion.div
+      initial={{ opacity: 0, y: 6, scale: 0.9 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 420, damping: 26, delay }}
+      className="text-center"
+    >
       <p className="font-display text-lg font-bold">{formatCount(n)}</p>
       <p className="text-[11px] text-muted-foreground">{k}</p>
-    </div>
+    </motion.div>
   );
 }
 
@@ -381,7 +404,7 @@ function ArtistLinksRow({ links }: { links: Profile["artistLinks"] }) {
   if (pills.length === 0 && !links.ticketsUrl && !links.genre && !links.label) return null;
 
   return (
-    <div className="mt-4 rounded-2xl border border-border bg-card/60 p-3">
+    <div className="mt-4 rounded-2xl border border-border bg-card p-3 shadow-pop">
       {(links.genre || links.label) && (
         <p className="text-xs text-muted-foreground">
           {[links.genre, links.label].filter(Boolean).join(" · ")}
@@ -395,7 +418,7 @@ function ArtistLinksRow({ links }: { links: Profile["artistLinks"] }) {
               href={p.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold"
+              className="flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold press-scale"
             >
               {p.icon}
               {p.label}
@@ -408,7 +431,7 @@ function ArtistLinksRow({ links }: { links: Profile["artistLinks"] }) {
           href={links.ticketsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-2 flex items-center justify-center gap-2 rounded-full gradient-neon py-2 text-sm font-bold text-white glow-pink"
+          className="mt-2 flex items-center justify-center gap-2 rounded-full bg-brand-gold py-2 text-sm font-bold text-accent-foreground shadow-pop press-scale hover-lift"
         >
           <Ticket className="h-4 w-4" />
           {t("profile.artist.buyTickets")}
@@ -454,7 +477,7 @@ function ArtistDiscography({
         {songs?.map((s) => (
           <div
             key={s.id}
-            className="flex items-center justify-between rounded-2xl border border-border bg-card/60 p-3"
+            className="flex items-center justify-between rounded-2xl border border-border bg-card p-3 shadow-pop"
           >
             <div>
               <p className="text-sm font-semibold">{s.title}</p>
@@ -515,7 +538,7 @@ function ArtistDiscography({
                 setYear("");
                 setOpen(false);
               }}
-              className="w-full rounded-full gradient-neon py-2.5 text-sm font-bold text-white glow-pink"
+              className="w-full rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale"
             >
               {t("common.save")}
             </button>
@@ -564,7 +587,7 @@ function ArtistShows({
         {shows?.map((s) => (
           <div
             key={s.id}
-            className="flex items-center justify-between rounded-2xl border border-border bg-card/60 p-3"
+            className="flex items-center justify-between rounded-2xl border border-border bg-card p-3 shadow-pop"
           >
             <div>
               <p className="text-sm font-semibold">{s.title}</p>
@@ -640,7 +663,7 @@ function ArtistShows({
                 setTicketUrl("");
                 setOpen(false);
               }}
-              className="w-full rounded-full gradient-neon py-2.5 text-sm font-bold text-white glow-pink"
+              className="w-full rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale"
             >
               {t("common.save")}
             </button>
@@ -787,7 +810,7 @@ function SettingsSheet({
             {t("profile.openToLabelCheckbox")}
           </label>
 
-          <div className="flex items-center justify-between rounded-2xl border border-border bg-card/60 p-3">
+          <div className="flex items-center justify-between rounded-2xl border border-border bg-card p-3 shadow-pop">
             <div>
               <p className="text-sm font-semibold">{t("profile.artist.accountToggle")}</p>
               <p className="text-xs text-muted-foreground">
@@ -798,7 +821,7 @@ function SettingsSheet({
           </div>
 
           {isArtistAccount && (
-            <div className="space-y-2 rounded-2xl border border-border bg-card/60 p-3">
+            <div className="space-y-2 rounded-2xl border border-border bg-card p-3 shadow-pop">
               <div className="grid grid-cols-2 gap-2">
                 <input
                   value={artistLinks.genre}
@@ -873,13 +896,13 @@ function SettingsSheet({
           <button
             onClick={() => saveMutation.mutate()}
             disabled={saveMutation.isPending}
-            className="w-full rounded-full gradient-neon py-2.5 text-sm font-bold text-white glow-pink disabled:opacity-60"
+            className="w-full rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-60"
           >
             {t("common.save")}
           </button>
           <button
             onClick={() => logoutMutation.mutate()}
-            className="flex w-full items-center justify-center gap-2 rounded-full border border-border py-2.5 text-sm font-semibold text-muted-foreground"
+            className="flex w-full items-center justify-center gap-2 rounded-full border border-border py-2.5 text-sm font-semibold text-muted-foreground press-scale"
           >
             <X className="h-4 w-4" /> {t("auth.logout")}
           </button>

@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { signup } from "@/functions/auth";
 import { translateServerError } from "@/lib/i18n";
@@ -30,11 +31,11 @@ function SignupPage() {
   return (
     <AppShell hideNav>
       <div className="flex min-h-screen flex-col items-center justify-center px-6 py-10">
-        <h1 className="font-display text-4xl font-bold gradient-neon-text">SONA</h1>
+        <h1 className="animate-fade-up font-display text-4xl font-bold text-brand-coral">SONA</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t("auth.welcome")}</p>
 
         <form
-          className="mt-8 w-full max-w-sm space-y-3"
+          className="animate-fade-up stagger-1 mt-8 w-full max-w-sm space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
             mutation.mutate();
@@ -84,13 +85,16 @@ function SignupPage() {
             </p>
           )}
 
-          <button
+          <motion.button
             type="submit"
             disabled={mutation.isPending}
-            className="w-full rounded-full gradient-neon py-3 text-sm font-bold text-white glow-pink disabled:opacity-60"
+            whileTap={mutation.isPending ? undefined : { scale: 0.97 }}
+            whileHover={mutation.isPending ? undefined : { scale: 1.02, y: -1 }}
+            transition={{ type: "spring", stiffness: 450, damping: 28 }}
+            className="w-full rounded-full bg-brand-coral py-3 text-sm font-bold text-white shadow-pop-coral disabled:opacity-60"
           >
             {mutation.isPending ? "…" : t("auth.signupCta")}
-          </button>
+          </motion.button>
         </form>
 
         <p className="mt-6 text-sm text-muted-foreground">

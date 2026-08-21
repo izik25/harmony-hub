@@ -2,6 +2,7 @@ import { useMemo, useState, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Youtube,
   Instagram,
@@ -182,7 +183,7 @@ export function PublishEverywhereModal({
             return (
               <div
                 key={s.platform}
-                className="flex items-center gap-3 rounded-2xl border border-border bg-card/50 p-3"
+                className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-pop"
               >
                 <span
                   className="grid h-10 w-10 shrink-0 place-items-center rounded-full"
@@ -224,12 +225,14 @@ export function PublishEverywhereModal({
                 {!s.configured ? null : !s.connected ? (
                   <button
                     onClick={() => connectPlatform(s.platform)}
-                    className="shrink-0 rounded-full border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent"
+                    className="shrink-0 rounded-full border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent press-scale"
                   >
                     {t("publishEverywhere.connect")}
                   </button>
                 ) : (
-                  <button
+                  <motion.button
+                    whileTap={{ scale: 0.85 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 25 }}
                     onClick={() => toggle(s.platform)}
                     className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 ${
                       selected.has(s.platform)
@@ -237,8 +240,19 @@ export function PublishEverywhereModal({
                         : "border-border"
                     }`}
                   >
-                    {selected.has(s.platform) && <Check className="h-4 w-4" />}
-                  </button>
+                    <AnimatePresence>
+                      {selected.has(s.platform) && (
+                        <motion.span
+                          initial={{ scale: 0, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          exit={{ scale: 0, opacity: 0 }}
+                          transition={{ type: "spring", stiffness: 500, damping: 22 }}
+                        >
+                          <Check className="h-4 w-4" />
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </motion.button>
                 )}
               </div>
             );
@@ -255,7 +269,7 @@ export function PublishEverywhereModal({
             return (
               <div
                 key={s.platform}
-                className="flex items-center gap-3 rounded-2xl border border-border bg-card/50 p-3"
+                className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-pop"
               >
                 <span
                   className="grid h-10 w-10 shrink-0 place-items-center rounded-full"
@@ -269,7 +283,9 @@ export function PublishEverywhereModal({
                     <Link2 className="h-3 w-3" /> {t("publishEverywhere.linkOutDesc")}
                   </p>
                 </div>
-                <button
+                <motion.button
+                  whileTap={{ scale: 0.85 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 25 }}
                   onClick={() => toggle(s.platform)}
                   className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 ${
                     selected.has(s.platform)
@@ -277,17 +293,31 @@ export function PublishEverywhereModal({
                       : "border-border"
                   }`}
                 >
-                  {selected.has(s.platform) && <Check className="h-4 w-4" />}
-                </button>
+                  <AnimatePresence>
+                    {selected.has(s.platform) && (
+                      <motion.span
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0, opacity: 0 }}
+                        transition={{ type: "spring", stiffness: 500, damping: 22 }}
+                      >
+                        <Check className="h-4 w-4" />
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </motion.button>
               </div>
             );
           })}
         </div>
 
-        <button
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          whileHover={{ scale: 1.01, y: -2 }}
+          transition={{ type: "spring", stiffness: 400, damping: 26 }}
           onClick={() => publishMutation.mutate()}
           disabled={selected.size === 0 || publishMutation.isPending || !post}
-          className="mt-5 flex w-full items-center justify-center gap-2 rounded-full gradient-neon py-3 text-sm font-bold text-white glow-pink disabled:opacity-50"
+          className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-brand-coral py-3 text-sm font-bold text-white shadow-pop-coral disabled:opacity-50"
         >
           {publishMutation.isPending ? (
             <>
@@ -301,10 +331,10 @@ export function PublishEverywhereModal({
           ) : (
             t("publishEverywhere.publishSelected", { count: selected.size })
           )}
-        </button>
+        </motion.button>
         <button
           onClick={() => onOpenChange(false)}
-          className="mt-2 w-full rounded-full border border-border bg-card/60 py-2.5 text-sm font-semibold"
+          className="mt-2 w-full rounded-full border border-border bg-card py-2.5 text-sm font-semibold press-scale"
         >
           {t("common.done")}
         </button>

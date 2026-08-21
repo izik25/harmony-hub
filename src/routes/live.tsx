@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Radio, Users, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
@@ -16,6 +17,7 @@ export const Route = createFileRoute("/live")({
 });
 
 const roomTypes = ["set", "battle", "acoustic"] as const;
+const staggerClasses = ["stagger-1", "stagger-2", "stagger-3", "stagger-4", "stagger-5", "stagger-6"];
 
 function LivePage() {
   const { t } = useTranslation();
@@ -53,15 +55,18 @@ function LivePage() {
       <div className="px-4 pt-3 pb-6">
         <div className="flex items-center justify-between">
           <h1 className="font-display text-2xl font-bold flex items-center gap-2">
-            <Radio className="h-6 w-6 text-primary animate-pulse-glow" />
+            <Radio className="h-6 w-6 text-primary" />
             {t("live.title")}
           </h1>
-          <button
+          <motion.button
+            whileTap={{ scale: 0.94 }}
+            whileHover={{ scale: 1.04, y: -1 }}
+            transition={{ type: "spring", stiffness: 450, damping: 26 }}
             onClick={() => setGoLiveOpen(true)}
-            className="rounded-full gradient-neon px-4 py-1.5 text-xs font-bold text-white glow-pink"
+            className="rounded-full bg-brand-coral px-4 py-1.5 text-xs font-bold text-white shadow-pop-coral"
           >
             {t("live.goLive")}
-          </button>
+          </motion.button>
         </div>
 
         {configured === false && (
@@ -77,14 +82,21 @@ function LivePage() {
 
         <div className="mt-4 grid grid-cols-2 gap-3">
           {rooms?.map((r, i) => (
-            <button
+            <motion.button
               key={r.id}
+              whileTap={{ scale: 0.96 }}
+              whileHover={{ y: -3 }}
+              transition={{ type: "spring", stiffness: 420, damping: 28 }}
               onClick={() => navigate({ to: "/live/$roomId", params: { roomId: r.id } })}
-              className="relative aspect-[3/4] overflow-hidden rounded-2xl text-start"
+              className={`relative aspect-[3/4] overflow-hidden rounded-2xl text-start shadow-pop animate-fade-up ${staggerClasses[i % 6]}`}
             >
               <PostCoverBg hue={(i * 60 + 280) % 360} seed={r.id} />
               <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/40" />
-              <span className="absolute left-2 top-2 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-white animate-pulse-glow">
+              <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ring-pulse rounded-full bg-white" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+                </span>
                 {t("common.live")}
               </span>
               <div className="absolute inset-x-0 bottom-0 p-3">
@@ -102,7 +114,7 @@ function LivePage() {
                   </div>
                 </div>
               </div>
-            </button>
+            </motion.button>
           ))}
         </div>
       </div>
@@ -124,10 +136,10 @@ function LivePage() {
                 <button
                   key={rt}
                   onClick={() => setType(rt)}
-                  className={`rounded-full px-3 py-2 text-xs font-semibold capitalize ${
+                  className={`rounded-full px-3 py-2 text-xs font-semibold capitalize transition-all duration-200 ease-out press-scale ${
                     type === rt
-                      ? "gradient-neon text-white"
-                      : "border border-border bg-card/60 text-muted-foreground"
+                      ? "bg-brand-coral text-white shadow-pop-coral"
+                      : "border border-border bg-card text-muted-foreground"
                   }`}
                 >
                   {t(`live.${rt}`)}
@@ -137,7 +149,7 @@ function LivePage() {
             <button
               onClick={() => startMutation.mutate()}
               disabled={startMutation.isPending}
-              className="flex w-full items-center justify-center gap-2 rounded-full gradient-neon py-2.5 text-sm font-bold text-white glow-pink disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-60"
             >
               <Users className="h-4 w-4" />{" "}
               {startMutation.isPending ? t("live.starting") : t("live.startStreaming")}

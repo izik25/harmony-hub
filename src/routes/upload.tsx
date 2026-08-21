@@ -17,6 +17,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { PostCoverBg } from "@/components/PostCoverBg";
@@ -187,6 +188,44 @@ function UploadPage() {
       <div className="px-4 pt-3 pb-6">
         <h1 className="font-display text-2xl font-bold">{t("upload.title")}</h1>
 
+        <p className="mt-4 mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          {t("upload.coverImage")}
+        </p>
+        <div className="relative h-56 w-full overflow-hidden rounded-3xl border border-border">
+          <PostCoverBg hue={280} seed={draftId ?? "new"} imageUrl={coverUrl ?? undefined} />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
+          {!coverUrl && (
+            <div className="absolute inset-0 grid place-items-center">
+              <Sparkles className="h-10 w-10 text-white/25" />
+            </div>
+          )}
+          <div className="absolute inset-x-0 bottom-0 p-4">
+            <p className="mb-2 text-xs text-white/80">
+              {coverUrl ? t("upload.coverReady") : t("upload.coverHint")}
+            </p>
+            <motion.button
+              type="button"
+              onClick={() => coverMutation.mutate()}
+              disabled={coverMutation.isPending}
+              whileTap={coverMutation.isPending ? undefined : { scale: 0.95 }}
+              whileHover={coverMutation.isPending ? undefined : { scale: 1.03 }}
+              transition={{ type: "spring", stiffness: 450, damping: 28 }}
+              className="inline-flex items-center gap-1.5 rounded-full bg-brand-coral px-4 py-2 text-xs font-bold text-white shadow-pop-coral disabled:opacity-60"
+            >
+              {coverMutation.isPending ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              {coverMutation.isPending
+                ? t("upload.generatingCover")
+                : coverUrl
+                  ? t("upload.regenerateCover")
+                  : t("upload.generateCover")}
+            </motion.button>
+          </div>
+        </div>
+
         {draftId ? (
           <div className="mt-4 flex items-center gap-3 rounded-3xl border border-accent/40 bg-accent/5 p-4">
             <CheckCircle2 className="h-6 w-6 shrink-0 text-accent" />
@@ -196,7 +235,7 @@ function UploadPage() {
             </div>
             <button
               onClick={togglePreview}
-              className="grid h-10 w-10 place-items-center rounded-full glass"
+              className="press-scale grid h-10 w-10 place-items-center rounded-full glass"
               disabled={!draft?.audioUrl}
             >
               {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
@@ -211,7 +250,7 @@ function UploadPage() {
             </div>
             <button
               onClick={togglePreview}
-              className="grid h-10 w-10 place-items-center rounded-full glass"
+              className="press-scale grid h-10 w-10 place-items-center rounded-full glass"
             >
               {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </button>
@@ -233,13 +272,16 @@ function UploadPage() {
                 if (file) uploadFileMutation.mutate(file);
               }}
             />
-            <button
+            <motion.button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploadFileMutation.isPending}
-              className="mt-3 rounded-full gradient-neon px-5 py-2 text-xs font-bold text-white glow-pink disabled:opacity-60"
+              whileTap={uploadFileMutation.isPending ? undefined : { scale: 0.95 }}
+              whileHover={uploadFileMutation.isPending ? undefined : { scale: 1.03 }}
+              transition={{ type: "spring", stiffness: 450, damping: 28 }}
+              className="mt-3 rounded-full bg-brand-coral px-5 py-2 text-xs font-bold text-white shadow-pop-coral disabled:opacity-60"
             >
               {t("upload.chooseFile")}
-            </button>
+            </motion.button>
           </div>
         )}
 
@@ -251,7 +293,7 @@ function UploadPage() {
             <button
               key={tp.key}
               onClick={() => setType(tp.key)}
-              className={`flex flex-col items-center gap-1 rounded-2xl border p-3 text-[11px] font-semibold ${
+              className={`press-scale flex flex-col items-center gap-1 rounded-2xl border p-3 text-[11px] font-semibold transition-colors ${
                 type === tp.key
                   ? "border-primary bg-primary/10 text-primary"
                   : "border-border bg-card/60"
@@ -341,51 +383,18 @@ function UploadPage() {
 
           <div>
             <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              {t("upload.coverImage")}
-            </p>
-            <div className="flex items-center gap-3 rounded-2xl border border-border bg-card/40 p-3">
-              <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl">
-                <PostCoverBg hue={280} seed={draftId ?? "new"} imageUrl={coverUrl ?? undefined} />
-              </div>
-              <div className="flex-1">
-                <p className="text-xs text-muted-foreground">
-                  {coverUrl ? t("upload.coverReady") : t("upload.coverHint")}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => coverMutation.mutate()}
-                  disabled={coverMutation.isPending}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary disabled:opacity-60"
-                >
-                  {coverMutation.isPending ? (
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-3.5 w-3.5" />
-                  )}
-                  {coverMutation.isPending
-                    ? t("upload.generatingCover")
-                    : coverUrl
-                      ? t("upload.regenerateCover")
-                      : t("upload.generateCover")}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               {t("upload.visibility")}
             </p>
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setV("public")}
-                className={`flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold ${visibility === "public" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/60"}`}
+                className={`press-scale flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold transition-colors ${visibility === "public" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/60"}`}
               >
                 <Globe className="h-4 w-4" /> {t("upload.public")}
               </button>
               <button
                 onClick={() => setV("private")}
-                className={`flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold ${visibility === "private" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/60"}`}
+                className={`press-scale flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold transition-colors ${visibility === "private" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/60"}`}
               >
                 <Lock className="h-4 w-4" /> {t("upload.private")}
               </button>
@@ -393,13 +402,16 @@ function UploadPage() {
           </div>
         </div>
 
-        <button
+        <motion.button
           onClick={() => publishMutation.mutate()}
           disabled={!canPublish}
-          className="mt-6 w-full rounded-full gradient-neon py-3 text-sm font-bold text-white glow-pink disabled:opacity-50"
+          whileTap={!canPublish ? undefined : { scale: 0.97 }}
+          whileHover={!canPublish ? undefined : { scale: 1.01, y: -1 }}
+          transition={{ type: "spring", stiffness: 450, damping: 28 }}
+          className="mt-6 w-full rounded-full bg-brand-coral py-3 text-sm font-bold text-white shadow-pop-coral disabled:opacity-50"
         >
           {publishMutation.isPending ? t("upload.publishing") : t("common.publish")}
-        </button>
+        </motion.button>
       </div>
 
       <style>{`.input { width: 100%; border-radius: 12px; background: var(--color-input); padding: 10px 12px; font-size: 14px; outline: none; border: 1px solid var(--color-border); }

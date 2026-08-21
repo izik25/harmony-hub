@@ -153,28 +153,21 @@ function WelcomePage() {
       {/* scroll progress */}
       <motion.div
         aria-hidden
-        className="fixed inset-x-0 top-0 z-50 h-[3px] gradient-neon"
+        className="fixed inset-x-0 top-0 z-50 h-[3px] bg-brand-coral"
         style={{ scaleX: scrollYProgress, transformOrigin: rtl ? "100% 0%" : "0% 0%" }}
       />
 
-      <div
-        aria-hidden
-        className="pointer-events-none fixed inset-0 -z-10 opacity-80"
-        style={{ background: "var(--gradient-glow)" }}
-      />
       <motion.div
         aria-hidden
         animate={reduceMotion ? undefined : { x: [0, -30, 0], y: [0, 40, 0] }}
         transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
-        className="pointer-events-none fixed -right-40 top-[38vh] -z-10 h-[520px] w-[520px] rounded-full opacity-25 blur-[120px]"
-        style={{ background: "var(--neon-purple)" }}
+        className="pointer-events-none fixed -right-40 top-[38vh] -z-10 h-[520px] w-[520px] rounded-full bg-brand-indigo opacity-[0.08] blur-[120px]"
       />
       <motion.div
         aria-hidden
         animate={reduceMotion ? undefined : { x: [0, 25, 0], y: [0, -35, 0] }}
         transition={{ duration: 18, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-        className="pointer-events-none fixed -left-40 top-[2vh] -z-10 h-[420px] w-[420px] rounded-full opacity-20 blur-[120px]"
-        style={{ background: "var(--neon-cyan)" }}
+        className="pointer-events-none fixed -left-40 top-[2vh] -z-10 h-[420px] w-[420px] rounded-full bg-brand-gold opacity-[0.1] blur-[120px]"
       />
 
       {/* header */}
@@ -183,7 +176,7 @@ function WelcomePage() {
         className="sticky top-0 z-30 bg-background/70 backdrop-blur-xl"
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 sm:px-8">
-          <span className="font-display text-2xl font-bold gradient-neon-text">SONA</span>
+          <span className="font-display text-2xl font-bold text-brand-coral">SONA</span>
           <div className="flex items-center gap-2">
             <div className="hidden items-center gap-0.5 rounded-full border border-border/60 p-0.5 sm:flex">
               {LANGS.map((l) => (
@@ -208,7 +201,7 @@ function WelcomePage() {
             </Link>
             <Link
               to="/signup"
-              className="rounded-full gradient-neon px-4 py-2 text-sm font-bold text-white glow-pink"
+              className="rounded-full bg-brand-coral px-4 py-2 text-sm font-bold text-white shadow-pop-coral press-scale hover-lift"
             >
               {t("landing.nav.signup")}
             </Link>
@@ -293,7 +286,7 @@ function WelcomePage() {
                     key={i}
                     variants={titleWord}
                     transition={{ duration: 0.55, ease: "easeOut" }}
-                    className="shimmer-text gradient-neon-text me-3 inline-block"
+                    className="text-brand-coral me-3 inline-block"
                   >
                     {word}
                   </motion.span>
@@ -318,7 +311,7 @@ function WelcomePage() {
               <Magnetic>
                 <Link
                   to="/signup"
-                  className="group inline-flex items-center gap-2 rounded-full gradient-neon px-7 py-3.5 text-sm font-bold text-white glow-pink"
+                  className="group inline-flex items-center gap-2 rounded-full bg-brand-coral px-7 py-3.5 text-sm font-bold text-white shadow-pop-coral hover-lift"
                 >
                   {t("landing.hero.ctaPrimary")}
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5" />
@@ -361,7 +354,7 @@ function WelcomePage() {
                 aria-hidden
                 animate={reduceMotion ? undefined : { opacity: [0.3, 0.55, 0.3] }}
                 transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
-                className="absolute inset-0 -z-10 scale-95 rounded-[2.5rem] gradient-neon opacity-40 blur-2xl"
+                className="absolute inset-0 -z-10 scale-95 rounded-[2.5rem] bg-brand-coral opacity-30 blur-2xl"
               />
               <motion.div
                 onMouseMove={handlePhoneMove}
@@ -374,7 +367,7 @@ function WelcomePage() {
                 className="relative aspect-[9/17.5] w-full overflow-hidden rounded-[2.5rem] border border-white/10 shadow-2xl"
               >
                 <div className="absolute inset-0 animate-cover-breathe">
-                  <PostCoverBg hue={162} seed="landing-hero" />
+                  <PostCoverBg hue={27} seed="landing-hero" />
                 </div>
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/40" />
 
@@ -395,7 +388,7 @@ function WelcomePage() {
                 </div>
 
                 <div className="absolute inset-x-4 bottom-4 flex items-center gap-2">
-                  <span className="grid h-11 w-11 shrink-0 animate-spin-slow place-items-center rounded-full border-2 border-white/70 bg-black/30">
+                  <span className="grid h-11 w-11 shrink-0 animate-spin-fast place-items-center rounded-full border-2 border-white/70 bg-black/30">
                     <Music2 className="h-4 w-4 text-white" />
                   </span>
                   <div className="min-w-0">
@@ -434,10 +427,10 @@ function WelcomePage() {
       <section className="mx-auto max-w-6xl px-5 py-12 sm:px-8">
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
           {[
-            { Icon: Globe2, value: 3, suffix: "", label: t("landing.stats.languages") },
-            { Icon: Sparkles, value: 10, suffix: "+", label: t("landing.stats.features") },
-            { Icon: SlidersHorizontal, value: 100, suffix: "%", label: t("landing.stats.dsp") },
-          ].map(({ Icon, value, suffix, label }, i) => (
+            { Icon: Globe2, value: 3, suffix: "", label: t("landing.stats.languages"), color: "bg-brand-coral" },
+            { Icon: Sparkles, value: 10, suffix: "+", label: t("landing.stats.features"), color: "bg-brand-indigo" },
+            { Icon: SlidersHorizontal, value: 100, suffix: "%", label: t("landing.stats.dsp"), color: "bg-brand-gold" },
+          ].map(({ Icon, value, suffix, label, color }, i) => (
             <motion.div
               key={i}
               initial="hidden"
@@ -446,13 +439,13 @@ function WelcomePage() {
               variants={fadeUp}
               whileTap={{ scale: 0.97 }}
               transition={{ duration: 0.45, delay: i * 0.08 }}
-              className="flex items-center gap-4 rounded-2xl border border-border/60 bg-card/40 p-5"
+              className="flex items-center gap-4 rounded-2xl border border-border bg-card p-5 shadow-pop hover-lift"
             >
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl gradient-neon">
+              <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${color}`}>
                 <Icon className="h-5 w-5 text-white" />
               </span>
               <div>
-                <p className="font-display text-2xl font-bold gradient-neon-text">
+                <p className="font-display text-2xl font-bold text-foreground">
                   <CountUp value={value} suffix={suffix} />
                 </p>
                 <p className="text-sm text-muted-foreground">{label}</p>
@@ -498,6 +491,12 @@ function WelcomePage() {
           {featureKeys.map((key, i) => {
             const Icon = FEATURE_ICONS[key];
             const isLive = key === "live";
+            const badgeColor = [
+              "bg-brand-coral",
+              "bg-brand-indigo",
+              "bg-brand-gold",
+              "bg-brand-teal",
+            ][i % 4];
             return (
               <motion.div
                 key={key}
@@ -510,7 +509,7 @@ function WelcomePage() {
               >
                 <SpotlightCard>
                   <div className="relative flex items-start justify-between">
-                    <span className="grid h-11 w-11 place-items-center rounded-2xl gradient-neon glow-pink">
+                    <span className={`grid h-11 w-11 place-items-center rounded-2xl ${badgeColor} shadow-pop`}>
                       <Icon className="h-5 w-5 text-white" />
                     </span>
                     {isLive && (
@@ -554,7 +553,7 @@ function WelcomePage() {
           <div aria-hidden className="absolute inset-x-0 top-6 hidden h-px bg-border sm:block" />
           <motion.div
             aria-hidden
-            className="absolute inset-x-0 top-6 hidden h-px gradient-neon sm:block"
+            className="absolute inset-x-0 top-6 hidden h-px bg-brand-coral sm:block"
             style={{ scaleX: stepsProgress, transformOrigin: rtl ? "100% 0%" : "0% 0%" }}
           />
           {steps.map((step, i) => (
@@ -567,7 +566,11 @@ function WelcomePage() {
               transition={{ duration: 0.45, delay: i * 0.12 }}
               className="relative text-center sm:text-start"
             >
-              <span className="relative z-10 mx-auto flex h-12 w-12 items-center justify-center rounded-full gradient-neon font-display text-lg font-bold text-white glow-cyan sm:mx-0">
+              <span
+                className={`relative z-10 mx-auto flex h-12 w-12 items-center justify-center rounded-full font-display text-lg font-bold text-white shadow-pop sm:mx-0 ${
+                  ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold"][i % 3]
+                }`}
+              >
                 {i + 1}
               </span>
               <h3 className="mt-4 font-display text-xl font-bold">
@@ -602,27 +605,20 @@ function WelcomePage() {
           viewport={{ once: true, amount: 0.4 }}
           variants={fadeUp}
           transition={{ duration: 0.5 }}
-          className="relative overflow-hidden rounded-[2rem] border border-border/60 bg-card/60 px-6 py-14 text-center sm:px-16"
+          className="relative overflow-hidden rounded-[2rem] border border-border bg-brand-coral px-6 py-14 text-center sm:px-16"
         >
-          <motion.div
-            aria-hidden
-            animate={reduceMotion ? undefined : { opacity: [0.22, 0.4, 0.22] }}
-            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-            className="pointer-events-none absolute inset-0"
-            style={{ background: "var(--gradient-neon)" }}
-          />
           <div className="relative">
-            <h2 className="mx-auto max-w-xl font-display text-3xl font-bold sm:text-4xl">
+            <h2 className="mx-auto max-w-xl font-display text-3xl font-bold text-white sm:text-4xl">
               {t("landing.cta.title")}
             </h2>
-            <p className="mx-auto mt-3 max-w-md text-muted-foreground">
+            <p className="mx-auto mt-3 max-w-md text-white/85">
               {t("landing.cta.subtitle")}
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
               <Magnetic>
                 <Link
                   to="/signup"
-                  className="inline-flex items-center gap-2 rounded-full gradient-neon px-8 py-3.5 text-sm font-bold text-white glow-pink"
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-8 py-3.5 text-sm font-bold text-brand-coral shadow-pop-lg hover-lift"
                 >
                   {t("landing.cta.button")}
                   <ArrowRight className="h-4 w-4 rtl:rotate-180" />
@@ -631,7 +627,7 @@ function WelcomePage() {
             </div>
             <Link
               to="/login"
-              className="mt-5 inline-block text-sm font-medium text-muted-foreground hover:text-primary"
+              className="mt-5 inline-block text-sm font-medium text-white/80 hover:text-white"
             >
               {t("landing.cta.loginHint")}
             </Link>
@@ -643,7 +639,7 @@ function WelcomePage() {
       <footer className="border-t border-border/60 px-5 py-8 sm:px-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 sm:flex-row">
           <div className="flex items-center gap-2">
-            <span className="font-display text-lg font-bold gradient-neon-text">SONA</span>
+            <span className="font-display text-lg font-bold text-brand-coral">SONA</span>
             <span className="text-xs text-muted-foreground">{t("landing.footer.tagline")}</span>
           </div>
           <p className="text-xs text-muted-foreground">
@@ -653,14 +649,6 @@ function WelcomePage() {
       </footer>
 
       <style>{`
-        .shimmer-text {
-          background-size: 220% auto;
-          animation: shimmer-move 5s ease-in-out infinite;
-        }
-        @keyframes shimmer-move {
-          0%, 100% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-        }
         .marquee-mask {
           -webkit-mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
           mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
@@ -679,7 +667,6 @@ function WelcomePage() {
           50% { height: 14px; opacity: 1; }
         }
         @media (prefers-reduced-motion: reduce) {
-          .shimmer-text { animation: none; }
           .marquee-track { animation: none; }
           .eq-bar { animation: none; height: 9px; }
         }
@@ -753,7 +740,9 @@ function EqualizerBars({ count = 5, className = "" }: { count?: number; classNam
       {Array.from({ length: count }).map((_, i) => (
         <span
           key={i}
-          className="eq-bar w-[2.5px] rounded-full gradient-neon"
+          className={`eq-bar w-[2.5px] rounded-full ${
+            ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold", "bg-brand-teal"][i % 4]
+          }`}
           style={{
             animationDelay: `${(i % count) * 0.14}s`,
             animationDuration: `${0.8 + (i % 4) * 0.15}s`,

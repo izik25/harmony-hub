@@ -57,10 +57,10 @@ function ExplorePage() {
             <button
               key={k}
               onClick={() => setTab(k)}
-              className={`shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+              className={`shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-200 ease-out press-scale ${
                 tab === k
-                  ? "gradient-neon text-white glow-pink"
-                  : "border border-border bg-card/60 text-muted-foreground"
+                  ? "bg-brand-coral text-white shadow-pop-coral"
+                  : "border border-border bg-card text-muted-foreground"
               }`}
             >
               {t(`explore.${k}`)}
@@ -113,10 +113,8 @@ function ExplorePage() {
                 {genres.map((g, i) => (
                   <div
                     key={g}
-                    className="rounded-xl p-3 text-sm font-semibold text-white"
-                    style={{
-                      background: `linear-gradient(135deg, hsl(${(i * 40) % 360} 85% 55%), hsl(${(i * 40 + 60) % 360} 90% 45%))`,
-                    }}
+                    className="rounded-xl p-3 text-sm font-semibold text-white transition-transform duration-200 ease-out hover:-translate-y-0.5"
+                    style={{ backgroundColor: `hsl(${(i * 47) % 360} 62% 46%)` }}
                   >
                     {g}
                   </div>
@@ -175,10 +173,8 @@ function ExplorePage() {
                   .map((g, i) => (
                     <div
                       key={g}
-                      className="rounded-xl p-3 text-sm font-semibold text-white"
-                      style={{
-                        background: `linear-gradient(135deg, hsl(${(i * 40) % 360} 85% 55%), hsl(${(i * 40 + 60) % 360} 90% 45%))`,
-                      }}
+                      className="rounded-xl p-3 text-sm font-semibold text-white transition-transform duration-200 ease-out hover:-translate-y-0.5"
+                      style={{ backgroundColor: `hsl(${(i * 47) % 360} 62% 46%)` }}
                     >
                       {g}
                     </div>
