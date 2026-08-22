@@ -242,6 +242,77 @@ type Phase = "idle" | "recording" | "paused" | "finished";
 // bars) so a grid, list, or equalizer reads as lively rather than monotonous, without ever
 // blending two into a gradient on a single element.
 const BRAND_COLOR_ROTATION = ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold", "bg-brand-teal"];
+const DECOR_COLOR_ROTATION = ["text-brand-coral", "text-brand-indigo", "text-brand-gold", "text-brand-teal"];
+
+// Purely decorative: a handful of tiny note/mic glyphs drifting upward behind the page content at
+// low opacity, never intercepting taps. Same idea as the landing page's AmbientNotes, scaled down
+// to fit inside a single mobile-width screen instead of a full marketing page.
+function FloatingDecor({ count = 6 }: { count?: number }) {
+  const items = Array.from({ length: count }).map((_, i) => ({
+    Icon: i % 2 === 0 ? Music2 : Mic,
+    color: DECOR_COLOR_ROTATION[i % DECOR_COLOR_ROTATION.length],
+    left: `${6 + ((i * 71) % 88)}%`,
+    size: 13 + (i % 3) * 5,
+    duration: 8 + (i % 4) * 2,
+    delay: i * 0.7,
+  }));
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+      {items.map((it, i) => (
+        <motion.span
+          key={i}
+          className={`absolute bottom-0 ${it.color}`}
+          style={{ left: it.left }}
+          animate={{ y: ["6%", "-580%"], opacity: [0, 0.16, 0], rotate: [0, 14, -10, 0] }}
+          transition={{ duration: it.duration, repeat: Infinity, ease: "easeInOut", delay: it.delay }}
+        >
+          <it.Icon style={{ width: it.size, height: it.size }} />
+        </motion.span>
+      ))}
+    </div>
+  );
+}
+
+// Idle invitation state for the visualizer panel: a breathing mic with expanding rings and two
+// small orbiting note glyphs, replacing the near-flat bars that used to sit there before the mic
+// stream is even open (levels default to a flat 6px until recording actually starts).
+function IdleMicHero() {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center">
+      <div className="relative grid h-16 w-16 place-items-center">
+        {[0, 1, 2].map((i) => (
+          <motion.span
+            key={i}
+            className="absolute h-16 w-16 rounded-full border-2 border-brand-coral"
+            animate={{ scale: [1, 2.4], opacity: [0.5, 0] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: "easeOut", delay: i * 0.8 }}
+          />
+        ))}
+        <motion.span
+          className="absolute -left-8 -top-2 text-brand-gold"
+          animate={{ y: [0, -8, 0], opacity: [0.35, 0.8, 0.35], rotate: [0, 10, 0] }}
+          transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <Music2 className="h-3.5 w-3.5" />
+        </motion.span>
+        <motion.span
+          className="absolute -right-9 top-1 text-brand-indigo"
+          animate={{ y: [0, -10, 0], opacity: [0.3, 0.75, 0.3], rotate: [0, -12, 0] }}
+          transition={{ duration: 2.7, repeat: Infinity, ease: "easeInOut", delay: 0.6 }}
+        >
+          <Music2 className="h-3 w-3" />
+        </motion.span>
+        <motion.div
+          animate={{ scale: [1, 1.06, 1] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+          className="relative grid h-16 w-16 place-items-center rounded-full bg-brand-coral shadow-pop-coral"
+        >
+          <Mic className="h-7 w-7 text-white" />
+        </motion.div>
+      </div>
+    </div>
+  );
+}
 
 function RecordPage() {
   const { t } = useTranslation();
@@ -558,15 +629,16 @@ function RecordPage() {
   return (
     <AppShell>
       <TopBar />
-      <div className="px-4 pt-3 pb-6">
-        <div className="flex items-center justify-between">
+      <div className="relative px-4 pt-3 pb-6">
+        <FloatingDecor />
+        <div className="relative flex items-center justify-between animate-fade-up">
           <h1 className="font-display text-2xl font-bold">{t("record.title")}</h1>
           <Link to="/upload" search={{}} className="text-xs text-accent underline">
             {t("record.skipUpload")}
           </Link>
         </div>
 
-        <div className="mt-4 flex items-center gap-2">
+        <div className="relative mt-4 flex items-center gap-2 animate-fade-up stagger-1">
           <button
             onClick={() => setKaraokeOpen(true)}
             className="press-scale flex flex-1 items-center gap-3 rounded-2xl border border-border bg-card/60 p-3 text-start"
@@ -596,7 +668,24 @@ function RecordPage() {
           )}
         </div>
 
-        <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-card shadow-pop">
+        <motion.div
+          animate={
+            recording
+              ? {
+                  boxShadow: [
+                    "0 0 0 0 color-mix(in oklab, var(--brand-coral) 55%, transparent)",
+                    "0 0 0 10px color-mix(in oklab, var(--brand-coral) 0%, transparent)",
+                  ],
+                }
+              : { boxShadow: "0 0 0 0 transparent" }
+          }
+          transition={
+            recording
+              ? { duration: 1.6, repeat: Infinity, ease: "easeOut" }
+              : { duration: 0.3 }
+          }
+          className="relative mt-6 overflow-hidden rounded-3xl border border-border bg-card shadow-pop animate-fade-up stagger-2"
+        >
           {/* No padding around the video itself — every extra pixel here is a pixel of lyrics
               you can actually read. Controls sit in a slim strip along the bottom edge instead
               of floating in the middle, so they never block the words. */}
@@ -611,7 +700,7 @@ function RecordPage() {
                 playsInline
                 muted={false}
               />
-            ) : (
+            ) : recording || phase === "paused" ? (
               <div className="absolute inset-0 flex items-center justify-around px-3">
                 {levels.map((h, i) => (
                   <span
@@ -621,6 +710,8 @@ function RecordPage() {
                   />
                 ))}
               </div>
+            ) : (
+              <IdleMicHero />
             )}
 
             {recording && (
@@ -679,19 +770,42 @@ function RecordPage() {
                     />
                   </>
                 ) : (
-                  <ControlButton
-                    onClick={startOrResume}
-                    icon={
-                      finishMutation.isPending ? (
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                      ) : (
-                        <Mic className="h-5 w-5" />
-                      )
-                    }
-                    label={phase === "finished" ? t("record.reRecord") : t("common.record")}
-                    variant="primary"
-                    disabled={finishMutation.isPending}
-                  />
+                  <div className="relative">
+                    {!finishMutation.isPending && (
+                      <>
+                        <motion.span
+                          aria-hidden
+                          className="absolute inset-0 -z-10 rounded-full bg-brand-coral"
+                          animate={{ scale: [1, 1.9], opacity: [0.4, 0] }}
+                          transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
+                        />
+                        <motion.span
+                          aria-hidden
+                          className="absolute inset-0 -z-10 rounded-full bg-brand-coral"
+                          animate={{ scale: [1, 1.9], opacity: [0.4, 0] }}
+                          transition={{
+                            duration: 1.8,
+                            repeat: Infinity,
+                            ease: "easeOut",
+                            delay: 0.9,
+                          }}
+                        />
+                      </>
+                    )}
+                    <ControlButton
+                      onClick={startOrResume}
+                      icon={
+                        finishMutation.isPending ? (
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <Mic className="h-5 w-5" />
+                        )
+                      }
+                      label={phase === "finished" ? t("record.reRecord") : t("common.record")}
+                      variant="primary"
+                      disabled={finishMutation.isPending}
+                    />
+                  </div>
                 )}
               </div>
             </div>
@@ -740,9 +854,9 @@ function RecordPage() {
               </div>
             )}
           </div>
-        </div>
+        </motion.div>
 
-        <p className="mt-4 text-center text-xs text-muted-foreground">
+        <p className="relative mt-4 text-center text-xs text-muted-foreground animate-fade-up stagger-3">
           {t("record.opensStudioHint")}
         </p>
       </div>
