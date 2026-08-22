@@ -79,6 +79,7 @@
 @layer base {
   * { border-color: var(--color-border); }
   html, body { background-color: var(--color-background); color: var(--color-foreground); }
+  html { scroll-behavior: smooth; }
   body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
   h1, h2, h3, h4, .font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
 }

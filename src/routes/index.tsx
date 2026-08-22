@@ -240,9 +240,31 @@ function FeedItem({
     competition: t("common.live"),
   };
 
+  // Double-tap-to-like on the cover art itself, same gesture as Reels/TikTok. Tracked with a
+  // plain ref (not state) since the tap timing itself never needs to trigger a render — only its
+  // outcome (the heart burst) does.
+  const lastTapRef = useRef(0);
+  const [burstKey, setBurstKey] = useState(0);
+  const [showBurst, setShowBurst] = useState(false);
+  const handleCoverTap = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      if (!post.likedByMe) likeMutation.mutate();
+      setBurstKey((k) => k + 1);
+      setShowBurst(true);
+    }
+    lastTapRef.current = now;
+  };
+  useEffect(() => {
+    if (!showBurst) return;
+    const timer = setTimeout(() => setShowBurst(false), 650);
+    return () => clearTimeout(timer);
+  }, [showBurst]);
+
   return (
     <section
       data-post-id={post.id}
+      style={{ scrollSnapStop: "always" }}
       className="relative h-[calc(100dvh-80px)] snap-start overflow-hidden"
     >
       {post.audioUrl && (
@@ -255,10 +277,31 @@ function FeedItem({
           preload={preload}
         />
       )}
-      <div className={isPlaying ? "absolute inset-0 animate-cover-breathe" : "absolute inset-0"}>
+      <motion.div
+        onClick={handleCoverTap}
+        initial={false}
+        animate={{ scale: active ? 1 : 1.05 }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        className={isPlaying ? "absolute inset-0 animate-cover-breathe" : "absolute inset-0"}
+      >
         <PostCoverBg hue={post.hue} seed={post.id} imageUrl={post.coverUrl} />
-      </div>
-      <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80" />
+      </motion.div>
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80" />
+
+      <AnimatePresence>
+        {showBurst && (
+          <motion.div
+            key={burstKey}
+            initial={{ scale: 0.4, opacity: 0 }}
+            animate={{ scale: 1.15, opacity: 1 }}
+            exit={{ scale: 1.35, opacity: 0 }}
+            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
+          >
+            <Heart className="h-24 w-24 fill-white text-white drop-shadow-lg" />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {showSoundHint && post.audioUrl && (
         <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 flex -translate-y-1/2 justify-center">
@@ -276,7 +319,12 @@ function FeedItem({
         />
       </div>
 
-      <div className="absolute left-4 top-4 z-10 flex items-center gap-2">
+      <motion.div
+        initial={false}
+        animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: -10 }}
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        className="absolute left-4 top-4 z-10 flex items-center gap-2"
+      >
         <span className="rounded-full glass px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/90">
           {typeLabel[post.type] ?? post.type}
         </span>
@@ -289,28 +337,52 @@ function FeedItem({
             {t("common.live")}
           </span>
         )}
-      </div>
+      </motion.div>
 
-      <div className="absolute bottom-32 right-3 z-10 flex flex-col items-center gap-5">
+      <motion.div
+        initial={false}
+        animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: 24 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1], delay: active ? 0.05 : 0 }}
+        className="absolute bottom-32 right-3 z-10 flex flex-col items-center gap-5"
+      >
         <div className="relative">
           <img
             src={post.user.avatar}
             alt=""
             className="h-12 w-12 rounded-full border-2 border-white/80"
           />
-          <button
+          <motion.button
             onClick={() => followMutation.mutate()}
-            className={`absolute -bottom-2 left-1/2 -translate-x-1/2 grid h-5 w-5 place-items-center rounded-full text-[12px] font-bold text-white press-scale ${
+            whileTap={{ scale: 0.85 }}
+            className={`absolute -bottom-2 left-1/2 -translate-x-1/2 grid h-5 w-5 place-items-center overflow-hidden rounded-full text-[12px] font-bold text-white ${
               post.followingAuthor ? "bg-secondary" : "bg-brand-coral shadow-pop-coral"
             }`}
           >
-            {post.followingAuthor ? "✓" : "+"}
-          </button>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={post.followingAuthor ? "on" : "off"}
+                initial={{ scale: 0.4, opacity: 0, rotate: -90 }}
+                animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                exit={{ scale: 0.4, opacity: 0, rotate: 90 }}
+                transition={{ duration: 0.2 }}
+              >
+                {post.followingAuthor ? "✓" : "+"}
+              </motion.span>
+            </AnimatePresence>
+          </motion.button>
         </div>
         <ActionButton
           onClick={() => likeMutation.mutate()}
           icon={
-            <Heart className={`h-7 w-7 ${post.likedByMe ? "fill-primary text-primary" : ""}`} />
+            <motion.span
+              key={post.likes}
+              initial={{ scale: post.likedByMe ? 0.5 : 1 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", stiffness: 500, damping: 15 }}
+              className="block"
+            >
+              <Heart className={`h-7 w-7 ${post.likedByMe ? "fill-primary text-primary" : ""}`} />
+            </motion.span>
           }
           count={formatCount(post.likes)}
         />
@@ -334,9 +406,14 @@ function FeedItem({
         >
           <Music className="h-5 w-5 text-white" />
         </button>
-      </div>
+      </motion.div>
 
-      <div className="absolute inset-x-0 bottom-0 z-10 p-4 pb-6">
+      <motion.div
+        initial={false}
+        animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: 24 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1], delay: active ? 0.1 : 0 }}
+        className="absolute inset-x-0 bottom-0 z-10 p-4 pb-6"
+      >
         <Link
           to="/profile/$handle"
           params={{ handle: post.user.handle }}
@@ -377,7 +454,7 @@ function FeedItem({
           </button>
           <CreditsPop credits={post.credits} />
         </div>
-      </div>
+      </motion.div>
     </section>
   );
 }
