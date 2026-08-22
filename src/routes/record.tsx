@@ -276,40 +276,86 @@ function FloatingDecor({ count = 6 }: { count?: number }) {
 // Idle invitation state for the visualizer panel: a breathing mic with expanding rings and two
 // small orbiting note glyphs, replacing the near-flat bars that used to sit there before the mic
 // stream is even open (levels default to a flat 6px until recording actually starts).
-function IdleMicHero() {
+//
+// This IS the record button when no karaoke track is loaded — a single big, unmistakable tap
+// target rather than a small decorative icon plus a separate tiny record button at the bottom
+// (that duplication read as cluttered/confusing). The bottom control bar only reappears once a
+// karaoke video is loaded (a different layout, where the button has to sit over the video) or
+// once recording has actually started.
+function IdleRecordStage({
+  onStart,
+  pending,
+  label,
+}: {
+  onStart: () => void;
+  pending: boolean;
+  label: string;
+}) {
   return (
-    <div className="absolute inset-0 flex items-center justify-center">
-      <div className="relative grid h-16 w-16 place-items-center">
-        {[0, 1, 2].map((i) => (
-          <motion.span
-            key={i}
-            className="absolute h-16 w-16 rounded-full border-2 border-brand-coral"
-            animate={{ scale: [1, 2.4], opacity: [0.5, 0] }}
-            transition={{ duration: 2.4, repeat: Infinity, ease: "easeOut", delay: i * 0.8 }}
-          />
-        ))}
-        <motion.span
-          className="absolute -left-8 -top-2 text-brand-gold"
-          animate={{ y: [0, -8, 0], opacity: [0.35, 0.8, 0.35], rotate: [0, 10, 0] }}
-          transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-5">
+      {/* soft flat-color glow "stage light" behind the button — sells depth/elevation without
+          ever blending two colors into a gradient */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute h-64 w-64 rounded-full bg-brand-coral opacity-[0.14] blur-3xl"
+      />
+
+      {/* sparse floating note/mic glyphs anchored to the stage's corners, well clear of the
+          button itself so nothing crowds the main tap target */}
+      <motion.span
+        aria-hidden
+        className="absolute left-[14%] top-[16%] text-brand-gold"
+        animate={{ y: [0, -10, 0], opacity: [0.35, 0.75, 0.35], rotate: [0, 12, 0] }}
+        transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
+      >
+        <Music2 className="h-5 w-5" />
+      </motion.span>
+      <motion.span
+        aria-hidden
+        className="absolute right-[16%] top-[22%] text-brand-indigo"
+        animate={{ y: [0, -14, 0], opacity: [0.3, 0.7, 0.3], rotate: [0, -14, 0] }}
+        transition={{ duration: 4.2, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
+      >
+        <Music2 className="h-4 w-4" />
+      </motion.span>
+      <motion.span
+        aria-hidden
+        className="absolute left-[18%] bottom-[20%] text-brand-teal"
+        animate={{ y: [0, -8, 0], opacity: [0.3, 0.65, 0.3] }}
+        transition={{ duration: 3.9, repeat: Infinity, ease: "easeInOut", delay: 1.1 }}
+      >
+        <Mic className="h-4 w-4" />
+      </motion.span>
+
+      <motion.div className="relative grid place-items-center" style={{ width: 152, height: 152 }}>
+        {!pending &&
+          [0, 1].map((i) => (
+            <motion.span
+              key={i}
+              className="absolute h-32 w-32 rounded-full border-2 border-brand-coral"
+              animate={{ scale: [1, 1.7], opacity: [0.45, 0] }}
+              transition={{ duration: 2.2, repeat: Infinity, ease: "easeOut", delay: i * 1.1 }}
+            />
+          ))}
+        <motion.button
+          onClick={onStart}
+          disabled={pending}
+          aria-label={label}
+          animate={pending ? {} : { y: [0, -8, 0] }}
+          transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+          whileTap={pending ? undefined : { scale: 0.93 }}
+          whileHover={pending ? undefined : { scale: 1.04 }}
+          className="relative grid h-32 w-32 place-items-center rounded-full bg-brand-coral text-white shadow-pop-coral disabled:opacity-70"
         >
-          <Music2 className="h-3.5 w-3.5" />
-        </motion.span>
-        <motion.span
-          className="absolute -right-9 top-1 text-brand-indigo"
-          animate={{ y: [0, -10, 0], opacity: [0.3, 0.75, 0.3], rotate: [0, -12, 0] }}
-          transition={{ duration: 2.7, repeat: Infinity, ease: "easeInOut", delay: 0.6 }}
-        >
-          <Music2 className="h-3 w-3" />
-        </motion.span>
-        <motion.div
-          animate={{ scale: [1, 1.06, 1] }}
-          transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
-          className="relative grid h-16 w-16 place-items-center rounded-full bg-brand-coral shadow-pop-coral"
-        >
-          <Mic className="h-7 w-7 text-white" />
-        </motion.div>
-      </div>
+          {pending ? (
+            <Loader2 className="h-11 w-11 animate-spin" />
+          ) : (
+            <Mic className="h-11 w-11" />
+          )}
+        </motion.button>
+      </motion.div>
+
+      <p className="relative text-sm font-semibold text-foreground">{label}</p>
     </div>
   );
 }
@@ -684,13 +730,15 @@ function RecordPage() {
               ? { duration: 1.6, repeat: Infinity, ease: "easeOut" }
               : { duration: 0.3 }
           }
-          className="relative mt-6 overflow-hidden rounded-3xl border border-border bg-card shadow-pop animate-fade-up stagger-2"
+          className="relative mt-6 overflow-hidden rounded-[2rem] border border-border bg-card shadow-pop-lg animate-fade-up stagger-2"
         >
           {/* No padding around the video itself — every extra pixel here is a pixel of lyrics
               you can actually read. Controls sit in a slim strip along the bottom edge instead
-              of floating in the middle, so they never block the words. */}
+              of floating in the middle, so they never block the words. The idle "no track" stage
+              is deliberately much taller than the video frame — it's the hero of the page when
+              there's nothing else to look at yet, not a cramped little box. */}
           <div
-            className={`relative overflow-hidden bg-muted ${selectedTrack ? "aspect-video" : "h-48"}`}
+            className={`relative overflow-hidden bg-muted ${selectedTrack ? "aspect-video" : "h-[440px]"}`}
           >
             {selectedTrack ? (
               <video
@@ -701,17 +749,21 @@ function RecordPage() {
                 muted={false}
               />
             ) : recording || phase === "paused" ? (
-              <div className="absolute inset-0 flex items-center justify-around px-3">
+              <div className="absolute inset-0 flex items-center justify-around px-4">
                 {levels.map((h, i) => (
                   <span
                     key={i}
-                    className={`w-1 rounded-full transition-[height] duration-75 ${BRAND_COLOR_ROTATION[i % BRAND_COLOR_ROTATION.length]}`}
-                    style={{ height: h }}
+                    className={`w-1.5 rounded-full transition-[height] duration-75 ${BRAND_COLOR_ROTATION[i % BRAND_COLOR_ROTATION.length]}`}
+                    style={{ height: h * 2.2 }}
                   />
                 ))}
               </div>
             ) : (
-              <IdleMicHero />
+              <IdleRecordStage
+                onStart={startOrResume}
+                pending={finishMutation.isPending}
+                label={phase === "finished" ? t("record.reRecord") : t("common.record")}
+              />
             )}
 
             {recording && (
@@ -737,6 +789,7 @@ function RecordPage() {
               {monitorEnabled && t("record.monitorOn")}
             </button>
 
+            {(selectedTrack || recording || phase === "paused") && (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-3 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pb-3 pt-8">
               <div className="pointer-events-auto flex items-center gap-3">
                 {phase === "paused" ? (
@@ -809,6 +862,7 @@ function RecordPage() {
                 )}
               </div>
             </div>
+            )}
           </div>
 
           <div className="p-4">
