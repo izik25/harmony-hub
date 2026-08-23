@@ -5,7 +5,10 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Mic,
+  MicVocal,
   Music2,
+  Disc3,
+  ChevronRight,
   Search,
   X,
   Check,
@@ -324,15 +327,15 @@ function IdleRecordStage({
         animate={{ y: [0, -8, 0], opacity: [0.3, 0.65, 0.3] }}
         transition={{ duration: 3.9, repeat: Infinity, ease: "easeInOut", delay: 1.1 }}
       >
-        <Mic className="h-4 w-4" />
+        <MicVocal className="h-4 w-4" />
       </motion.span>
 
-      <motion.div className="relative grid place-items-center" style={{ width: 152, height: 152 }}>
+      <motion.div className="relative grid place-items-center" style={{ width: 118, height: 118 }}>
         {!pending &&
           [0, 1].map((i) => (
             <motion.span
               key={i}
-              className="absolute h-32 w-32 rounded-full border-2 border-brand-coral"
+              className="absolute h-24 w-24 rounded-full border-2 border-brand-coral"
               animate={{ scale: [1, 1.7], opacity: [0.45, 0] }}
               transition={{ duration: 2.2, repeat: Infinity, ease: "easeOut", delay: i * 1.1 }}
             />
@@ -341,16 +344,16 @@ function IdleRecordStage({
           onClick={onStart}
           disabled={pending}
           aria-label={label}
-          animate={pending ? {} : { y: [0, -8, 0] }}
+          animate={pending ? {} : { y: [0, -7, 0] }}
           transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
           whileTap={pending ? undefined : { scale: 0.93 }}
           whileHover={pending ? undefined : { scale: 1.04 }}
-          className="relative grid h-32 w-32 place-items-center rounded-full bg-brand-coral text-white shadow-pop-coral disabled:opacity-70"
+          className="relative grid h-24 w-24 place-items-center rounded-full bg-brand-coral text-white shadow-pop-coral disabled:opacity-70"
         >
           {pending ? (
-            <Loader2 className="h-11 w-11 animate-spin" />
+            <Loader2 className="h-8 w-8 animate-spin" />
           ) : (
-            <Mic className="h-11 w-11" />
+            <MicVocal className="h-8 w-8" />
           )}
         </motion.button>
       </motion.div>
@@ -685,32 +688,51 @@ function RecordPage() {
         </div>
 
         <div className="relative mt-4 flex items-center gap-2 animate-fade-up stagger-1">
-          <button
+          <motion.button
             onClick={() => setKaraokeOpen(true)}
-            className="press-scale flex flex-1 items-center gap-3 rounded-2xl border border-border bg-card/60 p-3 text-start"
+            whileTap={{ scale: 0.97 }}
+            className="hover-lift relative flex flex-1 items-center gap-4 overflow-hidden rounded-3xl border border-border bg-card p-4 text-start shadow-pop"
           >
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand-indigo">
-              <Music2 className="h-5 w-5 text-white" />
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <p className="line-clamp-1 text-sm font-semibold">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-brand-indigo opacity-[0.12] blur-2xl"
+            />
+            <motion.div
+              animate={selectedTrack ? { rotate: 360 } : { rotate: 0 }}
+              transition={
+                selectedTrack
+                  ? { duration: 7, repeat: Infinity, ease: "linear" }
+                  : { duration: 0.4 }
+              }
+              className="relative grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-brand-indigo shadow-pop"
+            >
+              {selectedTrack ? (
+                <Disc3 className="h-7 w-7 text-white" />
+              ) : (
+                <Music2 className="h-7 w-7 text-white" />
+              )}
+            </motion.div>
+            <div className="relative flex-1 overflow-hidden">
+              <p className="line-clamp-1 text-base font-bold">
                 {selectedTrack
                   ? [selectedTrack.artist, selectedTrack.title].filter(Boolean).join(" — ")
                   : t("record.karaoke")}
               </p>
-              <p className="line-clamp-1 text-xs text-muted-foreground">
+              <p className="line-clamp-1 mt-0.5 text-xs text-muted-foreground">
                 {selectedTrack ? t("record.changeTrack") : t("record.karaokeDesc")}
               </p>
             </div>
-          </button>
+            <ChevronRight className="relative h-5 w-5 shrink-0 text-muted-foreground" />
+          </motion.button>
           {selectedTrack && (
-            <button
+            <motion.button
               onClick={() => setSelectedTrack(null)}
+              whileTap={{ scale: 0.9 }}
               aria-label={t("record.clearTrack")}
-              className="press-scale grid h-11 w-11 shrink-0 place-items-center rounded-full border border-border bg-card/60"
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-full border border-border bg-card shadow-pop"
             >
               <X className="h-4 w-4" />
-            </button>
+            </motion.button>
           )}
         </div>
 
