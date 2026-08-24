@@ -27,9 +27,11 @@ import {
   applyNoiseGate,
   noiseGateThresholdFor,
 } from "@/lib/mix-recording";
+import { analyzePitch, applyPitchCorrection } from "@/lib/pitch-correct";
 import { audioBufferToWavBlob } from "@/lib/wav-encoder";
 import { generateImpulseResponse } from "@/lib/impulse-response";
 import { translateServerError } from "@/lib/i18n";
+import { FixSectionEditor, FixSectionToggle } from "@/components/FixSectionEditor";
 
 interface StudioSearch {
   draftId?: string;
@@ -185,6 +187,11 @@ function StudioPage() {
   // decode never sees the live in-memory buffer AI Mastering mutated), and reset whenever a fresh
   // audioUrl loads since a new take hasn't been mastered yet.
   const gateAppliedRef = useRef(false);
+  // Strength (0-1) of the destructive pitch correction AI Mastering baked into the currently-loaded
+  // buffer, 0 if none was needed/applied. Read by renderProcessed to reapply the same correction on
+  // export/publish's independent offline decode, same reasoning as gateAppliedRef above. Reset
+  // whenever a fresh audioUrl loads since a new take hasn't been mastered yet.
+  const pitchAppliedRef = useRef(0);
   // Post-chain makeup gain (dB) — 0 until AI Mastering sets it (see applyMaster), reset alongside
   // gateAppliedRef whenever a fresh take loads since it hasn't been mastered yet either.
   const [gainDb, setGainDb] = useState(0);
@@ -194,6 +201,7 @@ function StudioPage() {
   // read naturally.
   const [vocalVolume, setVocalVolume] = useState(125);
   const [playbackVolume, setPlaybackVolume] = useState(85);
+  const [fixSectionOpen, setFixSectionOpen] = useState(false);
 
   const chainRef = useRef<VocalChain | null>(null);
   // Mirrors the DSP slider state without being a dependency of the chain-(re)build effect below —
@@ -234,6 +242,7 @@ function StudioPage() {
     const chain = buildChain(() => setPlaying(false));
     chainRef.current = chain;
     gateAppliedRef.current = false;
+    pitchAppliedRef.current = 0;
     setGainDb(0);
     setReady(false);
     const loadWithRetry = async (url: string, attempts = 4): Promise<void> => {
@@ -308,6 +317,7 @@ function StudioPage() {
     };
     const audioUrl = draft.audioUrl;
     const gateApplied = gateAppliedRef.current;
+    const pitchStrength = pitchAppliedRef.current;
 
     const rendered = await Tone.Offline(
       async () => {
@@ -316,14 +326,19 @@ function StudioPage() {
         // buffer — Chromium can silently stall OfflineAudioContext rendering when a source node
         // references an AudioBuffer decoded by a different context.
         await offlineChain.player.load(audioUrl);
-        // This decode is independent of the live buffer AI Mastering gated in place — reapply the
-        // same gate here so export/publish actually carries the noise cleanup, not just the slider
-        // values. Deterministic: same source audio in both places always analyzes to the same
-        // threshold.
-        if (gateApplied) {
+        // This decode is independent of the live buffer AI Mastering gated/retuned in place —
+        // reapply the same gate and pitch correction here so export/publish actually carries them,
+        // not just the slider values. Deterministic: same source audio in both places always
+        // analyzes and detects pitch the same way.
+        if (gateApplied || pitchStrength > 0) {
           const offlineBuffer = offlineChain.player.buffer.get();
           if (offlineBuffer) {
-            applyNoiseGate(offlineBuffer, noiseGateThresholdFor(analyzeSignal(offlineBuffer)));
+            if (gateApplied) {
+              applyNoiseGate(offlineBuffer, noiseGateThresholdFor(analyzeSignal(offlineBuffer)));
+            }
+            if (pitchStrength > 0) {
+              applyPitchCorrection(offlineBuffer, pitchStrength);
+            }
           }
         }
         applyParams(offlineChain, params);
@@ -461,16 +476,34 @@ function StudioPage() {
     const targetMasterDb = -12;
     const gainBoostDb = clamp(targetMasterDb - after.vocalLevelDb, 0, 9);
 
-    // Autotune stays off here too — see the note by its default state above. Forcing it on
-    // regardless of the take's actual pitch (there's no pitch-detection to correct toward) was
-    // just injecting a delay-modulation artifact into every mastering pass.
+    // Real pitch correction — not the live Autotune slider (see the note by its default state
+    // above; that one has no pitch-detection behind it and stays off). Measure how far this take's
+    // sung pitch actually drifts from the nearest note first (analyzePitch is detection-only, much
+    // cheaper than the full correction pass), then only pay for applyPitchCorrection's resampling
+    // when there's both enough sustained singing to correct (voicedRatio) and a real, audible drift
+    // to correct (avgAbsCents) — an already in-tune or mostly-spoken take is left untouched rather
+    // than run through resampling for no gain. Strength scales with how far off it actually is, so
+    // a barely-flat phrase gets pulled in gently and a properly off-key one gets pulled in harder,
+    // instead of one fixed correction amount applied regardless of need.
+    const pitchProfile = analyzePitch(buffer);
+    const clamp01 = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+    let pitchStrength = 0;
+    if (pitchProfile.voicedRatio > 0.15 && pitchProfile.avgAbsCents > 8) {
+      pitchStrength = clamp01(0.3 + (pitchProfile.avgAbsCents / 150) * 0.55, 0.3, 0.85);
+      applyPitchCorrection(buffer, pitchStrength);
+    }
+    pitchAppliedRef.current = pitchStrength;
+
     setN(noiseAmt);
     setR(reverbAmt);
     setE(eqAmt);
     setC(compAmt);
     setGainDb(gainBoostDb);
+    const baseMsg = alreadyExcellent
+      ? t("studio.masterAppliedClean")
+      : t("studio.masterAppliedCleaned");
     toast.success(
-      alreadyExcellent ? t("studio.masterAppliedClean") : t("studio.masterAppliedCleaned"),
+      pitchStrength > 0 ? `${baseMsg} ${t("studio.masterAppliedPitchSuffix")}` : baseMsg,
     );
   };
 
@@ -569,7 +602,25 @@ function StudioPage() {
                   )}
                   {t("record.remix")}
                 </button>
+                {!fixSectionOpen && <FixSectionToggle onClick={() => setFixSectionOpen(true)} />}
               </section>
+            )}
+
+            {fixSectionOpen && draft?.rawVocalUrl && (
+              <FixSectionEditor
+                draftId={draftId!}
+                rawVocalUrl={draft.rawVocalUrl}
+                backingTrackUrl={draft.backingTrackUrl}
+                vocalGain={vocalVolume / 100}
+                backingGain={playbackVolume / 100}
+                onClose={() => setFixSectionOpen(false)}
+                onSaved={(urls) => {
+                  queryClient.setQueryData<DraftDTO>(["draft", draftId], (old) =>
+                    old ? { ...old, ...urls } : old,
+                  );
+                  setFixSectionOpen(false);
+                }}
+              />
             )}
 
             <section className="mt-5 rounded-3xl border border-accent/40 bg-accent/5 p-4">
@@ -633,7 +684,9 @@ function StudioPage() {
                 onClick={() => publishMutation.mutate(false)}
                 disabled={!ready || publishMutation.isPending}
                 whileTap={!ready || publishMutation.isPending ? undefined : { scale: 0.95 }}
-                whileHover={!ready || publishMutation.isPending ? undefined : { scale: 1.03, y: -1 }}
+                whileHover={
+                  !ready || publishMutation.isPending ? undefined : { scale: 1.03, y: -1 }
+                }
                 transition={{ type: "spring", stiffness: 450, damping: 28 }}
                 className="flex flex-col items-center gap-1 rounded-2xl bg-brand-coral p-3 text-[11px] font-bold text-white shadow-pop-coral disabled:opacity-50"
               >

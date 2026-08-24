@@ -66,3 +66,46 @@ export async function trimCheckpoint(
   const trimmed = sliceBuffer(buffer, toSeconds);
   return { blob: audioBufferToWavBlob(trimmed), seconds: trimmed.duration };
 }
+
+/**
+ * Replaces the [startSeconds, endSeconds) window of an already-finished take with a freshly
+ * recorded segment, keeping everything before and after untouched — the "punch in and fix just
+ * this part" flow (Studio's Fix a Section), as opposed to commitCheckpoint/trimCheckpoint which
+ * only ever grow or cut a take from its live end. `segmentBlob` doesn't need to be the same
+ * length as the window it replaces; the rest of the take shifts to fit whatever was recorded.
+ */
+export async function replaceSegment(
+  baseBlob: Blob,
+  startSeconds: number,
+  endSeconds: number,
+  segmentBlob: Blob,
+): Promise<{ blob: Blob; seconds: number }> {
+  const baseBuffer = await decodeBlob(baseBlob);
+  const segmentBuffer = await decodeBlob(segmentBlob);
+  const sampleRate = baseBuffer.sampleRate;
+  const startFrame = Math.max(
+    0,
+    Math.min(baseBuffer.length, Math.round(startSeconds * sampleRate)),
+  );
+  const endFrame = Math.max(
+    startFrame,
+    Math.min(baseBuffer.length, Math.round(endSeconds * sampleRate)),
+  );
+
+  const baseData = baseBuffer.getChannelData(0);
+  const before = baseData.subarray(0, startFrame);
+  const after = baseData.subarray(endFrame);
+  const segmentData = segmentBuffer.getChannelData(0);
+
+  const out = new AudioBuffer({
+    length: before.length + segmentData.length + after.length,
+    numberOfChannels: 1,
+    sampleRate,
+  });
+  const outData = out.getChannelData(0);
+  outData.set(before, 0);
+  outData.set(segmentData, before.length);
+  outData.set(after, before.length + segmentData.length);
+
+  return { blob: audioBufferToWavBlob(out), seconds: out.duration };
+}

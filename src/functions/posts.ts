@@ -218,12 +218,15 @@ export const getDraft = createServerFn({ method: "GET" })
   });
 
 export const updateDraftAudio = createServerFn({ method: "POST" })
-  .validator((input: unknown) => input as { id: string; audioUrl: string })
+  .validator((input: unknown) => input as { id: string; audioUrl: string; rawVocalUrl?: string })
   .handler(async ({ data }) => {
     const userId = await requireUserId();
     await db
       .update(posts)
-      .set({ audioUrl: data.audioUrl })
+      .set({
+        audioUrl: data.audioUrl,
+        ...(data.rawVocalUrl ? { rawVocalUrl: data.rawVocalUrl } : {}),
+      })
       .where(and(eq(posts.id, data.id), eq(posts.userId, userId)));
     return { ok: true };
   });
