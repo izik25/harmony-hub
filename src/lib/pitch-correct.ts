@@ -1,11 +1,12 @@
-// Real pitch detection + correction. This is the piece AI Mastering was missing: the "autotune"
-// slider in studio.tsx drives a live Tone.PitchShift, which can only apply one fixed shift to the
-// whole signal — there's nothing in this app that ever measured what pitch was actually sung, so
-// that slider defaults to (and stays at) 0 rather than mangling every take with a shift that has
-// no idea what it's correcting toward (see the comment by pitchRef in studio.tsx). This module
-// instead measures the sung pitch per grain with autocorrelation and, where it's confidently
-// voiced, destructively resamples that grain toward the nearest chromatic note — the same
-// "mutate the actual samples" approach applyNoiseGate uses for noise cleanup in mix-recording.ts.
+// Real pitch detection + correction — the engine behind studio.tsx's "Autotune" slider and AI
+// Mastering's own automatic correction (see runPitchCorrection/applyMaster in studio.tsx). A live
+// Tone.PitchShift can only apply one fixed shift to the whole signal, and there's no cheap way to
+// track what pitch was actually sung frame-by-frame in a live Web Audio graph — so instead of a
+// live effect, this measures the sung pitch per grain with autocorrelation and, where it's
+// confidently voiced, destructively resamples that grain toward the nearest chromatic note — the
+// same "mutate the actual samples" approach applyNoiseGate uses for noise cleanup in
+// mix-recording.ts. studio.tsx bakes it into the loaded buffer a beat after the slider stops
+// moving (or immediately when AI Mastering decides a take needs it) rather than live.
 //
 // A first version of this detected and corrected each grain independently and it made takes sound
 // worse, not better: per-frame autocorrelation noise (a few cents of jitter is normal even on a

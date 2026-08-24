@@ -151,7 +151,6 @@ const en = {
     or: "or",
     upload: "upload",
     oneFirst: "one first.",
-    loaded: "Loaded",
     loading: "Loading…",
     masteringPreset: "AI Mastering",
     masteringDesc:
@@ -171,6 +170,7 @@ const en = {
     fixMarkEnd: "Mark End",
     fixSelected: "Selected {{start}}–{{end}} ({{dur}})",
     fixNoSelection: "Play through your take and mark where the mistake starts and ends.",
+    fixStartMarked: "Start marked at {{start}} — now mark where it ends.",
     fixInvalidRange: "Mark an end point after the start point first.",
     fixStartOver: "Re-record This Part",
     fixCueing: "Get ready…",
@@ -754,7 +754,6 @@ const he = {
     or: "או",
     upload: "העלה",
     oneFirst: "אחד קודם.",
-    loaded: "נטען",
     loading: "טוען…",
     masteringPreset: "מאסטרינג AI",
     masteringDesc:
@@ -774,6 +773,7 @@ const he = {
     fixMarkEnd: "סמן סוף",
     fixSelected: "נבחר {{start}}–{{end}} ({{dur}})",
     fixNoSelection: "נגן את ההקלטה וסמן איפה הטעות מתחילה ואיפה היא נגמרת.",
+    fixStartMarked: "ההתחלה סומנה ב-{{start}} — עכשיו סמן איפה זה נגמר.",
     fixInvalidRange: "סמן נקודת סיום שמאוחרת יותר מנקודת ההתחלה קודם.",
     fixStartOver: "הקלט מחדש את הקטע הזה",
     fixCueing: "מתכוננים…",
@@ -1356,7 +1356,6 @@ const ar = {
     or: "أو",
     upload: "رفع",
     oneFirst: "واحداً أولاً.",
-    loaded: "تم التحميل",
     loading: "جارٍ التحميل…",
     masteringPreset: "ماسترينج AI",
     masteringDesc:
@@ -1376,6 +1375,7 @@ const ar = {
     fixMarkEnd: "حدّد النهاية",
     fixSelected: "المحدد {{start}}–{{end}} ({{dur}})",
     fixNoSelection: "شغّل التسجيل وحدّد أين يبدأ الخطأ وأين ينتهي.",
+    fixStartMarked: "تم تحديد البداية عند {{start}} — الآن حدّد أين ينتهي.",
     fixInvalidRange: "حدّد نقطة نهاية بعد نقطة البداية أولاً.",
     fixStartOver: "أعد تسجيل هذا الجزء",
     fixCueing: "استعد…",

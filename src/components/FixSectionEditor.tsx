@@ -39,6 +39,14 @@ export function FixSectionEditor({
   backingTrackUrl,
   vocalGain,
   backingGain,
+  // Seeds the start marker from wherever the caller was already listening (the main Studio
+  // scrubber's position), expressed as a 0-1 fraction of that scrubber's own duration rather than
+  // raw seconds — this raw take and the mixed audioUrl aren't guaranteed to be exactly the same
+  // length (padding/trimming can drift them apart), so mapping proportionally is the only way a
+  // position scrubbed to on the mixed track reliably lands on the same audible moment here. Lets
+  // you scrub to the spot you want fixed, open this panel, and only have to mark the end instead
+  // of re-finding the start from scratch.
+  initialStartFraction,
   onSaved,
   onClose,
 }: {
@@ -47,6 +55,7 @@ export function FixSectionEditor({
   backingTrackUrl?: string | null;
   vocalGain: number;
   backingGain: number;
+  initialStartFraction?: number;
   onSaved: (urls: { audioUrl: string; rawVocalUrl: string }) => void;
   onClose: () => void;
 }) {
@@ -269,7 +278,16 @@ export function FixSectionEditor({
       <audio
         ref={audioRef}
         src={rawVocalUrl}
-        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+        onLoadedMetadata={(e) => {
+          const dur = e.currentTarget.duration || 0;
+          setDuration(dur);
+          if (initialStartFraction != null) {
+            const seeded = Math.min(Math.max(initialStartFraction, 0), 1) * dur;
+            e.currentTarget.currentTime = seeded;
+            setCurrentTime(seeded);
+            setStart(seeded);
+          }
+        }}
         onTimeUpdate={(e) => {
           setCurrentTime(e.currentTarget.currentTime);
           handleCueTimeUpdate();
@@ -299,7 +317,7 @@ export function FixSectionEditor({
               </button>
               <div dir="ltr" className="relative flex-1">
                 <div className="relative h-2 w-full rounded-full bg-muted/60">
-                  {canPunchIn && (
+                  {canPunchIn ? (
                     <div
                       className="absolute top-0 h-2 rounded-full bg-destructive/40"
                       style={{
@@ -307,6 +325,16 @@ export function FixSectionEditor({
                         width: `${Math.max(0, endFraction - startFraction) * 100}%`,
                       }}
                     />
+                  ) : (
+                    start != null && (
+                      // A pin marking the start point on its own — e.g. right after opening this
+                      // panel already scrubbed to it — so it stays visible while you scrub ahead
+                      // to find the end, instead of only appearing once both ends are marked.
+                      <div
+                        className="absolute top-0 h-2 w-1 rounded-full bg-destructive"
+                        style={{ left: `${startFraction * 100}%` }}
+                      />
+                    )
                   )}
                   <div
                     className="absolute top-0 h-2 rounded-full bg-primary/70"
@@ -357,7 +385,9 @@ export function FixSectionEditor({
                     end: formatTime(end!),
                     dur: formatTime(end! - start!),
                   })
-                : t("studio.fixNoSelection")}
+                : start != null
+                  ? t("studio.fixStartMarked", { start: formatTime(start) })
+                  : t("studio.fixNoSelection")}
             </p>
 
             <motion.button

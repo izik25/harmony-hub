@@ -94,12 +94,13 @@ export function ProfileView({ handle }: { handle: string }) {
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["profile", handle] });
-  const invalidateSongs = () => queryClient.invalidateQueries({ queryKey: ["artistSongs", handle] });
-  const invalidateShows = () => queryClient.invalidateQueries({ queryKey: ["artistShows", handle] });
+  const invalidateSongs = () =>
+    queryClient.invalidateQueries({ queryKey: ["artistSongs", handle] });
+  const invalidateShows = () =>
+    queryClient.invalidateQueries({ queryKey: ["artistShows", handle] });
 
   const addSongMutation = useMutation({
-    mutationFn: (input: { title: string; releaseYear?: number }) =>
-      addArtistSong({ data: input }),
+    mutationFn: (input: { title: string; releaseYear?: number }) => addArtistSong({ data: input }),
     onSuccess: () => {
       invalidateSongs();
       toast.success(t("profile.artist.songAdded"));
@@ -392,14 +393,46 @@ function ArtistLinksRow({ links }: { links: Profile["artistLinks"] }) {
   if (!links) return null;
 
   const pills = [
-    { label: t("profile.artist.spotify"), icon: <Music2 className="h-3.5 w-3.5" />, url: links.spotifyUrl },
-    { label: t("profile.artist.youtube"), icon: <Youtube className="h-3.5 w-3.5" />, url: links.youtubeUrl },
-    { label: t("profile.artist.appleMusic"), icon: <Disc3 className="h-3.5 w-3.5" />, url: links.appleMusicUrl },
-    { label: t("profile.artist.soundcloud"), icon: <Music2 className="h-3.5 w-3.5" />, url: links.soundcloudUrl },
-    { label: t("profile.artist.instagram"), icon: <Instagram className="h-3.5 w-3.5" />, url: links.instagramUrl },
-    { label: t("profile.artist.tiktok"), icon: <Disc3 className="h-3.5 w-3.5" />, url: links.tiktokUrl },
-    { label: t("profile.artist.website"), icon: <Globe className="h-3.5 w-3.5" />, url: links.websiteUrl },
-    { label: t("profile.artist.wikipedia"), icon: <BookOpen className="h-3.5 w-3.5" />, url: links.wikipediaUrl },
+    {
+      label: t("profile.artist.spotify"),
+      icon: <Music2 className="h-3.5 w-3.5" />,
+      url: links.spotifyUrl,
+    },
+    {
+      label: t("profile.artist.youtube"),
+      icon: <Youtube className="h-3.5 w-3.5" />,
+      url: links.youtubeUrl,
+    },
+    {
+      label: t("profile.artist.appleMusic"),
+      icon: <Disc3 className="h-3.5 w-3.5" />,
+      url: links.appleMusicUrl,
+    },
+    {
+      label: t("profile.artist.soundcloud"),
+      icon: <Music2 className="h-3.5 w-3.5" />,
+      url: links.soundcloudUrl,
+    },
+    {
+      label: t("profile.artist.instagram"),
+      icon: <Instagram className="h-3.5 w-3.5" />,
+      url: links.instagramUrl,
+    },
+    {
+      label: t("profile.artist.tiktok"),
+      icon: <Disc3 className="h-3.5 w-3.5" />,
+      url: links.tiktokUrl,
+    },
+    {
+      label: t("profile.artist.website"),
+      icon: <Globe className="h-3.5 w-3.5" />,
+      url: links.websiteUrl,
+    },
+    {
+      label: t("profile.artist.wikipedia"),
+      icon: <BookOpen className="h-3.5 w-3.5" />,
+      url: links.wikipediaUrl,
+    },
   ].filter((p) => p.url);
 
   if (pills.length === 0 && !links.ticketsUrl && !links.genre && !links.label) return null;
@@ -707,8 +740,9 @@ function SettingsSheet({
     wikipediaUrl: profile.artistLinks?.wikipediaUrl ?? "",
     ticketsUrl: profile.artistLinks?.ticketsUrl ?? "",
   });
-  const setArtistLink = (key: keyof typeof artistLinks) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setArtistLinks((prev) => ({ ...prev, [key]: e.target.value }));
+  const setArtistLink =
+    (key: keyof typeof artistLinks) => (e: React.ChangeEvent<HTMLInputElement>) =>
+      setArtistLinks((prev) => ({ ...prev, [key]: e.target.value }));
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const avatarMutation = useMutation({
@@ -803,10 +837,7 @@ function SettingsSheet({
             />
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={openToLabel}
-              onCheckedChange={(v) => setOpenToLabel(v === true)}
-            />
+            <Checkbox checked={openToLabel} onCheckedChange={(v) => setOpenToLabel(v === true)} />
             {t("profile.openToLabelCheckbox")}
           </label>
 

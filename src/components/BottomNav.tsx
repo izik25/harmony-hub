@@ -17,7 +17,7 @@ export function BottomNav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[520px] -translate-x-1/2 glass border-t border-border shadow-pop-lg">
+    <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[520px] -translate-x-1/2 bg-brand-indigo shadow-pop-lg">
       <ul className="grid grid-cols-5 items-end px-2 pb-[max(env(safe-area-inset-bottom),8px)] pt-2">
         {items.map((it) => {
           const active = pathname === it.to;
@@ -30,7 +30,7 @@ export function BottomNav() {
                     whileTap={{ scale: 0.88, rotate: -4 }}
                     whileHover={{ scale: 1.05, y: -2 }}
                     transition={{ type: "spring", stiffness: 420, damping: 22 }}
-                    className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-coral shadow-pop-coral"
+                    className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-coral shadow-pop-coral ring-4 ring-brand-indigo"
                   >
                     <Icon className="h-7 w-7 text-white" strokeWidth={2.5} />
                   </motion.div>
@@ -43,7 +43,7 @@ export function BottomNav() {
               <Link
                 to={it.to as "/"}
                 className={`relative flex flex-col items-center gap-1 px-2 py-1 transition-all duration-200 ease-out ${
-                  active ? "-translate-y-0.5 text-primary" : "text-muted-foreground hover:text-foreground"
+                  active ? "-translate-y-0.5 text-brand-gold" : "text-white/60 hover:text-white"
                 }`}
               >
                 <Icon className="h-5 w-5" strokeWidth={active ? 2.5 : 2} />
@@ -51,7 +51,7 @@ export function BottomNav() {
                 {active && (
                   <motion.span
                     layoutId="bottomnav-active-dot"
-                    className="absolute -top-1.5 h-1 w-1 rounded-full bg-primary"
+                    className="absolute -top-1.5 h-1 w-1 rounded-full bg-brand-gold"
                     transition={{ type: "spring", stiffness: 500, damping: 30 }}
                   />
                 )}

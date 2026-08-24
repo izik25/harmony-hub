@@ -41,6 +41,12 @@ interface StudioSearch {
 // old neon rainbow gradient sweep.
 const BRAND_BAR_COLORS = ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold", "bg-brand-teal"];
 
+function formatTime(s: number) {
+  const m = String(Math.floor(s / 60)).padStart(2, "0");
+  const ss = String(Math.floor(s % 60)).padStart(2, "0");
+  return `${m}:${ss}`;
+}
+
 export const Route = createFileRoute("/studio")({
   validateSearch: (search: Record<string, unknown>): StudioSearch => ({
     draftId: typeof search.draftId === "string" ? search.draftId : undefined,
@@ -50,7 +56,6 @@ export const Route = createFileRoute("/studio")({
 
 type VocalChain = {
   player: Tone.Player;
-  pitchShift: Tone.PitchShift;
   filter: Tone.Filter;
   eq3: Tone.EQ3;
   compressor: Tone.Compressor;
@@ -64,8 +69,6 @@ type VocalChain = {
 type DraftDTO = Awaited<ReturnType<typeof getDraft>>;
 
 type Params = {
-  autotune: number;
-  pitch: number;
   speed: number;
   noise: number;
   reverb: number;
@@ -82,7 +85,6 @@ type Params = {
 // convolution reverb fully synchronous — no async IR generation, which is unsafe to nest inside
 // Tone.Offline (used for export/publish) since it swaps the global audio context internally.
 function buildChain(onEnded?: () => void): VocalChain {
-  const pitchShift = new Tone.PitchShift();
   const filter = new Tone.Filter({ type: "highpass" });
   const eq3 = new Tone.EQ3();
   const compressor = new Tone.Compressor();
@@ -107,11 +109,10 @@ function buildChain(onEnded?: () => void): VocalChain {
   reverbOut.chain(makeupGain, limiter);
 
   const player = onEnded ? new Tone.Player({ onstop: onEnded }) : new Tone.Player();
-  player.chain(pitchShift, filter, eq3, compressor);
+  player.chain(filter, eq3, compressor);
 
   return {
     player,
-    pitchShift,
     filter,
     eq3,
     compressor,
@@ -124,8 +125,6 @@ function buildChain(onEnded?: () => void): VocalChain {
 }
 
 function applyParams(chain: VocalChain, p: Params) {
-  chain.pitchShift.pitch = p.pitch;
-  chain.pitchShift.wet.value = p.autotune / 100;
   chain.player.playbackRate = p.speed / 100;
   chain.filter.frequency.value = 80 + (p.noise / 100) * 300;
   const eqDb = ((p.eq - 50) / 50) * 12;
@@ -144,7 +143,6 @@ function applyParams(chain: VocalChain, p: Params) {
 
 function disposeChain(chain: VocalChain) {
   chain.player.dispose();
-  chain.pitchShift.dispose();
   chain.filter.dispose();
   chain.eq3.dispose();
   chain.compressor.dispose();
@@ -161,13 +159,16 @@ function StudioPage() {
   const queryClient = useQueryClient();
   const search = Route.useSearch();
   const draftId = search.draftId;
-  const pitchRef = useRef(0);
 
-  // Autotune defaults to off: there's no pitch-detection anywhere in this app (pitchRef never
-  // moves off 0), so wet autotune runs every take through Tone.PitchShift's granular delay lines
-  // for zero actual pitch correction — and that algorithm modulates delay taps up to its
-  // windowSize (100ms) even at 0 semitones, which is audible as flutter/slapback echo. Leaving it
-  // at 0 by default means a take is clean until someone deliberately reaches for the effect.
+  // Strength (0-1, shown as 0-100) of the real pitch-correction engine in pitch-correct.ts —
+  // analyzePitch/applyPitchCorrection, which measures what was actually sung and resamples toward
+  // the nearest note. Defaults to off so a take stays untouched until someone deliberately reaches
+  // for it. Dragging this slider bakes correction destructively into the loaded buffer (see
+  // runPitchCorrection below) rather than driving a live effect — there's no cheap way to do real
+  // per-note pitch tracking in a live Web Audio graph, so unlike the other knobs here this one
+  // commits a bit after you stop moving it instead of updating in real time. AI Mastering drives
+  // this same slider/engine when it decides a take needs correction (see applyMaster), so this is
+  // the one place "how much autotune is on this take" ever lives.
   const [autotune, setA] = useState(0);
   // A light touch, not a hall: 30 through the old 2.5s impulse response read as an audible echo
   // on every take by default, since Studio is where every recording lands after record.tsx.
@@ -180,6 +181,8 @@ function StudioPage() {
   const [speed, setSpeed] = useState(100);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [manualOpen, setManualOpen] = useState(false);
   // Whether AI Mastering's noise gate has been baked into the currently-loaded buffer. Read by
   // renderProcessed to reapply the same gate on export/publish's independent offline decode (that
@@ -203,12 +206,28 @@ function StudioPage() {
   const [fixSectionOpen, setFixSectionOpen] = useState(false);
 
   const chainRef = useRef<VocalChain | null>(null);
+  // Playback position bookkeeping for the scrubber — Tone.Player has no native currentTime/
+  // timeupdate the way <audio> does, so position is hand-tracked: positionRef is the source of
+  // truth (in buffer seconds), advanced each animation frame by real elapsed time scaled by the
+  // live playback rate, and written to directly on seek so dragging and playback never fight.
+  const positionRef = useRef(0);
+  const durationRef = useRef(0);
+  const lastFrameRef = useRef<number | null>(null);
+  const rafIdRef = useRef<number | null>(null);
+  // Untouched copy of the currently-loaded take's channel data, captured once right after decode
+  // (see the load effect below) — every destructive pitch-correction pass (runPitchCorrection,
+  // applyMaster) restores from this first rather than resampling whatever the buffer currently
+  // holds, so repeated adjustments (drag the slider around, or run AI Mastering after already
+  // having nudged it manually) always derive fresh from the same clean source instead of compounding
+  // correction on top of correction.
+  const originalChannelsRef = useRef<Float32Array[] | null>(null);
+  // Debounce handle for committing the Autotune slider's drag into the buffer — see
+  // runPitchCorrection and the comment by the autotune state above.
+  const autotuneCommitTimer = useRef<number | null>(null);
   // Mirrors the DSP slider state without being a dependency of the chain-(re)build effect below —
   // a remix swaps draft.audioUrl and rebuilds the chain from scratch, and it should pick up
   // whatever the sliders are currently set to rather than resetting to Tone's raw defaults.
   const paramsRef = useRef<Params>({
-    autotune,
-    pitch: pitchRef.current,
     speed,
     noise,
     reverb: reverbAmt,
@@ -218,8 +237,6 @@ function StudioPage() {
   });
   useEffect(() => {
     paramsRef.current = {
-      autotune,
-      pitch: pitchRef.current,
       speed,
       noise,
       reverb: reverbAmt,
@@ -227,7 +244,45 @@ function StudioPage() {
       compression: comp,
       gainDb,
     };
-  }, [autotune, noise, reverbAmt, eq, comp, speed, gainDb]);
+  }, [noise, reverbAmt, eq, comp, speed, gainDb]);
+
+  // Restores the currently-loaded buffer to the untouched take before (re-)applying destructive
+  // correction — see originalChannelsRef above.
+  const restoreOriginalBuffer = (buffer: AudioBuffer) => {
+    const original = originalChannelsRef.current;
+    if (!original) return;
+    for (let ch = 0; ch < buffer.numberOfChannels && ch < original.length; ch++) {
+      buffer.getChannelData(ch).set(original[ch]);
+    }
+  };
+
+  // The real "autotune" engine (pitch-correct.ts), shared by the manual slider and AI Mastering —
+  // always restores the clean original first (see restoreOriginalBuffer) so this is idempotent
+  // regardless of how many times or in what order it's called, reapplies the noise gate if one was
+  // already baked in (gating changes the signal pitch-correction analyzes, so order matters), then
+  // applies pitch correction at the given strength. Updates pitchAppliedRef so renderProcessed's
+  // independent offline export re-derives the exact same result on the actual publish/export path.
+  const runPitchCorrection = (strength: number) => {
+    const chain = chainRef.current;
+    const buffer = chain?.player.buffer.get();
+    if (!chain || !buffer || !originalChannelsRef.current) return;
+    restoreOriginalBuffer(buffer);
+    if (gateAppliedRef.current) {
+      applyNoiseGate(buffer, noiseGateThresholdFor(analyzeSignal(buffer)));
+    }
+    const clamped = Math.min(1, Math.max(0, strength));
+    if (clamped > 0) applyPitchCorrection(buffer, clamped);
+    pitchAppliedRef.current = clamped;
+  };
+
+  // Autotune slider onChange: keeps the number responsive while dragging, but only bakes the
+  // (relatively costly, and audibly disruptive mid-drag) correction pass in ~300ms after the user
+  // stops moving it, not on every intermediate value.
+  const handleAutotuneChange = (n: number) => {
+    setA(n);
+    if (autotuneCommitTimer.current != null) window.clearTimeout(autotuneCommitTimer.current);
+    autotuneCommitTimer.current = window.setTimeout(() => runPitchCorrection(n / 100), 300);
+  };
 
   const { data: draft } = useQuery({
     queryKey: ["draft", draftId],
@@ -235,14 +290,49 @@ function StudioPage() {
     enabled: !!draftId,
   });
 
+  const stopTicking = () => {
+    if (rafIdRef.current != null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    lastFrameRef.current = null;
+  };
+
+  // Playing/ticking state is managed entirely from here rather than Tone.Player's `onstop`
+  // callback — that callback also fires as a side effect of `.seek()` while actively playing
+  // (Web Audio has no live-seek primitive, so Tone swaps the underlying source node under the
+  // hood), which would otherwise be indistinguishable from a real stop and kill the tick loop
+  // mid-scrub.
+  const tick = (time: number) => {
+    if (lastFrameRef.current == null) lastFrameRef.current = time;
+    const dt = (time - lastFrameRef.current) / 1000;
+    lastFrameRef.current = time;
+    const rate = paramsRef.current.speed / 100;
+    positionRef.current = Math.min(positionRef.current + dt * rate, durationRef.current);
+    setCurrentTime(positionRef.current);
+    if (positionRef.current >= durationRef.current) {
+      chainRef.current?.player.stop();
+      setPlaying(false);
+      stopTicking();
+      return;
+    }
+    rafIdRef.current = requestAnimationFrame(tick);
+  };
+
   useEffect(() => {
     if (!draft?.audioUrl) return;
     let disposed = false;
-    const chain = buildChain(() => setPlaying(false));
+    stopTicking();
+    setPlaying(false);
+    positionRef.current = 0;
+    setCurrentTime(0);
+    const chain = buildChain();
     chainRef.current = chain;
     gateAppliedRef.current = false;
     pitchAppliedRef.current = 0;
+    originalChannelsRef.current = null;
     setGainDb(0);
+    setA(0);
     setReady(false);
     const loadWithRetry = async (url: string, attempts = 4): Promise<void> => {
       for (let i = 0; i < attempts; i++) {
@@ -258,7 +348,16 @@ function StudioPage() {
     loadWithRetry(draft.audioUrl)
       .then(() => {
         if (disposed) return;
+        const buf = chain.player.buffer.get();
+        if (buf) {
+          originalChannelsRef.current = Array.from({ length: buf.numberOfChannels }, (_, ch) =>
+            buf.getChannelData(ch).slice(),
+          );
+        }
         applyParams(chain, paramsRef.current);
+        const dur = chain.player.buffer.duration || 0;
+        durationRef.current = dur;
+        setDuration(dur);
         setReady(true);
       })
       .catch((err) => {
@@ -267,6 +366,11 @@ function StudioPage() {
       });
     return () => {
       disposed = true;
+      stopTicking();
+      if (autotuneCommitTimer.current != null) {
+        window.clearTimeout(autotuneCommitTimer.current);
+        autotuneCommitTimer.current = null;
+      }
       disposeChain(chain);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -275,8 +379,6 @@ function StudioPage() {
   useEffect(() => {
     if (!chainRef.current) return;
     applyParams(chainRef.current, {
-      autotune,
-      pitch: pitchRef.current,
       speed,
       noise,
       reverb: reverbAmt,
@@ -284,7 +386,7 @@ function StudioPage() {
       compression: comp,
       gainDb,
     });
-  }, [autotune, noise, reverbAmt, eq, comp, speed, gainDb]);
+  }, [noise, reverbAmt, eq, comp, speed, gainDb]);
 
   const togglePlay = async () => {
     const chain = chainRef.current;
@@ -293,10 +395,44 @@ function StudioPage() {
     if (playing) {
       chain.player.stop();
       setPlaying(false);
+      stopTicking();
     } else {
-      chain.player.start();
+      if (positionRef.current >= durationRef.current) {
+        positionRef.current = 0;
+        setCurrentTime(0);
+      }
+      chain.player.start(0, positionRef.current);
       setPlaying(true);
+      lastFrameRef.current = null;
+      rafIdRef.current = requestAnimationFrame(tick);
     }
+  };
+
+  // Lets the scrubber move playback to any point without restarting from the top — the whole
+  // point being that after tweaking a slider or re-recording a section, you can jump straight
+  // back to that spot instead of listening through the entire take again.
+  const handleSeek = (value: number) => {
+    const chain = chainRef.current;
+    if (!chain || !ready) return;
+    const clamped = Math.min(Math.max(value, 0), durationRef.current);
+    positionRef.current = clamped;
+    setCurrentTime(clamped);
+    lastFrameRef.current = null;
+    chain.player.seek(clamped);
+  };
+
+  // Stops the main preview before opening Fix a Section — two audio sources (this one plus its
+  // own internal <audio> for the raw vocal) shouldn't ever play at once — and hands it the
+  // scrubber's current position so the fix's start marker is already sitting where you were
+  // listening instead of at 0.
+  const openFixSection = () => {
+    const chain = chainRef.current;
+    if (chain && playing) {
+      chain.player.stop();
+      setPlaying(false);
+      stopTicking();
+    }
+    setFixSectionOpen(true);
   };
 
   const renderProcessed = async (): Promise<Blob> => {
@@ -305,8 +441,6 @@ function StudioPage() {
     const sourceDuration = chain.player.buffer.duration;
     const duration = sourceDuration / (speed / 100) + 0.3;
     const params: Params = {
-      autotune,
-      pitch: pitchRef.current,
       speed,
       noise,
       reverb: reverbAmt,
@@ -419,6 +553,15 @@ function StudioPage() {
       toast.error(t("studio.loadTrackFirst"));
       return;
     }
+    // A pending manual Autotune drag shouldn't land after Master has already re-derived its own
+    // correction strength below, and Master's own analysis should always read the untouched take
+    // regardless of whatever's already been baked in from a previous manual nudge — restoring
+    // first makes this call idempotent no matter what state the buffer was already in.
+    if (autotuneCommitTimer.current != null) {
+      window.clearTimeout(autotuneCommitTimer.current);
+      autotuneCommitTimer.current = null;
+    }
+    restoreOriginalBuffer(buffer);
     const clamp = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)));
 
     const before = analyzeSignal(buffer);
@@ -463,9 +606,10 @@ function StudioPage() {
     const targetMasterDb = -12;
     const gainBoostDb = clamp(targetMasterDb - after.vocalLevelDb, 0, 9);
 
-    // Real pitch correction — not the live Autotune slider (see the note by its default state
-    // above; that one has no pitch-detection behind it and stays off). Measure how far this take's
-    // sung pitch actually drifts from the nearest note first (analyzePitch is detection-only, much
+    // Drives the same Autotune slider/engine a manual adjustment would (see runPitchCorrection
+    // above) — Master just decides a sensible strength on the take's behalf instead of leaving it
+    // at wherever the user last left the slider. Measure how far this take's sung pitch actually
+    // drifts from the nearest note first (analyzePitch is detection-only, much
     // cheaper than the full correction pass), then only pay for applyPitchCorrection's resampling
     // when there's both enough sustained singing to correct (voicedRatio) and a real, audible drift
     // to correct (avgAbsCents, gated above single-frame detection noise) — an already in-tune or
@@ -483,6 +627,7 @@ function StudioPage() {
       applyPitchCorrection(buffer, pitchStrength);
     }
     pitchAppliedRef.current = pitchStrength;
+    setA(Math.round(pitchStrength * 100));
 
     setN(noiseAmt);
     setR(reverbAmt);
@@ -549,15 +694,55 @@ function StudioPage() {
                   </motion.button>
                 </div>
               </div>
+              <div dir="ltr" className="relative mt-3">
+                <div className="relative h-2 w-full rounded-full bg-muted">
+                  <div
+                    className="absolute top-0 h-2 rounded-full bg-brand-coral"
+                    style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
+                  />
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={duration || 0}
+                  step={0.05}
+                  value={currentTime}
+                  disabled={!ready}
+                  onChange={(e) => handleSeek(Number(e.target.value))}
+                  className="absolute inset-x-0 top-0 h-2 w-full cursor-pointer opacity-0 disabled:cursor-default"
+                />
+              </div>
               <div className="mt-2 flex justify-between text-[11px] text-muted-foreground font-mono">
-                <span>{ready ? t("studio.loaded") : t("studio.loading")}</span>
-                <span>
-                  {chainRef.current?.player.buffer.duration
-                    ? `${chainRef.current.player.buffer.duration.toFixed(1)}s`
-                    : ""}
-                </span>
+                <span>{ready ? formatTime(currentTime) : t("studio.loading")}</span>
+                <span>{ready ? formatTime(duration) : ""}</span>
               </div>
             </div>
+
+            {/* Right under the scrubber, not buried below the mix/master sections — scrub to the
+                spot that needs fixing, open this, and the start marker is already sitting there. */}
+            {draft?.rawVocalUrl && !fixSectionOpen && (
+              <div className="mt-3">
+                <FixSectionToggle onClick={openFixSection} />
+              </div>
+            )}
+
+            {fixSectionOpen && draft?.rawVocalUrl && (
+              <FixSectionEditor
+                draftId={draftId!}
+                rawVocalUrl={draft.rawVocalUrl}
+                backingTrackUrl={draft.backingTrackUrl}
+                vocalGain={vocalVolume / 100}
+                backingGain={playbackVolume / 100}
+                initialStartFraction={duration > 0 ? currentTime / duration : 0}
+                onClose={() => setFixSectionOpen(false)}
+                onSaved={(urls) => {
+                  queryClient.setQueryData<DraftDTO>(["draft", draftId], (old) =>
+                    old ? { ...old, ...urls } : old,
+                  );
+                  setFixSectionOpen(false);
+                }}
+              />
+            )}
 
             {draft?.rawVocalUrl && (
               <section className="mt-5 rounded-3xl border border-border bg-card p-4 shadow-pop">
@@ -592,25 +777,7 @@ function StudioPage() {
                   )}
                   {t("record.remix")}
                 </button>
-                {!fixSectionOpen && <FixSectionToggle onClick={() => setFixSectionOpen(true)} />}
               </section>
-            )}
-
-            {fixSectionOpen && draft?.rawVocalUrl && (
-              <FixSectionEditor
-                draftId={draftId!}
-                rawVocalUrl={draft.rawVocalUrl}
-                backingTrackUrl={draft.backingTrackUrl}
-                vocalGain={vocalVolume / 100}
-                backingGain={playbackVolume / 100}
-                onClose={() => setFixSectionOpen(false)}
-                onSaved={(urls) => {
-                  queryClient.setQueryData<DraftDTO>(["draft", draftId], (old) =>
-                    old ? { ...old, ...urls } : old,
-                  );
-                  setFixSectionOpen(false);
-                }}
-              />
             )}
 
             <section className="mt-5 rounded-3xl border border-accent/40 bg-accent/5 p-4">
@@ -645,7 +812,11 @@ function StudioPage() {
               </button>
               {manualOpen && (
                 <div className="mt-3">
-                  <Slider label={t("record.autotune")} v={autotune} onChange={setA} />
+                  <Slider
+                    label={t("record.autotune")}
+                    v={autotune}
+                    onChange={handleAutotuneChange}
+                  />
                   <Slider label={t("record.noise")} v={noise} onChange={setN} />
                   <Slider label={t("record.reverb")} v={reverbAmt} onChange={setR} />
                   <Slider label={t("record.eq")} v={eq} onChange={setE} />
