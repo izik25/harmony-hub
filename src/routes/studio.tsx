@@ -4,7 +4,6 @@ import {
   Sliders,
   Wand2,
   Waves,
-  Download,
   Send,
   Play,
   Pause,
@@ -356,20 +355,6 @@ function StudioPage() {
     return audioBufferToWavBlob(audioBuffer);
   };
 
-  const exportMutation = useMutation({
-    mutationFn: renderProcessed,
-    onSuccess: (blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "sona-studio-export.wav";
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success(t("studio.exportedToast"));
-    },
-    onError: (e: Error) => toast.error(translateServerError(e.message)),
-  });
-
   const publishMutation = useMutation({
     mutationFn: async (forCompetition: boolean) => {
       if (!draftId) throw new Error(t("studio.nothingToPublish"));
@@ -459,10 +444,12 @@ function StudioPage() {
     // Duller-sounding take gets pushed brighter; an already-bright one is left closer to flat
     // instead of getting pushed further and turning harsh.
     const eqAmt = clamp(70 - after.brightness * 90, 40, 68);
-    // Mastering tightens a take up rather than adding ambience on top of it — a noisy/live room
-    // gets pulled down the hardest since it already carries its own ambience, and even a clean,
-    // dry capture is capped well under the manual slider's own range.
-    const reverbAmt = clamp(8 - (after.noiseFloorDb + 55) * 0.15, 2, 8);
+    // A produced, "finished record" vocal reads as sitting in a real space, not bone dry — a
+    // noticeable send by default rather than the barely-there touch this used to cap out at. A
+    // noisy/live room still gets pulled down toward the low end of the range since it already
+    // carries its own room ambience and doesn't need more piled on top; a clean, dry capture gets
+    // the full send since it has no ambience of its own to clash with.
+    const reverbAmt = clamp(55 - (after.noiseFloorDb + 55) * 0.86, 25, 55);
 
     // The piece that actually makes mastering audible: push the take up toward a real "finished
     // record" loudness rather than just reshaping its dynamics/tone at the level it happened to be
@@ -481,15 +468,18 @@ function StudioPage() {
     // sung pitch actually drifts from the nearest note first (analyzePitch is detection-only, much
     // cheaper than the full correction pass), then only pay for applyPitchCorrection's resampling
     // when there's both enough sustained singing to correct (voicedRatio) and a real, audible drift
-    // to correct (avgAbsCents) — an already in-tune or mostly-spoken take is left untouched rather
-    // than run through resampling for no gain. Strength scales with how far off it actually is, so
-    // a barely-flat phrase gets pulled in gently and a properly off-key one gets pulled in harder,
-    // instead of one fixed correction amount applied regardless of need.
+    // to correct (avgAbsCents, gated above single-frame detection noise) — an already in-tune or
+    // mostly-spoken take is left untouched rather than run through resampling for no gain. Strength
+    // scales with how far off it actually is, so a barely-flat phrase gets pulled in gently and a
+    // properly off-key one gets pulled in harder, instead of one fixed correction amount applied
+    // regardless of need. Capped at 0.7 rather than fully snapping (1.0): applyPitchCorrection's
+    // resample-and-OLA shifter still has some inherent character at high strength on a held note,
+    // so this stops short of the last stretch where "in tune" starts costing more than it's worth.
     const pitchProfile = analyzePitch(buffer);
     const clamp01 = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
     let pitchStrength = 0;
-    if (pitchProfile.voicedRatio > 0.15 && pitchProfile.avgAbsCents > 8) {
-      pitchStrength = clamp01(0.3 + (pitchProfile.avgAbsCents / 150) * 0.55, 0.3, 0.85);
+    if (pitchProfile.voicedRatio > 0.2 && pitchProfile.avgAbsCents > 12) {
+      pitchStrength = clamp01(0.3 + (pitchProfile.avgAbsCents / 150) * 0.4, 0.3, 0.7);
       applyPitchCorrection(buffer, pitchStrength);
     }
     pitchAppliedRef.current = pitchStrength;
@@ -672,14 +662,7 @@ function StudioPage() {
               )}
             </section>
 
-            <div className="mt-5 grid grid-cols-3 gap-2">
-              <button
-                onClick={() => exportMutation.mutate()}
-                disabled={!ready || exportMutation.isPending}
-                className="press-scale flex flex-col items-center gap-1 rounded-2xl border border-border bg-card/60 p-3 text-[11px] font-semibold disabled:opacity-50"
-              >
-                <Download className="h-4 w-4" /> {t("record.export")}
-              </button>
+            <div className="mt-5 grid grid-cols-2 gap-2">
               <motion.button
                 onClick={() => publishMutation.mutate(false)}
                 disabled={!ready || publishMutation.isPending}

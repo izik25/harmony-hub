@@ -23,6 +23,7 @@ export const users = pgTable("users", {
   openToLabel: boolean("open_to_label").notNull().default(false),
   coinsBalance: integer("coins_balance").notNull().default(500),
   accountType: text("account_type").notNull().default("user"), // user | artist
+  isPro: boolean("is_pro").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -136,7 +137,7 @@ export const walletTransactions = pgTable("wallet_transactions", {
   userId: uuid("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  kind: text("kind").notNull(), // topup | withdraw | gift_sent | gift_received
+  kind: text("kind").notNull(), // topup | withdraw | gift_sent | gift_received | pro_purchase | export_purchase
   coins: integer("coins").notNull(), // signed delta
   description: text("description").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

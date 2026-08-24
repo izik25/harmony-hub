@@ -13,6 +13,8 @@ import {
   Check,
   ExternalLink,
   Link2,
+  Download,
+  Crown,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -21,11 +23,15 @@ import {
   publishToPlatforms,
   type PlatformStatusDTO,
 } from "@/functions/platforms";
+import { purchaseExport, EXPORT_PRICE_COINS } from "@/functions/export-audio";
 import { smartUploadMedia } from "@/lib/blob-upload";
 import { renderCoverVideo } from "@/lib/video-synthesis";
+import { downloadStudioExport } from "@/lib/studio-export";
 import { shareToExternalPlatform } from "@/lib/social-platforms/share-only";
 import type { OAuthPlatformId } from "@/lib/social-platforms";
 import { translateServerError } from "@/lib/i18n";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { BecomeProModal } from "@/components/BecomeProModal";
 
 type PublishablePost = {
   id: string;
@@ -73,6 +79,8 @@ export function PublishEverywhereModal({
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [videoProgress, setVideoProgress] = useState<"idle" | "rendering" | "uploading">("idle");
+  const [proModalOpen, setProModalOpen] = useState(false);
+  const { data: currentUser } = useCurrentUser();
 
   const { data: statuses } = useQuery({
     queryKey: ["platformStatus"],
@@ -160,6 +168,23 @@ export function PublishEverywhereModal({
       setVideoProgress("idle");
       toast.error(translateServerError(e.message));
     },
+  });
+
+  const exportMutation = useMutation({
+    mutationFn: async () => {
+      if (!post) throw new Error("noMediaToPublish");
+      await purchaseExport();
+      await downloadStudioExport({
+        audioUrl: post.audioUrl,
+        coverUrl: post.coverUrl,
+        fileName: post.songTitle || post.title,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["currentUser"] });
+      toast.success(t("publishEverywhere.exportDownloaded"));
+    },
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
   });
 
   const connectPlatform = (platform: OAuthPlatformId) => {
@@ -311,6 +336,39 @@ export function PublishEverywhereModal({
           })}
         </div>
 
+        <div className="mt-4 flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-pop">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-gold/20 text-brand-gold">
+            <Download className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">{t("publishEverywhere.studioExportTitle")}</p>
+            <p className="text-[11px] text-muted-foreground">
+              {t("publishEverywhere.studioExportDesc")}
+            </p>
+            {!currentUser?.isPro && (
+              <button
+                onClick={() => setProModalOpen(true)}
+                className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-accent underline"
+              >
+                <Crown className="h-3 w-3" /> {t("publishEverywhere.goPro")}
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => exportMutation.mutate()}
+            disabled={!post || exportMutation.isPending}
+            className="shrink-0 rounded-full border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent press-scale disabled:opacity-50"
+          >
+            {exportMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : currentUser?.isPro ? (
+              t("publishEverywhere.exportFreePro")
+            ) : (
+              t("publishEverywhere.exportPrice", { coins: EXPORT_PRICE_COINS })
+            )}
+          </button>
+        </div>
+
         <motion.button
           whileTap={{ scale: 0.97 }}
           whileHover={{ scale: 1.01, y: -2 }}
@@ -339,6 +397,7 @@ export function PublishEverywhereModal({
           {t("common.done")}
         </button>
       </DialogContent>
+      <BecomeProModal open={proModalOpen} onOpenChange={setProModalOpen} />
     </Dialog>
   );
 }

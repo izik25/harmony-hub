@@ -27,6 +27,7 @@ import { TopBar } from "@/components/TopBar";
 import { PostCoverBg } from "@/components/PostCoverBg";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -769,7 +770,7 @@ function SettingsSheet({
             />
             <button
               onClick={() => fileRef.current?.click()}
-              className="rounded-full border border-border px-3 py-1.5 text-xs font-semibold"
+              className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-semibold shadow-pop press-scale"
             >
               {t("profile.changePhoto")}
             </button>
@@ -802,10 +803,9 @@ function SettingsSheet({
             />
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={openToLabel}
-              onChange={(e) => setOpenToLabel(e.target.checked)}
+              onCheckedChange={(v) => setOpenToLabel(v === true)}
             />
             {t("profile.openToLabelCheckbox")}
           </label>
@@ -902,7 +902,7 @@ function SettingsSheet({
           </button>
           <button
             onClick={() => logoutMutation.mutate()}
-            className="flex w-full items-center justify-center gap-2 rounded-full border border-border py-2.5 text-sm font-semibold text-muted-foreground press-scale"
+            className="flex w-full items-center justify-center gap-2 rounded-full border border-border bg-card py-2.5 text-sm font-semibold text-foreground shadow-pop press-scale"
           >
             <X className="h-4 w-4" /> {t("auth.logout")}
           </button>

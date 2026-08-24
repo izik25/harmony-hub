@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Coins, ArrowUpRight, ArrowDownRight, Plus } from "lucide-react";
+import { Coins, ArrowUpRight, ArrowDownRight, Plus, Crown } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -8,9 +8,11 @@ import { formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
+import { BecomeProModal } from "@/components/BecomeProModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getWallet, listGiftCatalog, buyCoins, withdraw, COIN_PACKAGES } from "@/functions/wallet";
 import { translateServerError } from "@/lib/i18n";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export const Route = createFileRoute("/wallet")({
   component: WalletPage,
@@ -28,6 +30,10 @@ function describeTransaction(h: WalletHistoryRow, t: ReturnType<typeof useTransl
       return t("wallet.txnGiftSent", { gift: t(`wallet.gifts.${h.description}`) });
     case "gift_received":
       return t("wallet.txnGiftReceived", { gift: t(`wallet.gifts.${h.description}`) });
+    case "pro_purchase":
+      return t("wallet.txnProPurchase");
+    case "export_purchase":
+      return t("wallet.txnExportPurchase");
     default:
       return h.description;
   }
@@ -39,7 +45,9 @@ function WalletPage() {
   const [buyOpen, setBuyOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [proOpen, setProOpen] = useState(false);
 
+  const { data: currentUser } = useCurrentUser();
   const { data: wallet } = useQuery({ queryKey: ["wallet"], queryFn: () => getWallet() });
   const { data: gifts } = useQuery({ queryKey: ["giftCatalog"], queryFn: () => listGiftCatalog() });
 
@@ -110,6 +118,17 @@ function WalletPage() {
               {t("common.buy")}
             </motion.button>
           </div>
+          {!currentUser?.isPro && (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              whileHover={{ scale: 1.02 }}
+              transition={{ type: "spring", stiffness: 420, damping: 24 }}
+              onClick={() => setProOpen(true)}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-full bg-brand-gold px-3 py-2 text-xs font-bold text-white"
+            >
+              <Crown className="h-4 w-4" /> {t("pro.title")}
+            </motion.button>
+          )}
         </motion.div>
 
         <h2 className="mt-6 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
@@ -226,6 +245,8 @@ function WalletPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <BecomeProModal open={proOpen} onOpenChange={setProOpen} />
     </AppShell>
   );
 }

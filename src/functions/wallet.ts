@@ -11,6 +11,8 @@ export const COIN_PACKAGES = [
   { id: "p3", coins: 12000 },
 ] as const;
 
+export const PRO_PRICE_COINS = 4000;
+
 export const listGiftCatalog = createServerFn({ method: "GET" }).handler(async () => {
   return db.select().from(giftsCatalog);
 });
@@ -48,6 +50,31 @@ export const buyCoins = createServerFn({ method: "POST" })
     });
     return { ok: true };
   });
+
+export const purchasePro = createServerFn({ method: "POST" }).handler(async () => {
+  const userId = await requireUserId();
+  const [user] = await db
+    .select({ coinsBalance: users.coinsBalance, isPro: users.isPro })
+    .from(users)
+    .where(eq(users.id, userId));
+  if (!user) throw new Error("unauthorized");
+  if (user.isPro) throw new Error("alreadyPro");
+  if (user.coinsBalance < PRO_PRICE_COINS) throw new Error("notEnoughCoins");
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({ coinsBalance: sql`${users.coinsBalance} - ${PRO_PRICE_COINS}`, isPro: true })
+      .where(eq(users.id, userId));
+    await tx.insert(walletTransactions).values({
+      userId,
+      kind: "pro_purchase",
+      coins: -PRO_PRICE_COINS,
+      description: "",
+    });
+  });
+  return { ok: true };
+});
 
 export const withdraw = createServerFn({ method: "POST" })
   .validator((input: unknown) => input as { amount: number })
