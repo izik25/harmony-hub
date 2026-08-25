@@ -585,8 +585,15 @@ function StudioPage() {
     // it out; an already-consistent take doesn't need it pushed as hard.
     const compAmt = clamp(((afterDynamicRangeDb - 12) / 23) * 100, 35, 85);
     // Duller-sounding take gets pushed brighter; an already-bright one is left closer to flat
-    // instead of getting pushed further and turning harsh.
-    const eqAmt = clamp(70 - after.brightness * 90, 40, 68);
+    // instead of getting pushed further and turning harsh. Slope is calibrated so brightness's
+    // real-world range (per analyzeSignal's own "0 dull to 0.5+ airy" doc comment) lands mid-clamp
+    // instead of pinning: the old `70 - brightness*90` reached the 40 floor for any brightness
+    // above ~0.33, which most real vocal takes clear, so Master was silently setting the same EQ
+    // value on almost every take — this is why the slider looked like it "didn't move at all."
+    // brightness=0 (very dull) now lands near 65, brightness=0.5 (per the docstring's own "airy"
+    // reference point) lands at 50 (flat, matching the "left closer to flat" intent above), only
+    // pinning to the 40 floor for genuinely harsh/bright outliers past ~0.83.
+    const eqAmt = clamp(65 - after.brightness * 30, 40, 68);
     // A produced, "finished record" vocal reads as sitting in a real space, not bone dry — a
     // noticeable send by default rather than the barely-there touch this used to cap out at. A
     // noisy/live room still gets pulled down toward the low end of the range since it already

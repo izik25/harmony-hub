@@ -100,7 +100,11 @@ export function applyNoiseGate(
   thresholdDb: number,
   attackMs = 4,
   releaseMs = 180,
-  floorGain = 0.12,
+  // -24dB rather than the old -18.4dB (0.12): gated gaps were still audibly noisy at 0.12,
+  // reported directly on takes recorded through the browser's own noiseSuppression/AGC (already
+  // on in MIC_CONSTRAINTS) plus backing-track bleed. Still a dip rather than a mute — same reason
+  // as before, a hard cut chops word tails choppier than a deeper-but-gentle one.
+  floorGain = 0.06,
 ): void {
   const thresholdLinear = 10 ** (thresholdDb / 20);
   const sampleRate = buffer.sampleRate;

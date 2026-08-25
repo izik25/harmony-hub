@@ -202,9 +202,29 @@ function useMicLevels(active: boolean, monitor: boolean) {
         ctx = new AudioContext({ latencyHint: "interactive" });
         ctx.resume().catch(() => {});
         const source = ctx.createMediaStreamSource(stream);
+        // Plain BiquadFilterNodes, not a compressor or anything with lookahead — these are
+        // single-sample IIR filters with no internal buffering, so unlike NS/AEC (skipped above
+        // for exactly this reason) they add no perceptible latency to the monitor loop. Without
+        // them the monitor is the completely raw, unshaped capsule signal (MONITOR_CONSTRAINTS
+        // turns off NS/AGC too), which is what was reading as thin/harsh once latency itself
+        // stopped being the complaint (wired headphones). Mirrors the same warmth/presence/rumble
+        // shaping mix-recording.ts applies to the actual recording, just lighter — this is only
+        // ever heard live, never baked into anything.
+        const rumble = ctx.createBiquadFilter();
+        rumble.type = "highpass";
+        rumble.frequency.value = 90;
+        const warmth = ctx.createBiquadFilter();
+        warmth.type = "lowshelf";
+        warmth.frequency.value = 200;
+        warmth.gain.value = 1.5;
+        const presence = ctx.createBiquadFilter();
+        presence.type = "peaking";
+        presence.frequency.value = 3000;
+        presence.Q.value = 1;
+        presence.gain.value = 3;
         const gain = ctx.createGain();
         gain.gain.value = MONITOR_GAIN;
-        source.connect(gain).connect(ctx.destination);
+        source.connect(rumble).connect(warmth).connect(presence).connect(gain).connect(ctx.destination);
         // The mic getUserMedia() above (MIC_CONSTRAINTS) just granted permission, which is what
         // makes real device labels available — safe to attempt the headphone-routing fix now.
         routeAudioContextToHeadphonesIfAvailable(ctx).then((routed) => {
