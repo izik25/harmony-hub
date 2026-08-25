@@ -95,8 +95,15 @@ export function FixSectionEditor({
     if (!audio) return;
     if (playing) {
       audio.pause();
+      backingRef.current?.pause();
     } else {
+      // Defensive resync before playing — this and the backing video are two independently
+      // driven media elements, so re-assert both against the position shown in the UI rather than
+      // trusting whatever currentTime a previous seek left them at.
+      audio.currentTime = currentTime;
+      if (backingRef.current) backingRef.current.currentTime = currentTime;
       audio.play().catch(() => {});
+      backingRef.current?.play().catch(() => {});
     }
   };
 
@@ -154,7 +161,12 @@ export function FixSectionEditor({
     if (!audio) return;
     setPhase("cueing");
     cueingRef.current = true;
-    audio.currentTime = Math.max(0, start - PREROLL_SECONDS);
+    const preroll = Math.max(0, start - PREROLL_SECONDS);
+    audio.currentTime = preroll;
+    if (backingRef.current) {
+      backingRef.current.currentTime = preroll;
+      backingRef.current.play().catch(() => {});
+    }
     audio.play().catch(() => {
       cueingRef.current = false;
       beginRecording();
@@ -267,12 +279,20 @@ export function FixSectionEditor({
       </div>
 
       {backingTrackUrl && (
+        // Visible (and synced to the vocal) during marking/cueing/recording so the karaoke lyrics
+        // baked into this video are on screen at the exact point being fixed — muted outside of
+        // actual recording, since during marking this is just a visual reference, not something
+        // that should also be heard playing alongside the vocal preview.
         <video
           ref={backingRef}
           src={backingTrackUrl}
-          className="hidden"
+          className={
+            phase === "marking" || phase === "cueing" || phase === "recording"
+              ? "mt-1 aspect-video w-full rounded-xl bg-black object-contain"
+              : "hidden"
+          }
           playsInline
-          muted={false}
+          muted={phase !== "recording"}
         />
       )}
       <audio
@@ -284,6 +304,7 @@ export function FixSectionEditor({
           if (initialStartFraction != null) {
             const seeded = Math.min(Math.max(initialStartFraction, 0), 1) * dur;
             e.currentTarget.currentTime = seeded;
+            if (backingRef.current) backingRef.current.currentTime = seeded;
             setCurrentTime(seeded);
             setStart(seeded);
           }
@@ -351,6 +372,7 @@ export function FixSectionEditor({
                   onChange={(e) => {
                     const v = Number(e.target.value);
                     if (audioRef.current) audioRef.current.currentTime = v;
+                    if (backingRef.current) backingRef.current.currentTime = v;
                     setCurrentTime(v);
                   }}
                   className="absolute inset-x-0 top-0 h-2 w-full cursor-pointer opacity-0"
