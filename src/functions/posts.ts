@@ -326,3 +326,85 @@ export const addComment = createServerFn({ method: "POST" })
     });
     return { ok: true };
   });
+
+export const deleteComment = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input as { id: string })
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    const [row] = await db
+      .select({
+        postId: comments.postId,
+        authorId: comments.userId,
+        postOwnerId: posts.userId,
+      })
+      .from(comments)
+      .innerJoin(posts, eq(posts.id, comments.postId))
+      .where(eq(comments.id, data.id));
+    if (!row) throw new Error("commentNotFound");
+    // Either the person who wrote it, or the owner of the post it's on (moderation) — same as
+    // every other TikTok-style platform's comment permissions.
+    if (row.authorId !== userId && row.postOwnerId !== userId) throw new Error("cantDeleteComment");
+
+    await db.transaction(async (tx) => {
+      await tx.delete(comments).where(eq(comments.id, data.id));
+      await tx
+        .update(posts)
+        .set({ commentsCount: sql`greatest(${posts.commentsCount} - 1, 0)` })
+        .where(eq(posts.id, row.postId));
+    });
+    return { ok: true };
+  });
+
+// Metadata-only edit for an already-published post — caption/category/tags/credits/visibility/
+// cover, deliberately never audioUrl. Re-mastering the actual audio already has its own path
+// (Studio, via a draftId), which re-encodes the take through the full DSP chain; routing a simple
+// caption fix through that would silently reprocess audio nobody asked to touch.
+export const updatePost = createServerFn({ method: "POST" })
+  .validator(
+    (input: unknown) =>
+      input as {
+        id: string;
+        title: string;
+        songTitle?: string;
+        category?: string;
+        tags?: Array<string>;
+        credits: { performer: string; writer: string; composer: string; producer: string };
+        visibility: "public" | "private";
+        coverUrl?: string;
+      },
+  )
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    const [existing] = await db
+      .select({ id: posts.id })
+      .from(posts)
+      .where(and(eq(posts.id, data.id), eq(posts.userId, userId)));
+    if (!existing) throw new Error("postNotFound");
+
+    const [updated] = await db
+      .update(posts)
+      .set({
+        title: data.title.trim() || "Untitled",
+        songTitle: data.songTitle?.trim() ?? "",
+        category: data.category ?? "",
+        tags: data.tags ?? [],
+        credits: data.credits,
+        visibility: data.visibility,
+        ...(data.coverUrl ? { coverUrl: data.coverUrl } : {}),
+      })
+      .where(eq(posts.id, data.id))
+      .returning();
+    return updated;
+  });
+
+export const deletePost = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input as { id: string })
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    const deleted = await db
+      .delete(posts)
+      .where(and(eq(posts.id, data.id), eq(posts.userId, userId)))
+      .returning({ id: posts.id });
+    if (deleted.length === 0) throw new Error("postNotFound");
+    return { ok: true };
+  });

@@ -17,6 +17,7 @@ import {
   Trash2,
   CalendarDays,
   MapPin,
+  MoreVertical,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -37,6 +38,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { getProfileByHandle, listUserPosts, updateProfile } from "@/functions/profile";
+import { PostActionsSheet } from "@/components/PostActionsSheet";
 import {
   updateArtistLinks,
   listArtistSongs,
@@ -62,6 +64,7 @@ export function ProfileView({ handle }: { handle: string }) {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<(typeof tabs)[number]>("videos");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [actionsFor, setActionsFor] = useState<PostRow | null>(null);
 
   const { data: profile } = useQuery({
     queryKey: ["profile", handle],
@@ -348,8 +351,18 @@ export function ProfileView({ handle }: { handle: string }) {
               </p>
             )}
             {shownPosts?.map((p) => (
-              <div key={p.id} className="relative aspect-[3/4] overflow-hidden">
+              <div
+                key={p.id}
+                role={profile.isMe ? "button" : undefined}
+                onClick={() => profile.isMe && setActionsFor(p)}
+                className={`relative aspect-[3/4] overflow-hidden ${profile.isMe ? "press-scale cursor-pointer" : ""}`}
+              >
                 <PostCoverBg hue={p.hue} seed={p.id} imageUrl={p.coverUrl} />
+                {profile.isMe && (
+                  <span className="absolute right-1.5 top-1.5 rounded-full bg-black/50 p-1">
+                    <MoreVertical className="h-3.5 w-3.5 text-white" />
+                  </span>
+                )}
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1.5 text-[10px] font-semibold text-white">
                   ▶ {formatCount(p.likesCount)}
                 </div>
@@ -360,11 +373,14 @@ export function ProfileView({ handle }: { handle: string }) {
       </div>
 
       {profile.isMe && (
-        <SettingsSheet
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          profile={profile}
-        />
+        <>
+          <SettingsSheet
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            profile={profile}
+          />
+          <PostActionsSheet post={actionsFor} handle={handle} onClose={() => setActionsFor(null)} />
+        </>
       )}
     </AppShell>
   );
@@ -387,6 +403,7 @@ function Stat({ n, k, delay = 0 }: { n: number; k: string; delay?: number }) {
 type Profile = NonNullable<Awaited<ReturnType<typeof getProfileByHandle>>>;
 type ArtistSongList = Awaited<ReturnType<typeof listArtistSongs>>;
 type ArtistShowList = Awaited<ReturnType<typeof listArtistShows>>;
+type PostRow = Awaited<ReturnType<typeof listUserPosts>>[number];
 
 function ArtistLinksRow({ links }: { links: Profile["artistLinks"] }) {
   const { t } = useTranslation();

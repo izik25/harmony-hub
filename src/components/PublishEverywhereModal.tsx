@@ -15,6 +15,7 @@ import {
   Link2,
   Download,
   Crown,
+  Mic,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -65,6 +66,23 @@ const LINK_META: Record<string, { name: string; icon: PlatformIcon; color: strin
   apple_music: { name: "Apple Music", icon: Apple, color: "#FA57C1" },
   soundcloud: { name: "SoundCloud", icon: Cloud, color: "#FF5500" },
 };
+
+const CONFETTI_COLORS = ["bg-brand-coral", "bg-brand-gold", "bg-brand-teal", "bg-brand-indigo"];
+// A fixed, hand-picked spread rather than Math.random() — a confetti burst just needs enough
+// visual variety to read as festive, and a fixed set renders identically every time (no risk of
+// a server/client mismatch the way a per-render random value would be).
+const CONFETTI_PIECES = [
+  { left: 6, delay: 0, rotate: 140 },
+  { left: 16, delay: 0.06, rotate: -110 },
+  { left: 26, delay: 0.02, rotate: 200 },
+  { left: 36, delay: 0.1, rotate: -160 },
+  { left: 46, delay: 0.04, rotate: 90 },
+  { left: 56, delay: 0.08, rotate: -200 },
+  { left: 66, delay: 0.01, rotate: 150 },
+  { left: 76, delay: 0.07, rotate: -130 },
+  { left: 86, delay: 0.03, rotate: 180 },
+  { left: 94, delay: 0.12, rotate: -90 },
+];
 
 export function PublishEverywhereModal({
   open,
@@ -195,6 +213,48 @@ export function PublishEverywhereModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto">
+        {/* This modal only ever opens right after a fresh publish (see upload.tsx) — the actual
+            "your post is live" confirmation was easy to miss as a toast underneath it, so it lives
+            here now, right where the user's attention already is. */}
+        <div className="relative -mx-6 -mt-6 overflow-hidden rounded-t-lg bg-gradient-to-b from-brand-coral/10 to-transparent pb-3 pt-7 text-center">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
+            {CONFETTI_PIECES.map((c, i) => (
+              <motion.span
+                key={i}
+                className={`absolute top-2 h-2 w-1.5 rounded-sm ${CONFETTI_COLORS[i % CONFETTI_COLORS.length]}`}
+                style={{ left: `${c.left}%` }}
+                initial={{ y: -10, opacity: 1, rotate: 0 }}
+                animate={{ y: 90, opacity: 0, rotate: c.rotate }}
+                transition={{ duration: 1, delay: c.delay, ease: "easeOut" }}
+              />
+            ))}
+          </div>
+          <motion.div
+            initial={{ scale: 0, rotate: -10 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: "spring", stiffness: 380, damping: 14 }}
+            className="relative mx-auto flex h-14 w-14 items-center justify-center"
+          >
+            <motion.span
+              className="absolute -end-1 -top-1 grid h-7 w-7 place-items-center rounded-full bg-brand-gold text-white shadow-pop"
+              initial={{ scale: 0, rotate: -25 }}
+              animate={{ scale: 1, rotate: -10 }}
+              transition={{ type: "spring", stiffness: 420, damping: 14, delay: 0.15 }}
+            >
+              <Music2 className="h-3.5 w-3.5" />
+            </motion.span>
+            <span className="grid h-12 w-12 place-items-center rounded-full bg-brand-coral text-white shadow-pop-coral">
+              <Mic className="h-6 w-6" />
+            </span>
+          </motion.div>
+          <p className="relative mt-2 text-base font-bold text-foreground">
+            {t("publishEverywhere.publishedTitle")}
+          </p>
+          <p className="relative text-xs text-muted-foreground">
+            {t("publishEverywhere.publishedSubtitle")}
+          </p>
+        </div>
+
         <DialogHeader>
           <DialogTitle>{t("publishEverywhere.title")}</DialogTitle>
         </DialogHeader>
