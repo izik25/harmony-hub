@@ -39,6 +39,7 @@ type PublishablePost = {
   title: string;
   songTitle?: string;
   audioUrl: string;
+  videoUrl?: string;
   coverUrl: string;
   hue: number;
 };
@@ -138,22 +139,34 @@ export function PublishEverywhereModal({
       const selectedLinks = linkStatuses.filter((s) => selected.has(s.platform));
 
       if (selectedOAuth.length > 0) {
-        setVideoProgress("rendering");
-        const { blob, isMp4 } = await renderCoverVideo({
-          audioUrl: post.audioUrl,
-          coverUrl: post.coverUrl,
-          title: post.title,
-          hue: post.hue,
-        });
+        let videoUrl: string;
+        let isMp4: boolean;
+        if (post.videoUrl) {
+          // A real performance video already exists for this post (self-recorded or manually
+          // uploaded) — reuse it directly instead of synthesizing a cover-image slideshow, since
+          // an actual performance clip is strictly better content for these platforms.
+          videoUrl = post.videoUrl;
+          isMp4 = post.videoUrl.toLowerCase().endsWith(".mp4");
+        } else {
+          setVideoProgress("rendering");
+          const rendered = await renderCoverVideo({
+            audioUrl: post.audioUrl,
+            coverUrl: post.coverUrl,
+            title: post.title,
+            hue: post.hue,
+          });
+          isMp4 = rendered.isMp4;
+          setVideoProgress("uploading");
+          const uploaded = await smartUploadMedia(
+            rendered.blob,
+            `sona-share-${post.id}.${isMp4 ? "mp4" : "webm"}`,
+          );
+          videoUrl = uploaded.url;
+          setVideoProgress("idle");
+        }
         if (selected.has("instagram") && !isMp4) {
           toast.warning(t("publishEverywhere.instagramNeedsMp4"));
         }
-        setVideoProgress("uploading");
-        const { url: videoUrl } = await smartUploadMedia(
-          blob,
-          `sona-share-${post.id}.${isMp4 ? "mp4" : "webm"}`,
-        );
-        setVideoProgress("idle");
 
         const results = await publishToPlatforms({
           data: {

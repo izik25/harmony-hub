@@ -13,7 +13,7 @@ const MAX_DURATION_SECONDS = 60;
 
 export type VideoSynthesisResult = { blob: Blob; mimeType: string; isMp4: boolean };
 
-function pickSupportedMimeType(): string {
+export function pickSupportedMimeType(): string {
   const candidates = [
     "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
     "video/mp4",

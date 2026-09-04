@@ -109,9 +109,15 @@ function UploadPage() {
   const [producer, setProducer] = useState("");
   const [pickedFile, setPickedFile] = useState<{ url: string; name: string } | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  // A manually-uploaded video, replacing/skipping AI cover-image generation — null here doesn't
+  // mean "no video": a camera-recorded draft already carries one server-side (draft.videoUrl,
+  // set by record.tsx's camera mode), which this only ever overrides if the user picks a
+  // different file. Left as-is (undefined on publish), publishPost falls back to draft.videoUrl.
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const coverFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const uploadFileMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -124,10 +130,26 @@ function UploadPage() {
 
   const audioUrl = draftId ? draft?.audioUrl : pickedFile?.url;
   const coverSubject = title.trim() || draft?.title || draft?.songTitle || "";
+  const attachedVideoUrl = videoUrl ?? draft?.videoUrl;
 
   const coverMutation = useMutation({
     mutationFn: () => generateCoverImage({ data: { songTitle: coverSubject, category } }),
     onSuccess: (result) => setCoverUrl(result.url),
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
+  });
+
+  // Manual cover upload — an alternative to AI generation. An image sets coverUrl exactly like
+  // generation does; a video sets videoUrl instead, since a video post plays that directly in the
+  // feed (see FeedItem in routes/index.tsx) rather than needing a separate static cover.
+  const coverUploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const { url } = await smartUploadMedia(file, file.name);
+      return { url, isVideo: file.type.startsWith("video/") };
+    },
+    onSuccess: ({ url, isVideo }) => {
+      if (isVideo) setVideoUrl(url);
+      else setCoverUrl(url);
+    },
     onError: (e: Error) => toast.error(translateServerError(e.message)),
   });
 
@@ -152,6 +174,7 @@ function UploadPage() {
         data: {
           draftId,
           audioUrl: draftId ? undefined : pickedFile?.url,
+          videoUrl: videoUrl ?? undefined,
           coverUrl: coverUrl ?? undefined,
           type,
           title: title.trim() || t("upload.untitled"),
@@ -180,7 +203,7 @@ function UploadPage() {
   // A caption isn't actually required server-side (publishPost falls back to "Untitled" when
   // it's blank) — gating the button on a non-empty title made Publish silently do nothing for
   // anyone who skipped the caption field, indistinguishable from a broken button.
-  const canPublish = !!audioUrl && !publishMutation.isPending;
+  const canPublish = (!!audioUrl || !!attachedVideoUrl) && !publishMutation.isPending;
 
   return (
     <AppShell>
@@ -201,28 +224,60 @@ function UploadPage() {
           )}
           <div className="absolute inset-x-0 bottom-0 p-4">
             <p className="mb-2 text-xs text-white/80">
-              {coverUrl ? t("upload.coverReady") : t("upload.coverHint")}
-            </p>
-            <motion.button
-              type="button"
-              onClick={() => coverMutation.mutate()}
-              disabled={coverMutation.isPending}
-              whileTap={coverMutation.isPending ? undefined : { scale: 0.95 }}
-              whileHover={coverMutation.isPending ? undefined : { scale: 1.03 }}
-              transition={{ type: "spring", stiffness: 450, damping: 28 }}
-              className="inline-flex items-center gap-1.5 rounded-full bg-brand-coral px-4 py-2 text-xs font-bold text-white shadow-pop-coral disabled:opacity-60"
-            >
-              {coverMutation.isPending ? (
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="h-3.5 w-3.5" />
-              )}
-              {coverMutation.isPending
-                ? t("upload.generatingCover")
+              {attachedVideoUrl
+                ? t("upload.videoAttached")
                 : coverUrl
-                  ? t("upload.regenerateCover")
-                  : t("upload.generateCover")}
-            </motion.button>
+                  ? t("upload.coverReady")
+                  : t("upload.coverHint")}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <motion.button
+                type="button"
+                onClick={() => coverMutation.mutate()}
+                disabled={coverMutation.isPending}
+                whileTap={coverMutation.isPending ? undefined : { scale: 0.95 }}
+                whileHover={coverMutation.isPending ? undefined : { scale: 1.03 }}
+                transition={{ type: "spring", stiffness: 450, damping: 28 }}
+                className="inline-flex items-center gap-1.5 rounded-full bg-brand-coral px-4 py-2 text-xs font-bold text-white shadow-pop-coral disabled:opacity-60"
+              >
+                {coverMutation.isPending ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                {coverMutation.isPending
+                  ? t("upload.generatingCover")
+                  : coverUrl
+                    ? t("upload.regenerateCover")
+                    : t("upload.generateCover")}
+              </motion.button>
+              <input
+                ref={coverFileInputRef}
+                type="file"
+                accept="image/*,video/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) coverUploadMutation.mutate(file);
+                }}
+              />
+              <motion.button
+                type="button"
+                onClick={() => coverFileInputRef.current?.click()}
+                disabled={coverUploadMutation.isPending}
+                whileTap={coverUploadMutation.isPending ? undefined : { scale: 0.95 }}
+                whileHover={coverUploadMutation.isPending ? undefined : { scale: 1.03 }}
+                transition={{ type: "spring", stiffness: 450, damping: 28 }}
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/40 bg-white/10 px-4 py-2 text-xs font-bold text-white backdrop-blur-sm disabled:opacity-60"
+              >
+                {coverUploadMutation.isPending ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Upload className="h-3.5 w-3.5" />
+                )}
+                {t("upload.uploadOwnCover")}
+              </motion.button>
+            </div>
           </div>
         </div>
 
@@ -233,13 +288,22 @@ function UploadPage() {
               <p className="text-sm font-semibold">{t("upload.recordedReady")}</p>
               <p className="text-xs text-muted-foreground">{t("upload.fromRecordStudio")}</p>
             </div>
-            <button
-              onClick={togglePreview}
-              className="press-scale grid h-10 w-10 place-items-center rounded-full glass"
-              disabled={!draft?.audioUrl}
-            >
-              {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-            </button>
+            {attachedVideoUrl ? (
+              <video
+                src={attachedVideoUrl}
+                muted
+                playsInline
+                className="h-10 w-10 shrink-0 rounded-full object-cover"
+              />
+            ) : (
+              <button
+                onClick={togglePreview}
+                className="press-scale grid h-10 w-10 place-items-center rounded-full glass"
+                disabled={!draft?.audioUrl}
+              >
+                {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              </button>
+            )}
           </div>
         ) : pickedFile ? (
           <div className="mt-4 flex items-center gap-3 rounded-3xl border border-accent/40 bg-accent/5 p-4">

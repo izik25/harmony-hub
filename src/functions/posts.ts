@@ -13,6 +13,7 @@ export type FeedPostDTO = {
   hue: number;
   coverUrl: string;
   audioUrl: string;
+  videoUrl: string;
   user: { id: string; name: string; handle: string; verified: boolean; avatar: string };
   likes: number;
   comments: number;
@@ -52,6 +53,7 @@ async function hydrateFeed(
     hue: r.hue,
     coverUrl: r.coverUrl,
     audioUrl: r.audioUrl,
+    videoUrl: r.videoUrl,
     user: {
       id: r.author.id,
       name: r.author.name,
@@ -184,6 +186,7 @@ export const createDraft = createServerFn({ method: "POST" })
         type?: string;
         rawVocalUrl?: string;
         backingTrackUrl?: string;
+        videoUrl?: string;
       },
   )
   .handler(async ({ data }) => {
@@ -197,6 +200,7 @@ export const createDraft = createServerFn({ method: "POST" })
         audioUrl: data.audioUrl,
         rawVocalUrl: data.rawVocalUrl ?? "",
         backingTrackUrl: data.backingTrackUrl ?? "",
+        videoUrl: data.videoUrl ?? "",
         hue: Math.floor(Math.random() * 360),
         credits: { performer: "", writer: "", composer: "", producer: "" },
         status: "draft",
@@ -237,6 +241,7 @@ export const publishPost = createServerFn({ method: "POST" })
       input as {
         draftId?: string;
         audioUrl?: string;
+        videoUrl?: string;
         coverUrl?: string;
         type: string;
         title: string;
@@ -269,16 +274,26 @@ export const publishPost = createServerFn({ method: "POST" })
       if (!draft) throw new Error("draftNotFound");
       const [updated] = await db
         .update(posts)
-        .set({ ...common, audioUrl: data.audioUrl ?? draft.audioUrl })
+        .set({
+          ...common,
+          audioUrl: data.audioUrl ?? draft.audioUrl,
+          videoUrl: data.videoUrl ?? draft.videoUrl,
+        })
         .where(eq(posts.id, data.draftId))
         .returning();
       return updated;
     }
 
-    if (!data.audioUrl) throw new Error("noMediaToPublish");
+    if (!data.audioUrl && !data.videoUrl) throw new Error("noMediaToPublish");
     const [created] = await db
       .insert(posts)
-      .values({ userId, hue: Math.floor(Math.random() * 360), audioUrl: data.audioUrl, ...common })
+      .values({
+        userId,
+        hue: Math.floor(Math.random() * 360),
+        audioUrl: data.audioUrl ?? "",
+        videoUrl: data.videoUrl ?? "",
+        ...common,
+      })
       .returning();
     return created;
   });

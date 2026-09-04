@@ -51,6 +51,10 @@ export const posts = pgTable("posts", {
   rawVocalUrl: text("raw_vocal_url").notNull().default(""),
   backingTrackUrl: text("backing_track_url").notNull().default(""),
   coverUrl: text("cover_url").notNull().default(""),
+  // A self-recorded (webcam + karaoke) or manually-uploaded performance video. When set, this is
+  // what plays in the feed for this post instead of audioUrl + coverUrl — see FeedItem in
+  // src/routes/index.tsx.
+  videoUrl: text("video_url").notNull().default(""),
   hue: integer("hue").notNull().default(300),
   credits: jsonb("credits")
     .$type<{ performer: string; writer: string; composer: string; producer: string }>()

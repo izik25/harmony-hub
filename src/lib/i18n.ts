@@ -116,6 +116,9 @@ const en = {
       "For the cleanest recording, use headphones — otherwise the mic can pick up the playback.",
     monitorOn: "Hear Yourself",
     monitorOff: "Monitoring Off",
+    cameraOn: "Camera On",
+    cameraOff: "Record with Camera",
+    cameraDenied: "Couldn't access the camera — recording audio only.",
     monitorFeedbackWarning:
       "Live monitoring is on — use headphones, or you'll get feedback/howling.",
     monitorBluetoothLatency:
@@ -222,9 +225,11 @@ const en = {
     coverImage: "Cover image",
     coverHint: "Generate an AI cover image inspired by the song's title.",
     coverReady: "Cover image ready — you can regenerate it if you'd like a different look.",
+    videoAttached: "Video attached — it'll play in the feed instead of a cover image.",
     generateCover: "Generate cover image",
     generatingCover: "Generating…",
     regenerateCover: "Regenerate",
+    uploadOwnCover: "Upload your own",
   },
   comp: {
     title: "Competitions",
@@ -741,6 +746,9 @@ const he = {
       "להקלטה הכי נקייה, מומלץ להשתמש באוזניות — אחרת המיקרופון עלול לקלוט את הפלייבק.",
     monitorOn: "שמיעה עצמית",
     monitorOff: "ניטור כבוי",
+    cameraOn: "מצלמה פועלת",
+    cameraOff: "הקלט עם מצלמה",
+    cameraDenied: "לא ניתן היה לגשת למצלמה — מקליט שמע בלבד.",
     monitorFeedbackWarning: "ניטור חי פעיל — השתמש באוזניות, אחרת יתקבל פידבק (צפצוף).",
     monitorBluetoothLatency:
       "לאוזניות בלוטות' יש השהיה מובנית (100-300ms) — לניטור בזמן אמת, נסה אוזניות חוטיות.",
@@ -847,9 +855,11 @@ const he = {
     coverImage: "תמונת קאבר",
     coverHint: "צור תמונת קאבר בעזרת AI בהשראת כותרת השיר.",
     coverReady: "תמונת הקאבר מוכנה — אפשר לגנרט שוב אם תרצה מראה אחר.",
+    videoAttached: "וידאו מצורף — הוא יתנגן בפיד במקום תמונת קאבר.",
     generateCover: "צור תמונת קאבר לשיר",
     generatingCover: "מייצר…",
     regenerateCover: "גנרט שוב",
+    uploadOwnCover: "העלה משלך",
   },
   comp: {
     title: "תחרויות",
@@ -1364,6 +1374,9 @@ const ar = {
       "للحصول على أنظف تسجيل، يُنصح باستخدام سماعات — وإلا فقد يلتقط الميكروفون صوت التشغيل.",
     monitorOn: "استمع لنفسك",
     monitorOff: "المراقبة متوقفة",
+    cameraOn: "الكاميرا مفعّلة",
+    cameraOff: "سجّل بالكاميرا",
+    cameraDenied: "تعذّر الوصول إلى الكاميرا — سيتم تسجيل الصوت فقط.",
     monitorFeedbackWarning: "المراقبة الحية مفعّلة — استخدم سماعات وإلا ستحصل على صدى/صفير.",
     monitorBluetoothLatency:
       "لسماعات البلوتوث تأخير مدمج (100-300ms) — للمراقبة بالوقت الفعلي، جرّب سماعات سلكية.",
@@ -1473,9 +1486,11 @@ const ar = {
     coverImage: "صورة الغلاف",
     coverHint: "أنشئ صورة غلاف بالذكاء الاصطناعي مستوحاة من عنوان الأغنية.",
     coverReady: "صورة الغلاف جاهزة — يمكنك إعادة إنشائها إذا أردت مظهراً مختلفاً.",
+    videoAttached: "تم إرفاق فيديو — سيتم تشغيله في الخلاصة بدلاً من صورة الغلاف.",
     generateCover: "إنشاء صورة غلاف للأغنية",
     generatingCover: "جارٍ الإنشاء…",
     regenerateCover: "إعادة الإنشاء",
+    uploadOwnCover: "ارفع ملفك الخاص",
   },
   comp: {
     title: "المسابقات",

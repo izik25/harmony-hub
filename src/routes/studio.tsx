@@ -671,6 +671,40 @@ function StudioPage() {
             </Link>{" "}
             {t("studio.oneFirst")}
           </div>
+        ) : draft?.videoUrl ? (
+          // A camera-recorded (or manually uploaded) performance video — none of the DSP chain
+          // below applies to a flattened video+audio take (it's built around a decodable
+          // Tone.Player buffer, which a video draft doesn't have), so this skips straight to a
+          // plain preview + the same publish actions, unprocessed.
+          <>
+            <div className="mt-4 overflow-hidden rounded-3xl border border-border bg-card shadow-pop">
+              <video
+                src={draft.videoUrl}
+                controls
+                playsInline
+                className="aspect-[9/16] w-full bg-black object-contain"
+              />
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <motion.button
+                onClick={() => navigate({ to: "/upload", search: { draftId: draftId! } })}
+                whileTap={{ scale: 0.95 }}
+                whileHover={{ scale: 1.03, y: -1 }}
+                transition={{ type: "spring", stiffness: 450, damping: 28 }}
+                className="flex flex-col items-center gap-1 rounded-2xl bg-brand-coral p-3 text-[11px] font-bold text-white shadow-pop-coral"
+              >
+                <Send className="h-4 w-4" /> {t("common.continueToPublish")}
+              </motion.button>
+              <button
+                onClick={() =>
+                  navigate({ to: "/upload", search: { draftId: draftId!, forCompetition: 1 } })
+                }
+                className="press-scale flex flex-col items-center gap-1 rounded-2xl border border-border bg-card/60 p-3 text-[11px] font-semibold"
+              >
+                <Send className="h-4 w-4" /> {t("record.sendComp")}
+              </button>
+            </div>
+          </>
         ) : (
           <>
             <div className="mt-4 rounded-3xl border border-border bg-card p-4 shadow-pop">

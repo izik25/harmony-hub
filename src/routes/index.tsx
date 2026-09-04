@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Heart,
@@ -153,7 +153,10 @@ function FeedItem({
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const audioRef = useRef<HTMLAudioElement>(null);
+  // <audio> for a normal post, <video> for one with a self-recorded/uploaded performance video
+  // (see the JSX below) — every API these effects use (.play/.pause/.currentTime/.muted, the
+  // play/pause/timeupdate events) is identical on both, so one ref/effect set covers both.
+  const audioRef = useRef<HTMLMediaElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
 
@@ -267,16 +270,6 @@ function FeedItem({
       style={{ scrollSnapStop: "always" }}
       className="relative h-[calc(100dvh-80px)] snap-start overflow-hidden"
     >
-      {post.audioUrl && (
-        <audio
-          ref={audioRef}
-          src={post.audioUrl}
-          loop
-          muted={muted}
-          playsInline
-          preload={preload}
-        />
-      )}
       <motion.div
         onClick={handleCoverTap}
         initial={false}
@@ -284,7 +277,31 @@ function FeedItem({
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         className={isPlaying ? "absolute inset-0 animate-cover-breathe" : "absolute inset-0"}
       >
-        <PostCoverBg hue={post.hue} seed={post.id} imageUrl={post.coverUrl} />
+        {post.videoUrl ? (
+          <video
+            ref={audioRef as RefObject<HTMLVideoElement>}
+            src={post.videoUrl}
+            loop
+            muted={muted}
+            playsInline
+            preload={preload}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <>
+            {post.audioUrl && (
+              <audio
+                ref={audioRef as RefObject<HTMLAudioElement>}
+                src={post.audioUrl}
+                loop
+                muted={muted}
+                playsInline
+                preload={preload}
+              />
+            )}
+            <PostCoverBg hue={post.hue} seed={post.id} imageUrl={post.coverUrl} />
+          </>
+        )}
       </motion.div>
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80" />
 
@@ -303,7 +320,7 @@ function FeedItem({
         )}
       </AnimatePresence>
 
-      {showSoundHint && post.audioUrl && (
+      {showSoundHint && (post.audioUrl || post.videoUrl) && (
         <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 flex -translate-y-1/2 justify-center">
           <span className="animate-sound-hint flex items-center gap-2 rounded-full glass border border-white/20 px-4 py-2 text-xs font-semibold text-white">
             <VolumeX className="h-3.5 w-3.5" />
@@ -425,7 +442,7 @@ function FeedItem({
         </Link>
         <p className="mt-1 max-w-[85%] text-sm text-white/90">{post.title}</p>
         <div className="mt-2 flex items-center gap-2 text-xs text-white/80">
-          {post.audioUrl ? (
+          {post.audioUrl || post.videoUrl ? (
             <button
               onClick={(e) => {
                 e.stopPropagation();

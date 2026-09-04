@@ -18,6 +18,7 @@ import {
   Scissors,
   ArrowLeft,
   User,
+  Video,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import i18n, { translateServerError } from "@/lib/i18n";
@@ -38,6 +39,7 @@ import { createDraft } from "@/functions/posts";
 import { listKaraokeArtists, listKaraokeTracks } from "@/functions/karaoke";
 import { processRecording } from "@/lib/mix-recording";
 import { commitCheckpoint, trimCheckpoint } from "@/lib/audio-splice";
+import { pickSupportedMimeType } from "@/lib/video-synthesis";
 import {
   routeToHeadphonesIfAvailable,
   routeAudioContextToHeadphonesIfAvailable,
@@ -224,7 +226,12 @@ function useMicLevels(active: boolean, monitor: boolean) {
         presence.gain.value = 3;
         const gain = ctx.createGain();
         gain.gain.value = MONITOR_GAIN;
-        source.connect(rumble).connect(warmth).connect(presence).connect(gain).connect(ctx.destination);
+        source
+          .connect(rumble)
+          .connect(warmth)
+          .connect(presence)
+          .connect(gain)
+          .connect(ctx.destination);
         // The mic getUserMedia() above (MIC_CONSTRAINTS) just granted permission, which is what
         // makes real device labels available — safe to attempt the headphone-routing fix now.
         routeAudioContextToHeadphonesIfAvailable(ctx).then((routed) => {
@@ -264,8 +271,18 @@ type Phase = "idle" | "recording" | "paused" | "finished";
 // Flat brand colors rotated across same-purpose elements (avatar rings, icon badges, level-meter
 // bars) so a grid, list, or equalizer reads as lively rather than monotonous, without ever
 // blending two into a gradient on a single element.
-const BRAND_COLOR_ROTATION = ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold", "bg-brand-teal"];
-const DECOR_COLOR_ROTATION = ["text-brand-coral", "text-brand-indigo", "text-brand-gold", "text-brand-teal"];
+const BRAND_COLOR_ROTATION = [
+  "bg-brand-coral",
+  "bg-brand-indigo",
+  "bg-brand-gold",
+  "bg-brand-teal",
+];
+const DECOR_COLOR_ROTATION = [
+  "text-brand-coral",
+  "text-brand-indigo",
+  "text-brand-gold",
+  "text-brand-teal",
+];
 
 // Purely decorative: a handful of tiny note/mic glyphs drifting upward behind the page content at
 // low opacity, never intercepting taps. Same idea as the landing page's AmbientNotes, scaled down
@@ -287,7 +304,12 @@ function FloatingDecor({ count = 6 }: { count?: number }) {
           className={`absolute bottom-0 ${it.color}`}
           style={{ left: it.left }}
           animate={{ y: ["6%", "-580%"], opacity: [0, 0.16, 0], rotate: [0, 14, -10, 0] }}
-          transition={{ duration: it.duration, repeat: Infinity, ease: "easeInOut", delay: it.delay }}
+          transition={{
+            duration: it.duration,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: it.delay,
+          }}
         >
           <it.Icon style={{ width: it.size, height: it.size }} />
         </motion.span>
@@ -399,6 +421,16 @@ function RecordPage() {
   // "delete back to here and re-record?" dialog.
   const [previewSeconds, setPreviewSeconds] = useState<number | null>(null);
   const [cutConfirm, setCutConfirm] = useState<number | null>(null);
+  // Records the user's own camera alongside the mic, composited as a small self-preview over the
+  // karaoke video, so the resulting take is an actual performance video (see finishMutation)
+  // instead of audio-only. Deliberately simple — no pause/rewind for this mode (see the recording
+  // control row and the seconds readout below, both gated on !cameraEnabled): a combined
+  // video+audio blob can't be decoded/re-spliced the way audio-splice.ts does for audio-only
+  // checkpoints, so a camera take is one continuous segment, start to finish.
+  const [cameraEnabled, setCameraEnabled] = useState(false);
+  const camStreamRef = useRef<MediaStream | null>(null);
+  const camVideoRef = useRef<HTMLVideoElement | null>(null);
+  const camMimeTypeRef = useRef<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Array<BlobPart>>([]);
@@ -444,6 +476,37 @@ function RecordPage() {
     });
   };
 
+  // Opens (or tears down) the camera as soon as the toggle changes — independent of `phase` —
+  // so the self-preview is already framed and ready before the user taps record, the same way
+  // the mic-level meter is already live before recording starts.
+  useEffect(() => {
+    if (!cameraEnabled) {
+      camStreamRef.current?.getTracks().forEach((tr) => tr.stop());
+      camStreamRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: "user", width: { ideal: 480 } } })
+      .then((camStream) => {
+        if (cancelled) {
+          camStream.getTracks().forEach((tr) => tr.stop());
+          return;
+        }
+        camStreamRef.current = camStream;
+        if (camVideoRef.current) camVideoRef.current.srcObject = camStream;
+      })
+      .catch(() => {
+        toast.error(t("record.cameraDenied"));
+        setCameraEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+      camStreamRef.current?.getTracks().forEach((tr) => tr.stop());
+      camStreamRef.current = null;
+    };
+  }, [cameraEnabled, t]);
+
   useEffect(() => {
     if (phase === "recording") {
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
@@ -467,6 +530,25 @@ function RecordPage() {
   // later), creates the draft, and lands on Studio — no separate "Save" tap in between.
   const finishMutation = useMutation({
     mutationFn: async (rawBlob: Blob) => {
+      // Camera takes are a single muxed video+audio blob — processRecording only ever decodes
+      // and outputs pure audio, so there's nothing to mix here; upload the take as-is and store
+      // it as videoUrl instead of audioUrl (see FeedItem in routes/index.tsx, which plays
+      // videoUrl directly when a post has one).
+      if (cameraEnabled) {
+        const ext = rawBlob.type.includes("mp4") ? "mp4" : "webm";
+        const { url } = await smartUploadMedia(rawBlob, `recording-video-${Date.now()}.${ext}`);
+        return createDraft({
+          data: {
+            audioUrl: "",
+            videoUrl: url,
+            backingTrackUrl: selectedTrack?.videoUrl,
+            title: selectedTrack
+              ? [selectedTrack.artist, selectedTrack.title].filter(Boolean).join(" — ")
+              : undefined,
+          },
+        });
+      }
+
       let mixedBlob: Blob;
       try {
         mixedBlob = await Promise.race([
@@ -534,12 +616,29 @@ function RecordPage() {
         // Explicit bitrate — MediaRecorder's default Opus encoding is conservative enough that
         // the raw capture itself can come out sounding thin/"voice memo"-like before any
         // cleanup even runs. 128kbps is comfortably high quality for a mono voice track.
-        const recorder = new MediaRecorder(stream.current, { audioBitsPerSecond: 128_000 });
+        let recorder: MediaRecorder;
+        if (cameraEnabled && camStreamRef.current) {
+          const combined = new MediaStream([
+            ...camStreamRef.current.getVideoTracks(),
+            ...stream.current.getAudioTracks(),
+          ]);
+          const mimeType = pickSupportedMimeType();
+          camMimeTypeRef.current = mimeType;
+          recorder = new MediaRecorder(combined, {
+            mimeType,
+            videoBitsPerSecond: 2_500_000,
+            audioBitsPerSecond: 128_000,
+          });
+        } else {
+          recorder = new MediaRecorder(stream.current, { audioBitsPerSecond: 128_000 });
+        }
         recorder.ondataavailable = (e) => {
           if (e.data.size > 0) chunksRef.current.push(e.data);
         };
         recorder.onstop = async () => {
-          const newBlob = new Blob(chunksRef.current, { type: "audio/webm" });
+          const newBlob = new Blob(chunksRef.current, {
+            type: cameraEnabled ? camMimeTypeRef.current || "video/webm" : "audio/webm",
+          });
           chunksRef.current = [];
           const mode = stopModeRef.current;
           const resolveCheckpoint = checkpointResolveRef.current;
@@ -746,7 +845,10 @@ function RecordPage() {
           </motion.button>
           {selectedTrack && (
             <motion.button
-              onClick={() => setSelectedTrack(null)}
+              onClick={() => {
+                setSelectedTrack(null);
+                setCameraEnabled(false);
+              }}
               whileTap={{ scale: 0.9 }}
               aria-label={t("record.clearTrack")}
               className="grid h-12 w-12 shrink-0 place-items-center rounded-full border border-border bg-card shadow-pop"
@@ -768,9 +870,7 @@ function RecordPage() {
               : { boxShadow: "0 0 0 0 transparent" }
           }
           transition={
-            recording
-              ? { duration: 1.6, repeat: Infinity, ease: "easeOut" }
-              : { duration: 0.3 }
+            recording ? { duration: 1.6, repeat: Infinity, ease: "easeOut" } : { duration: 0.3 }
           }
           className="relative mt-6 overflow-hidden rounded-[2rem] border border-border bg-card shadow-pop-lg animate-fade-up stagger-2"
         >
@@ -808,6 +908,19 @@ function RecordPage() {
               />
             )}
 
+            {/* Self-preview picture-in-picture — small on purpose, over the karaoke video, so
+                the lyrics stay the dominant thing on screen while still showing what the camera
+                is actually framing. */}
+            {cameraEnabled && (
+              <video
+                ref={camVideoRef}
+                muted
+                autoPlay
+                playsInline
+                className="absolute bottom-3 end-3 h-28 w-20 rounded-xl border-2 border-white object-cover shadow-lg"
+              />
+            )}
+
             {recording && (
               <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
                 <span className="relative flex h-1.5 w-1.5">
@@ -816,6 +929,23 @@ function RecordPage() {
                 </span>
                 {mm}:{ss}
               </span>
+            )}
+
+            {selectedTrack && !recording && phase !== "paused" && (
+              <button
+                onClick={() => setCameraEnabled((v) => !v)}
+                aria-pressed={cameraEnabled}
+                aria-label={cameraEnabled ? t("record.cameraOff") : t("record.cameraOn")}
+                title={cameraEnabled ? t("record.cameraOff") : t("record.cameraOn")}
+                className={`press-scale absolute left-3 top-3 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold backdrop-blur-sm transition-colors ${
+                  cameraEnabled
+                    ? "bg-brand-coral text-white shadow-pop"
+                    : "bg-black/60 text-white/70"
+                }`}
+              >
+                <Video className="h-3.5 w-3.5" />
+                {cameraEnabled && t("record.cameraOn")}
+              </button>
             )}
 
             <button
@@ -832,78 +962,82 @@ function RecordPage() {
             </button>
 
             {(selectedTrack || recording || phase === "paused") && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-3 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pb-3 pt-8">
-              <div className="pointer-events-auto flex items-center gap-3">
-                {phase === "paused" ? (
-                  <>
-                    <ControlButton
-                      onClick={startOrResume}
-                      icon={<Mic className="h-5 w-5" />}
-                      label={t("record.continueRecording")}
-                      variant="primary"
-                    />
-                    <ControlButton
-                      onClick={finishRecording}
-                      icon={<Check className="h-5 w-5" />}
-                      label={t("record.finishRecording")}
-                      variant="accent"
-                    />
-                  </>
-                ) : recording ? (
-                  <>
-                    <ControlButton
-                      onClick={pauseRecording}
-                      icon={<Pause className="h-5 w-5" />}
-                      label={t("common.pause")}
-                      variant="glass"
-                    />
-                    <ControlButton
-                      onClick={finishRecording}
-                      icon={<Check className="h-5 w-5" />}
-                      label={t("record.finishRecording")}
-                      variant="accent"
-                    />
-                  </>
-                ) : (
-                  <div className="relative">
-                    {!finishMutation.isPending && (
-                      <>
-                        <motion.span
-                          aria-hidden
-                          className="absolute inset-0 -z-10 rounded-full bg-brand-coral"
-                          animate={{ scale: [1, 1.9], opacity: [0.4, 0] }}
-                          transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-3 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pb-3 pt-8">
+                <div className="pointer-events-auto flex items-center gap-3">
+                  {phase === "paused" ? (
+                    <>
+                      <ControlButton
+                        onClick={startOrResume}
+                        icon={<Mic className="h-5 w-5" />}
+                        label={t("record.continueRecording")}
+                        variant="primary"
+                      />
+                      <ControlButton
+                        onClick={finishRecording}
+                        icon={<Check className="h-5 w-5" />}
+                        label={t("record.finishRecording")}
+                        variant="accent"
+                      />
+                    </>
+                  ) : recording ? (
+                    <>
+                      {/* No pause for a camera take — see the cameraEnabled comment near its state
+                        declaration for why this stays start-to-finish only. */}
+                      {!cameraEnabled && (
+                        <ControlButton
+                          onClick={pauseRecording}
+                          icon={<Pause className="h-5 w-5" />}
+                          label={t("common.pause")}
+                          variant="glass"
                         />
-                        <motion.span
-                          aria-hidden
-                          className="absolute inset-0 -z-10 rounded-full bg-brand-coral"
-                          animate={{ scale: [1, 1.9], opacity: [0.4, 0] }}
-                          transition={{
-                            duration: 1.8,
-                            repeat: Infinity,
-                            ease: "easeOut",
-                            delay: 0.9,
-                          }}
-                        />
-                      </>
-                    )}
-                    <ControlButton
-                      onClick={startOrResume}
-                      icon={
-                        finishMutation.isPending ? (
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                        ) : (
-                          <Mic className="h-5 w-5" />
-                        )
-                      }
-                      label={phase === "finished" ? t("record.reRecord") : t("common.record")}
-                      variant="primary"
-                      disabled={finishMutation.isPending}
-                    />
-                  </div>
-                )}
+                      )}
+                      <ControlButton
+                        onClick={finishRecording}
+                        icon={<Check className="h-5 w-5" />}
+                        label={t("record.finishRecording")}
+                        variant="accent"
+                      />
+                    </>
+                  ) : (
+                    <div className="relative">
+                      {!finishMutation.isPending && (
+                        <>
+                          <motion.span
+                            aria-hidden
+                            className="absolute inset-0 -z-10 rounded-full bg-brand-coral"
+                            animate={{ scale: [1, 1.9], opacity: [0.4, 0] }}
+                            transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
+                          />
+                          <motion.span
+                            aria-hidden
+                            className="absolute inset-0 -z-10 rounded-full bg-brand-coral"
+                            animate={{ scale: [1, 1.9], opacity: [0.4, 0] }}
+                            transition={{
+                              duration: 1.8,
+                              repeat: Infinity,
+                              ease: "easeOut",
+                              delay: 0.9,
+                            }}
+                          />
+                        </>
+                      )}
+                      <ControlButton
+                        onClick={startOrResume}
+                        icon={
+                          finishMutation.isPending ? (
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                          ) : (
+                            <Mic className="h-5 w-5" />
+                          )
+                        }
+                        label={phase === "finished" ? t("record.reRecord") : t("common.record")}
+                        variant="primary"
+                        disabled={finishMutation.isPending}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
             )}
           </div>
 
@@ -920,7 +1054,16 @@ function RecordPage() {
               </div>
             )}
 
-            {(phase === "recording" || phase === "paused") && seconds > 0 ? (
+            {(phase === "recording" || phase === "paused") && seconds > 0 && cameraEnabled ? (
+              // Camera takes skip the rewind/cut scrubber entirely — see the cameraEnabled state
+              // comment for why — just a plain elapsed-time readout instead.
+              <div
+                className={`flex items-center justify-between text-[11px] text-muted-foreground ${selectedTrack ? "mt-3" : ""}`}
+              >
+                <span>{t("record.rec")}</span>
+                <span>{formatTime(seconds)}</span>
+              </div>
+            ) : (phase === "recording" || phase === "paused") && seconds > 0 ? (
               <div className={selectedTrack ? "mt-3" : ""}>
                 <ScrubBar
                   totalSeconds={seconds}
