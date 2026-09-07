@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
   Heart,
@@ -9,6 +9,7 @@ import {
   ThumbsUp,
   Mail,
   Briefcase,
+  Swords,
 } from "lucide-react";
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -32,6 +33,7 @@ const iconMap: Record<string, React.ReactNode> = {
   vote: <ThumbsUp className="h-4 w-4 text-brand-indigo" />,
   contact_request: <Mail className="h-4 w-4 text-brand-teal" />,
   audition_application: <Briefcase className="h-4 w-4 text-brand-coral" />,
+  duet_challenge: <Swords className="h-4 w-4 text-brand-gold" />,
 };
 
 const staggerClasses = [
@@ -52,10 +54,12 @@ const textKeyMap: Record<string, string> = {
   vote: "voted",
   contact_request: "contact_requested",
   audition_application: "audition_application",
+  duet_challenge: "duet_challenged",
 };
 
 function NotifPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: notifications } = useQuery({
     queryKey: ["notifications"],
@@ -119,6 +123,21 @@ function NotifPage() {
                   className="rounded-full bg-brand-coral px-3 py-1 text-xs font-bold text-white shadow-pop-coral disabled:opacity-60"
                 >
                   {t("common.follow")}
+                </motion.button>
+              )}
+              {n.type === "duet_challenge" && n.extra.roomId && (
+                <motion.button
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() =>
+                    navigate({
+                      to: "/live/$roomId",
+                      params: { roomId: String(n.extra.roomId) },
+                    })
+                  }
+                  className="flex items-center gap-1 rounded-full bg-brand-coral px-3 py-1 text-xs font-bold text-white shadow-pop-coral"
+                >
+                  <Swords className="h-3 w-3" />
+                  {t("notif.joinBattle")}
                 </motion.button>
               )}
             </li>

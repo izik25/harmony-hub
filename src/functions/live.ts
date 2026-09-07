@@ -5,6 +5,17 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { liveRooms, users } from "@/db/schema";
 import { requireUserId, getSessionUser } from "./auth";
+import { insertNotification } from "./notifications";
+
+type UserBrief = { id: string; name: string; handle: string; avatarUrl: string };
+
+async function getUserBrief(userId: string): Promise<UserBrief | null> {
+  const [row] = await db
+    .select({ id: users.id, name: users.name, handle: users.handle, avatarUrl: users.avatarUrl })
+    .from(users)
+    .where(eq(users.id, userId));
+  return row ?? null;
+}
 
 function isConfigured(): boolean {
   return !!(
@@ -74,7 +85,47 @@ export const startRoom = createServerFn({ method: "POST" })
       .returning();
 
     const token = await createToken(userId, me!.name, livekitRoomName, true);
-    return { room, token, livekitUrl: process.env.LIVEKIT_URL };
+    return { room, token, livekitUrl: process.env.LIVEKIT_URL, role: "host" as const };
+  });
+
+// Challenge a specific user to a live duet battle: starts a "battle" room the challenger
+// immediately hosts (same as startRoom), plus a notification with the roomId so the invited user
+// can jump straight into the room as a co-publisher — see joinRoom's role resolution below.
+export const challengeToDuet = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input as { opponentId: string; title?: string })
+  .handler(async ({ data }) => {
+    if (!isConfigured()) throw new Error("liveNotConfigured");
+    const userId = await requireUserId();
+    if (userId === data.opponentId) throw new Error("cantChallengeSelf");
+    const me = await getSessionUser();
+    const opponent = await getUserBrief(data.opponentId);
+    if (!opponent) throw new Error("userNotFound");
+
+    const livekitRoomName = `sona-${randomUUID()}`;
+    await getRoomService().createRoom({
+      name: livekitRoomName,
+      emptyTimeout: 300,
+      maxParticipants: 200,
+    });
+    const [room] = await db
+      .insert(liveRooms)
+      .values({
+        hostId: userId,
+        opponentId: data.opponentId,
+        title: data.title || `${me!.name} vs ${opponent.name}`,
+        type: "battle",
+        livekitRoomName,
+      })
+      .returning();
+
+    const token = await createToken(userId, me!.name, livekitRoomName, true);
+    await insertNotification({
+      userId: data.opponentId,
+      actorId: userId,
+      type: "duet_challenge",
+      extra: { roomId: room.id },
+    });
+    return { room, token, livekitUrl: process.env.LIVEKIT_URL, role: "host" as const, opponent };
   });
 
 export const joinRoom = createServerFn({ method: "POST" })
@@ -89,8 +140,12 @@ export const joinRoom = createServerFn({ method: "POST" })
       .where(and(eq(liveRooms.id, data.roomId), eq(liveRooms.status, "live")));
     if (!room) throw new Error("roomEnded");
 
-    const token = await createToken(userId, me!.name, room.livekitRoomName, false);
-    return { room, token, livekitUrl: process.env.LIVEKIT_URL };
+    const role =
+      room.hostId === userId ? "host" : room.opponentId === userId ? "opponent" : "viewer";
+    const token = await createToken(userId, me!.name, room.livekitRoomName, role !== "viewer");
+    const host = await getUserBrief(room.hostId);
+    const opponent = room.opponentId ? await getUserBrief(room.opponentId) : null;
+    return { room, token, livekitUrl: process.env.LIVEKIT_URL, role, host, opponent };
   });
 
 export const endRoom = createServerFn({ method: "POST" })

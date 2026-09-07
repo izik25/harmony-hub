@@ -10,8 +10,13 @@
  * are both served from this app's own origin rather than Google's CDN, so this works offline once
  * cached and doesn't depend on a third party staying up. Both are only fetched the first time a
  * non-"none" background is actually selected — a plain camera take pays none of this cost.
+ *
+ * @mediapipe/tasks-vision itself (~150KB of JS, separate from the WASM/model bytes above) is
+ * dynamically imported inside loadSegmenter() rather than at module top level — this file is a
+ * static import of record.tsx, so importing the library eagerly here would have put that weight
+ * into every visit to the record page, camera or no camera, background or no background.
  */
-import { FilesetResolver, ImageSegmenter } from "@mediapipe/tasks-vision";
+import type { ImageSegmenter } from "@mediapipe/tasks-vision";
 
 export type BackgroundId =
   | "none"
@@ -201,34 +206,47 @@ async function getScene(id: BackgroundId, w: number, h: number): Promise<ImageBi
   return bitmap;
 }
 
+/** Synchronous cache-only lookup, for the per-frame draw loop — never awaits/allocates. */
+function getSceneCached(id: BackgroundId, w: number, h: number): ImageBitmap | undefined {
+  return sceneCache.get(`${id}:${w}x${h}`);
+}
+
 let segmenterPromise: Promise<ImageSegmenter> | null = null;
 function loadSegmenter(): Promise<ImageSegmenter> {
   if (!segmenterPromise) {
-    segmenterPromise = FilesetResolver.forVisionTasks("/mediapipe/wasm").then(async (fileset) => {
-      const options = {
-        runningMode: "VIDEO" as const,
-        outputCategoryMask: false,
-        outputConfidenceMasks: true,
-      };
-      try {
-        return await ImageSegmenter.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: "/models/selfie_segmenter.tflite", delegate: "GPU" },
-          ...options,
-        });
-      } catch {
-        // Some devices/browsers lack a WebGL2 context capable of running the GPU delegate —
-        // CPU is slower but works everywhere the WASM runtime itself loads.
-        return ImageSegmenter.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: "/models/selfie_segmenter.tflite", delegate: "CPU" },
-          ...options,
-        });
-      }
-    });
+    segmenterPromise = import("@mediapipe/tasks-vision").then(
+      async ({ FilesetResolver, ImageSegmenter }) => {
+        const fileset = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
+        const options = {
+          runningMode: "VIDEO" as const,
+          outputCategoryMask: false,
+          outputConfidenceMasks: true,
+        };
+        try {
+          return await ImageSegmenter.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: "/models/selfie_segmenter.tflite", delegate: "GPU" },
+            ...options,
+          });
+        } catch {
+          // Some devices/browsers lack a WebGL2 context capable of running the GPU delegate —
+          // CPU is slower but works everywhere the WASM runtime itself loads.
+          return ImageSegmenter.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: "/models/selfie_segmenter.tflite", delegate: "CPU" },
+            ...options,
+          });
+        }
+      },
+    );
   }
   return segmenterPromise;
 }
 
-const OUTPUT_FPS = 24;
+// Kept modest on purpose: this feed is only ever shown as a small picture-in-picture (and, per
+// camera-capture.ts, was already capped to a "modest" capture resolution for the same reason) —
+// a lower frame rate here directly cuts how much per-frame segmentation/compositing work the main
+// thread has to do, which is what was making the whole page feel sluggish while a background was
+// active, not just the preview itself.
+const OUTPUT_FPS = 18;
 
 export interface VirtualBackgroundComposer {
   /** The live, background-replaced feed — feed this into the recorder/preview instead of the raw camera stream. */
@@ -272,6 +290,15 @@ export async function startVirtualBackground(
   let raf = 0;
   let lastFrameAt = 0;
   const frameInterval = 1000 / OUTPUT_FPS;
+  // Reused frame over frame instead of calling createImageData() every tick — that used to
+  // allocate a fresh backing buffer the size of the whole frame (megabytes/sec of garbage at this
+  // frame rate), which is what was actually behind the page-wide jank: a canvas draw call is
+  // cheap, but the GC pauses from that churn block the main thread same as any other JS would.
+  // Only reallocated on the rare frame where the segmenter's own output size actually changes.
+  let maskImageData: ImageData | null = null;
+  // Kicks off exactly once per (background, size) combo the first time it's needed — every later
+  // frame hits the synchronous cache in getSceneCached instead of re-entering this promise chain.
+  let pendingScene: BackgroundId | null = null;
 
   const drawFrame = (now: number) => {
     if (!running) return;
@@ -289,13 +316,17 @@ export async function startVirtualBackground(
       if (maskCanvas.width !== confidence.width || maskCanvas.height !== confidence.height) {
         maskCanvas.width = confidence.width;
         maskCanvas.height = confidence.height;
+        maskImageData = null;
       }
-      const maskImage = maskCtx.createImageData(confidence.width, confidence.height);
+      if (!maskImageData) {
+        maskImageData = maskCtx.createImageData(confidence.width, confidence.height);
+      }
+      const data = maskImageData.data;
       for (let i = 0; i < mask.length; i++) {
         // Only the alpha channel matters below (destination-in reads source alpha only).
-        maskImage.data[i * 4 + 3] = Math.round(mask[i] * 255);
+        data[i * 4 + 3] = Math.round(mask[i] * 255);
       }
-      maskCtx.putImageData(maskImage, 0, 0);
+      maskCtx.putImageData(maskImageData, 0, 0);
       confidence.close();
 
       personCtx.clearRect(0, 0, width, height);
@@ -308,14 +339,24 @@ export async function startVirtualBackground(
         outCtx.filter = "blur(14px)";
         outCtx.drawImage(video, 0, 0, width, height);
         outCtx.filter = "none";
-      } else {
-        getScene(backgroundId, width, height).then((bitmap) => {
-          outCtx.drawImage(bitmap, 0, 0);
-          outCtx.drawImage(personCanvas, 0, 0);
-        });
+        outCtx.drawImage(personCanvas, 0, 0);
         return;
       }
+      const cachedScene = getSceneCached(backgroundId, width, height);
+      if (cachedScene) {
+        outCtx.drawImage(cachedScene, 0, 0);
+        outCtx.drawImage(personCanvas, 0, 0);
+        return;
+      }
+      // Not painted yet at this size — draw just the person for this one frame while it renders
+      // in the background, rather than blocking every frame on a promise chain.
       outCtx.drawImage(personCanvas, 0, 0);
+      if (pendingScene !== backgroundId) {
+        pendingScene = backgroundId;
+        getScene(backgroundId, width, height).then(() => {
+          if (pendingScene === backgroundId) pendingScene = null;
+        });
+      }
     });
   };
   raf = requestAnimationFrame(drawFrame);

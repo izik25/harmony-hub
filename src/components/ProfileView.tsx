@@ -20,6 +20,7 @@ import {
   MoreVertical,
   Play,
   Pause,
+  Swords,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -53,6 +54,8 @@ import {
 import { listUserCompetitionEntries } from "@/functions/competitions";
 import { toggleFollow, listMyDrafts } from "@/functions/posts";
 import { getOrCreateConversation } from "@/functions/messages";
+import { challengeToDuet } from "@/functions/live";
+import { translateServerError } from "@/lib/i18n";
 import { smartUploadMedia } from "@/lib/blob-upload";
 import { logout } from "@/functions/auth";
 import { formatCount } from "@/lib/mock-data";
@@ -66,6 +69,7 @@ export function ProfileView({ handle }: { handle: string }) {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<(typeof tabs)[number]>("videos");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [duelConfirmOpen, setDuelConfirmOpen] = useState(false);
   const [actionsFor, setActionsFor] = useState<PostRow | null>(null);
   // Grid tiles have no dedicated player page — tapping one just plays its audio in place, one at
   // a time, through this single shared <audio> element rather than mounting one per tile.
@@ -167,6 +171,25 @@ export function ProfileView({ handle }: { handle: string }) {
       navigate({ to: "/messages/$conversationId", params: { conversationId: conversation.id } }),
   });
 
+  const duelMutation = useMutation({
+    mutationFn: () => challengeToDuet({ data: { opponentId: profile!.id } }),
+    onSuccess: (res) => {
+      sessionStorage.setItem(
+        `sona-live-host-${res.room.id}`,
+        JSON.stringify({
+          token: res.token,
+          livekitUrl: res.livekitUrl,
+          type: res.room.type,
+          host: null,
+          opponent: res.opponent,
+        }),
+      );
+      toast.success(t("profile.duetChallengeSent", { name: profile!.name }));
+      navigate({ to: "/live/$roomId", params: { roomId: res.room.id } });
+    },
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
+  });
+
   if (!profile) {
     return (
       <AppShell>
@@ -256,6 +279,17 @@ export function ProfileView({ handle }: { handle: string }) {
                 className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold"
               >
                 <MessageSquare className="h-4 w-4" />
+              </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.92 }}
+                whileHover={{ scale: 1.05 }}
+                transition={{ type: "spring", stiffness: 420, damping: 24 }}
+                onClick={() => setDuelConfirmOpen(true)}
+                disabled={duelMutation.isPending}
+                title={t("profile.challengeToDuet")}
+                className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-brand-gold disabled:opacity-60"
+              >
+                <Swords className="h-4 w-4" />
               </motion.button>
               <motion.button
                 whileTap={{ scale: 0.92 }}
@@ -442,6 +476,37 @@ export function ProfileView({ handle }: { handle: string }) {
           />
           <PostActionsSheet post={actionsFor} handle={handle} onClose={() => setActionsFor(null)} />
         </>
+      )}
+
+      {!profile.isMe && (
+        <Dialog open={duelConfirmOpen} onOpenChange={setDuelConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Swords className="h-5 w-5 text-brand-gold" />
+                {t("profile.challengeToDuet")}
+              </DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              {t("profile.challengeToDuetHint", { name: profile.name })}
+            </p>
+            <DialogFooter>
+              <button
+                onClick={() => {
+                  setDuelConfirmOpen(false);
+                  duelMutation.mutate();
+                }}
+                disabled={duelMutation.isPending}
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-60"
+              >
+                <Swords className="h-4 w-4" />
+                {duelMutation.isPending
+                  ? t("profile.sendingChallenge")
+                  : t("profile.sendChallenge")}
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
 
       <style>{`.profile-eq-bar { height: 10px; animation: profile-eq-bounce ease-in-out infinite; }

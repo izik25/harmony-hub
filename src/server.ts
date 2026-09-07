@@ -6,7 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { db } from "./db/client";
-import { sessions, platformConnections } from "./db/schema";
+import { sessions, platformConnections, users } from "./db/schema";
 import {
   socialPlatforms,
   isOAuthPlatformId,
@@ -19,6 +19,7 @@ type ServerEntry = {
 };
 
 const SESSION_COOKIE = "sona_session";
+const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 // Mirrors functions/auth.ts's session check, but against a raw Request — this endpoint is
 // handled outside TanStack Start's router (see handleBlobUploadRequest below), so none of the
@@ -206,6 +207,178 @@ async function handleConnectRequest(request: Request, pathname: string): Promise
     : handleConnectCallback(request, platform);
 }
 
+// "Continue with Google" sign-in/signup — a second, separate OAuth round-trip from the
+// publish-everywhere YouTube connect above. Same Google Cloud OAuth client (GOOGLE_CLIENT_ID/
+// SECRET) works for both since Google clients accept multiple redirect URIs; this one just asks
+// for "openid email profile" instead of the youtube.upload scope, and ends in a logged-in session
+// instead of a platformConnections row. Register {origin}/api/auth/google/callback as an
+// additional redirect URI in the same Google Cloud OAuth client.
+const GOOGLE_AUTH_STATE_COOKIE = "sona_google_auth_state";
+
+function googleAuthConfigured(): boolean {
+  return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+}
+
+function googleAuthStateCookieHeader(value: string, maxAge: number): string {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${GOOGLE_AUTH_STATE_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+}
+
+function readGoogleAuthStateCookie(request: Request): { state: string; returnTo: string } | null {
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const match = cookieHeader.match(/(?:^|;\s*)sona_google_auth_state=([^;]+)/);
+  if (!match) return null;
+  try {
+    return JSON.parse(decodeURIComponent(match[1])) as { state: string; returnTo: string };
+  } catch {
+    return null;
+  }
+}
+
+function sessionCookieHeader(token: string): string {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}${secure}`;
+}
+
+async function createRawSession(userId: string): Promise<string> {
+  const token = randomUUID() + randomUUID();
+  const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
+  await db.insert(sessions).values({ id: token, userId, expiresAt });
+  return token;
+}
+
+async function uniqueHandleFromGoogleProfile(base: string): Promise<string> {
+  const cleaned = base.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20) || "user";
+  let handle = cleaned;
+  let suffix = 0;
+  for (;;) {
+    const [taken] = await db.select({ id: users.id }).from(users).where(eq(users.handle, handle));
+    if (!taken) return handle;
+    suffix += 1;
+    handle = `${cleaned}${suffix}`;
+  }
+}
+
+async function upsertGoogleUser(profile: {
+  sub: string;
+  email?: string;
+  name?: string;
+  picture?: string;
+}): Promise<string> {
+  const [byGoogleId] = await db.select().from(users).where(eq(users.googleId, profile.sub));
+  if (byGoogleId) return byGoogleId.id;
+
+  const email = profile.email?.trim().toLowerCase();
+  if (email) {
+    const [byEmail] = await db.select().from(users).where(eq(users.email, email));
+    if (byEmail) {
+      await db.update(users).set({ googleId: profile.sub }).where(eq(users.id, byEmail.id));
+      return byEmail.id;
+    }
+  }
+
+  const handle = await uniqueHandleFromGoogleProfile(email?.split("@")[0] || profile.name || "user");
+  const [user] = await db
+    .insert(users)
+    .values({
+      handle,
+      name: profile.name || handle,
+      email,
+      googleId: profile.sub,
+      avatarUrl: profile.picture || `https://api.dicebear.com/9.x/glass/svg?seed=${handle}`,
+    })
+    .returning();
+  return user.id;
+}
+
+async function handleGoogleAuthStart(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  if (!googleAuthConfigured()) {
+    return new Response("Google sign-in is not configured on this server yet", { status: 501 });
+  }
+
+  const returnTo = url.searchParams.get("returnTo") || "/";
+  const state = randomUUID();
+  const redirectUri = new URL("/api/auth/google/callback", url.origin).toString();
+  const cookieValue = encodeURIComponent(JSON.stringify({ state, returnTo }));
+
+  const params = new URLSearchParams({
+    client_id: process.env.GOOGLE_CLIENT_ID!,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "openid email profile",
+    state,
+    prompt: "select_account",
+  });
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
+      "set-cookie": googleAuthStateCookieHeader(cookieValue, 600),
+    },
+  });
+}
+
+async function handleGoogleAuthCallback(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const stateCookie = readGoogleAuthStateCookie(request);
+  const clearCookie = googleAuthStateCookieHeader("", 0);
+
+  const fail = (reason: string) => {
+    const target = new URL("/login", url.origin);
+    target.searchParams.set("authError", reason);
+    return new Response(null, {
+      status: 302,
+      headers: { location: target.toString(), "set-cookie": clearCookie },
+    });
+  };
+
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  if (!code || !state || !stateCookie || state !== stateCookie.state) return fail("invalidState");
+
+  try {
+    const redirectUri = new URL("/api/auth/google/callback", url.origin).toString();
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: process.env.GOOGLE_CLIENT_ID!,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+        code,
+        grant_type: "authorization_code",
+        redirect_uri: redirectUri,
+      }),
+    });
+    if (!tokenRes.ok) throw new Error(await tokenRes.text());
+    const tokens = (await tokenRes.json()) as { access_token: string };
+
+    const profileRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { authorization: `Bearer ${tokens.access_token}` },
+    });
+    if (!profileRes.ok) throw new Error(await profileRes.text());
+    const profile = (await profileRes.json()) as {
+      sub: string;
+      email?: string;
+      name?: string;
+      picture?: string;
+    };
+
+    const userId = await upsertGoogleUser(profile);
+    const token = await createRawSession(userId);
+
+    const headers = new Headers();
+    headers.set("location", new URL(stateCookie.returnTo, url.origin).toString());
+    headers.append("set-cookie", clearCookie);
+    headers.append("set-cookie", sessionCookieHeader(token));
+    return new Response(null, { status: 302, headers });
+  } catch (error) {
+    console.error(error);
+    return fail("exchangeFailed");
+  }
+}
+
 let serverEntryPromise: Promise<ServerEntry> | undefined;
 
 async function getServerEntry(): Promise<ServerEntry> {
@@ -253,6 +426,8 @@ export default {
       if (request.method === "GET") {
         const connectResponse = await handleConnectRequest(request, pathname);
         if (connectResponse) return connectResponse;
+        if (pathname === "/api/auth/google/start") return await handleGoogleAuthStart(request);
+        if (pathname === "/api/auth/google/callback") return await handleGoogleAuthCallback(request);
       }
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

@@ -13,8 +13,12 @@ export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   handle: text("handle").notNull().unique(),
   name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
+  // Nullable because an account can be created via phone or Google sign-in without ever setting
+  // one of these — a user still has at least one of email/phone/googleId, just not all three.
+  email: text("email").unique(),
+  phone: text("phone").unique(),
+  googleId: text("google_id").unique(),
+  passwordHash: text("password_hash"),
   avatarUrl: text("avatar_url").notNull(),
   bio: text("bio").notNull().default(""),
   verified: boolean("verified").notNull().default(false),
@@ -284,6 +288,11 @@ export const liveRooms = pgTable("live_rooms", {
   hostId: uuid("host_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
+  // Set only for a type === "battle" room started via a direct duet challenge (ProfileView's
+  // "Challenge to Duet" button) — the specific user invited to co-publish audio/video alongside
+  // the host. A "battle" room started from the plain Go Live dialog has no opponent and behaves
+  // like any other room (host publishes, everyone else watches) until someone is challenged.
+  opponentId: uuid("opponent_id").references(() => users.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   type: text("type").notNull().default("set"), // battle | set | acoustic
   status: text("status").notNull().default("live"), // live | ended

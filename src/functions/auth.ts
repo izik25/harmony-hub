@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { users, sessions } from "@/db/schema";
+import { phoneAuth } from "@/lib/sms";
 import { toSafeError } from "./safe-error";
 
 const SESSION_COOKIE = "sona_session";
@@ -15,6 +16,7 @@ export type SessionUser = {
   handle: string;
   name: string;
   email: string;
+  phone: string;
   avatarUrl: string;
   bio: string;
   verified: boolean;
@@ -31,7 +33,8 @@ function toSessionUser(u: typeof users.$inferSelect): SessionUser {
     id: u.id,
     handle: u.handle,
     name: u.name,
-    email: u.email,
+    email: u.email ?? "",
+    phone: u.phone ?? "",
     avatarUrl: u.avatarUrl,
     bio: u.bio,
     verified: u.verified,
@@ -136,7 +139,7 @@ export const login = createServerFn({ method: "POST" })
     const email = data.email.trim().toLowerCase();
     try {
       const [user] = await db.select().from(users).where(eq(users.email, email));
-      if (!user) throw new Error("invalidCredentials");
+      if (!user || !user.passwordHash) throw new Error("invalidCredentials");
       const ok = await bcrypt.compare(data.password, user.passwordHash);
       if (!ok) throw new Error("invalidCredentials");
       await createSession(user.id);
@@ -152,3 +155,76 @@ export const logout = createServerFn({ method: "POST" }).handler(async () => {
   deleteCookie(SESSION_COOKIE, { path: "/" });
   return { ok: true };
 });
+
+/** Lets the login/signup pages hide sign-in methods that have no keys configured yet. */
+export const getAuthProviders = createServerFn({ method: "GET" }).handler(async () => {
+  return {
+    phone: phoneAuth.configured(),
+    google: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+  };
+});
+
+function normalizePhone(raw: string): string | null {
+  const trimmed = raw.trim().replace(/[\s()-]/g, "");
+  return /^\+[1-9]\d{7,14}$/.test(trimmed) ? trimmed : null;
+}
+
+async function uniqueHandleFromPhone(phone: string): Promise<string> {
+  const digits = phone.replace(/\D/g, "").slice(-6);
+  const base = `user${digits}`;
+  let handle = base;
+  let suffix = 0;
+  for (;;) {
+    const [taken] = await db.select({ id: users.id }).from(users).where(eq(users.handle, handle));
+    if (!taken) return handle;
+    suffix += 1;
+    handle = `${base}${suffix}`;
+  }
+}
+
+export const requestPhoneCode = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input as { phone: string })
+  .handler(async ({ data }) => {
+    if (!phoneAuth.configured()) throw new Error("phoneAuthNotConfigured");
+    const phone = normalizePhone(data.phone);
+    if (!phone) throw new Error("invalidPhone");
+    try {
+      await phoneAuth.sendPhoneCode(phone);
+      return { ok: true };
+    } catch (error) {
+      throw toSafeError(error);
+    }
+  });
+
+export const verifyPhoneCode = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input as { phone: string; code: string })
+  .handler(async ({ data }) => {
+    if (!phoneAuth.configured()) throw new Error("phoneAuthNotConfigured");
+    const phone = normalizePhone(data.phone);
+    if (!phone) throw new Error("invalidPhone");
+    try {
+      const approved = await phoneAuth.checkPhoneCode(phone, data.code.trim());
+      if (!approved) throw new Error("invalidCode");
+
+      const [existing] = await db.select().from(users).where(eq(users.phone, phone));
+      if (existing) {
+        await createSession(existing.id);
+        return toSessionUser(existing);
+      }
+
+      const handle = await uniqueHandleFromPhone(phone);
+      const [user] = await db
+        .insert(users)
+        .values({
+          handle,
+          name: "New Artist",
+          phone,
+          avatarUrl: `https://api.dicebear.com/9.x/glass/svg?seed=${handle}`,
+        })
+        .returning();
+      await createSession(user.id);
+      return toSessionUser(user);
+    } catch (error) {
+      throw toSafeError(error);
+    }
+  });

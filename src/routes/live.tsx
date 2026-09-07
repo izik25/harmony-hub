@@ -41,7 +41,13 @@ function LivePage() {
     onSuccess: (res) => {
       sessionStorage.setItem(
         `sona-live-host-${res.room.id}`,
-        JSON.stringify({ token: res.token, livekitUrl: res.livekitUrl }),
+        JSON.stringify({
+          token: res.token,
+          livekitUrl: res.livekitUrl,
+          type: res.room.type,
+          host: null,
+          opponent: null,
+        }),
       );
       setGoLiveOpen(false);
       navigate({ to: "/live/$roomId", params: { roomId: res.room.id } });
