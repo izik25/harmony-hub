@@ -34,12 +34,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { smartUploadMedia } from "@/lib/blob-upload";
 import { createDraft } from "@/functions/posts";
 import { listKaraokeArtists, listKaraokeTracks } from "@/functions/karaoke";
 import { processRecording } from "@/lib/mix-recording";
 import { commitCheckpoint, trimCheckpoint } from "@/lib/audio-splice";
-import { pickSupportedMimeType } from "@/lib/video-synthesis";
+import * as videoSplice from "@/lib/video-splice";
+import { openSelfieCamera, buildCombinedRecorder } from "@/lib/camera-capture";
 import {
   routeToHeadphonesIfAvailable,
   routeAudioContextToHeadphonesIfAvailable,
@@ -423,14 +425,14 @@ function RecordPage() {
   const [cutConfirm, setCutConfirm] = useState<number | null>(null);
   // Records the user's own camera alongside the mic, composited as a small self-preview over the
   // karaoke video, so the resulting take is an actual performance video (see finishMutation)
-  // instead of audio-only. Deliberately simple — no pause/rewind for this mode (see the recording
-  // control row and the seconds readout below, both gated on !cameraEnabled): a combined
-  // video+audio blob can't be decoded/re-spliced the way audio-splice.ts does for audio-only
-  // checkpoints, so a camera take is one continuous segment, start to finish.
+  // instead of audio-only. Pause/rewind-fix work exactly like the audio-only flow (same
+  // baseBlobRef/checkpoint architecture below) — the only difference is which splice
+  // implementation the checkpoint/cut call sites use: audio-splice.ts (instant, in-memory buffer
+  // slicing) when !cameraEnabled, video-splice.ts (plays segments through a canvas + MediaRecorder
+  // re-encode — see that file) when cameraEnabled.
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const camStreamRef = useRef<MediaStream | null>(null);
   const camVideoRef = useRef<HTMLVideoElement | null>(null);
-  const camMimeTypeRef = useRef<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Array<BlobPart>>([]);
@@ -443,6 +445,13 @@ function RecordPage() {
   // only be decoded from its own start, so there's no way to snip a "resumed" recorder's stream
   // in the middle — but decoding, slicing and re-concatenating whole takes works from any blob.
   const baseBlobRef = useRef<Blob | null>(null);
+  // Which splice implementation baseBlobRef's contents actually need (audio-splice.ts vs
+  // video-splice.ts) — set alongside baseBlobRef every time a recorder is (re)created, and read
+  // by confirmCut, which runs outside that effect.
+  const spliceRef = useRef<{
+    commitCheckpoint: typeof commitCheckpoint;
+    trimCheckpoint: typeof trimCheckpoint;
+  }>({ commitCheckpoint, trimCheckpoint });
   // Resolves once a live recorder's audio has been folded into baseBlobRef; awaited before
   // anything (finish, a new scrub) reads baseBlobRef so it never races an in-flight checkpoint.
   const checkpointPromiseRef = useRef<Promise<void>>(Promise.resolve());
@@ -486,8 +495,7 @@ function RecordPage() {
       return;
     }
     let cancelled = false;
-    navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: "user", width: { ideal: 480 } } })
+    openSelfieCamera()
       .then((camStream) => {
         if (cancelled) {
           camStream.getTracks().forEach((tr) => tr.stop());
@@ -530,25 +538,12 @@ function RecordPage() {
   // later), creates the draft, and lands on Studio — no separate "Save" tap in between.
   const finishMutation = useMutation({
     mutationFn: async (rawBlob: Blob) => {
-      // Camera takes are a single muxed video+audio blob — processRecording only ever decodes
-      // and outputs pure audio, so there's nothing to mix here; upload the take as-is and store
-      // it as videoUrl instead of audioUrl (see FeedItem in routes/index.tsx, which plays
-      // videoUrl directly when a post has one).
-      if (cameraEnabled) {
-        const ext = rawBlob.type.includes("mp4") ? "mp4" : "webm";
-        const { url } = await smartUploadMedia(rawBlob, `recording-video-${Date.now()}.${ext}`);
-        return createDraft({
-          data: {
-            audioUrl: "",
-            videoUrl: url,
-            backingTrackUrl: selectedTrack?.videoUrl,
-            title: selectedTrack
-              ? [selectedTrack.artist, selectedTrack.title].filter(Boolean).join(" — ")
-              : undefined,
-          },
-        });
-      }
-
+      // A camera take's rawBlob is a video file, but AudioContext.decodeAudioData transparently
+      // extracts just its audio track (verified against a real recorded take) — so
+      // processRecording (audio-only in, audio-only out) needs zero changes to run on it, and a
+      // camera take gets a completely normal audioUrl/rawVocalUrl for free, same as any other
+      // take. rawBlob is uploaded once either way, and camera mode just also points videoUrl at
+      // that same upload — no separate "clean audio" extraction/upload needed.
       let mixedBlob: Blob;
       try {
         mixedBlob = await Promise.race([
@@ -567,9 +562,14 @@ function RecordPage() {
       }
 
       const ext = mixedBlob.type.includes("wav") ? "wav" : "webm";
-      // rawBlob is WAV whenever the take went through a rewind/cut checkpoint (see
-      // audio-splice.ts) and plain WebM otherwise — name it to match what it actually is.
-      const rawExt = rawBlob.type.includes("wav") ? "wav" : "webm";
+      // rawBlob is WAV whenever an audio-only take went through a rewind/cut checkpoint (see
+      // audio-splice.ts), a video file for a camera take, and plain WebM otherwise — name it to
+      // match what it actually is.
+      const rawExt = rawBlob.type.includes("wav")
+        ? "wav"
+        : rawBlob.type.includes("mp4")
+          ? "mp4"
+          : "webm";
       const [mixed, raw] = await Promise.all([
         smartUploadMedia(mixedBlob, `recording-${Date.now()}.${ext}`),
         smartUploadMedia(rawBlob, `recording-raw-${Date.now()}.${rawExt}`),
@@ -578,6 +578,7 @@ function RecordPage() {
         data: {
           audioUrl: mixed.url,
           rawVocalUrl: raw.url,
+          videoUrl: cameraEnabled ? raw.url : undefined,
           backingTrackUrl: selectedTrack?.videoUrl,
           title: selectedTrack
             ? [selectedTrack.artist, selectedTrack.title].filter(Boolean).join(" — ")
@@ -616,28 +617,21 @@ function RecordPage() {
         // Explicit bitrate — MediaRecorder's default Opus encoding is conservative enough that
         // the raw capture itself can come out sounding thin/"voice memo"-like before any
         // cleanup even runs. 128kbps is comfortably high quality for a mono voice track.
-        let recorder: MediaRecorder;
-        if (cameraEnabled && camStreamRef.current) {
-          const combined = new MediaStream([
-            ...camStreamRef.current.getVideoTracks(),
-            ...stream.current.getAudioTracks(),
-          ]);
-          const mimeType = pickSupportedMimeType();
-          camMimeTypeRef.current = mimeType;
-          recorder = new MediaRecorder(combined, {
-            mimeType,
-            videoBitsPerSecond: 2_500_000,
-            audioBitsPerSecond: 128_000,
-          });
-        } else {
-          recorder = new MediaRecorder(stream.current, { audioBitsPerSecond: 128_000 });
-        }
+        const usingCamera = cameraEnabled && !!camStreamRef.current;
+        const recorder = usingCamera
+          ? buildCombinedRecorder(stream.current, camStreamRef.current!).recorder
+          : new MediaRecorder(stream.current, { audioBitsPerSecond: 128_000 });
+        // Which splice implementation folds/cuts this take's checkpoints — audio-splice.ts's
+        // in-memory buffer slicing for a normal take, video-splice.ts's canvas re-encode for a
+        // camera one (see that file). Captured once per recorder since cameraEnabled can't
+        // change mid-take (the toggle is disabled once recording starts).
+        const splice = usingCamera ? videoSplice : { commitCheckpoint, trimCheckpoint };
         recorder.ondataavailable = (e) => {
           if (e.data.size > 0) chunksRef.current.push(e.data);
         };
         recorder.onstop = async () => {
           const newBlob = new Blob(chunksRef.current, {
-            type: cameraEnabled ? camMimeTypeRef.current || "video/webm" : "audio/webm",
+            type: recorder.mimeType || (usingCamera ? "video/webm" : "audio/webm"),
           });
           chunksRef.current = [];
           const mode = stopModeRef.current;
@@ -647,7 +641,7 @@ function RecordPage() {
           if (mode === "finish") {
             if (baseBlobRef.current) {
               try {
-                const { blob } = await commitCheckpoint(baseBlobRef.current, newBlob);
+                const { blob } = await splice.commitCheckpoint(baseBlobRef.current, newBlob);
                 finishMutation.mutate(blob);
               } catch (err) {
                 console.error(err);
@@ -664,7 +658,7 @@ function RecordPage() {
           // scrub never loses audio, even though the MediaRecorder instance itself is discarded.
           if (newBlob.size > 0) {
             try {
-              const { blob } = await commitCheckpoint(baseBlobRef.current, newBlob);
+              const { blob } = await splice.commitCheckpoint(baseBlobRef.current, newBlob);
               baseBlobRef.current = blob;
             } catch (err) {
               console.error(err); // keep the previous checkpoint rather than losing the take
@@ -674,6 +668,7 @@ function RecordPage() {
         };
         recorder.start();
         mediaRecorderRef.current = recorder;
+        spliceRef.current = splice;
       }
     }, 100);
     return () => {
@@ -779,7 +774,10 @@ function RecordPage() {
       return;
     }
     try {
-      const { blob, seconds: exact } = await trimCheckpoint(baseBlobRef.current, target);
+      const { blob, seconds: exact } = await spliceRef.current.trimCheckpoint(
+        baseBlobRef.current,
+        target,
+      );
       baseBlobRef.current = blob;
       setSeconds(Math.round(exact));
       if (videoRef.current) videoRef.current.currentTime = target;
@@ -858,6 +856,48 @@ function RecordPage() {
           )}
         </div>
 
+        {/* Both toggles used to live as small icon-only badges floating over the video, which
+            read as unlabeled/cryptic — moved up here as a plain, always-visible settings row with
+            a name and one-line explanation each, same pattern as the account-type toggle in
+            profile settings (ProfileView.tsx). */}
+        <div className="relative mt-3 space-y-1 rounded-3xl border border-border bg-card p-3 shadow-pop animate-fade-up stagger-2">
+          {selectedTrack && (
+            <div className="flex items-center justify-between gap-3 p-1">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-coral/15 text-brand-coral">
+                  <Video className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{t("record.selfieCameraLabel")}</p>
+                  <p className="text-xs text-muted-foreground">{t("record.selfieCameraHint")}</p>
+                </div>
+              </div>
+              <Switch
+                checked={cameraEnabled}
+                onCheckedChange={setCameraEnabled}
+                disabled={recording || phase === "paused"}
+                aria-label={t("record.selfieCameraLabel")}
+              />
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3 p-1">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-teal/15 text-brand-teal">
+                <Headphones className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">{t("record.monitorOn")}</p>
+                <p className="text-xs text-muted-foreground">{t("record.monitorHint")}</p>
+              </div>
+            </div>
+            <Switch
+              checked={monitorEnabled}
+              onCheckedChange={toggleMonitor}
+              aria-label={t("record.monitorOn")}
+            />
+          </div>
+        </div>
+
         <motion.div
           animate={
             recording
@@ -872,7 +912,7 @@ function RecordPage() {
           transition={
             recording ? { duration: 1.6, repeat: Infinity, ease: "easeOut" } : { duration: 0.3 }
           }
-          className="relative mt-6 overflow-hidden rounded-[2rem] border border-border bg-card shadow-pop-lg animate-fade-up stagger-2"
+          className="relative mt-6 overflow-hidden rounded-[2rem] border border-border bg-card shadow-pop-lg animate-fade-up stagger-3"
         >
           {/* No padding around the video itself — every extra pixel here is a pixel of lyrics
               you can actually read. Controls sit in a slim strip along the bottom edge instead
@@ -931,36 +971,6 @@ function RecordPage() {
               </span>
             )}
 
-            {selectedTrack && !recording && phase !== "paused" && (
-              <button
-                onClick={() => setCameraEnabled((v) => !v)}
-                aria-pressed={cameraEnabled}
-                aria-label={cameraEnabled ? t("record.cameraOff") : t("record.cameraOn")}
-                title={cameraEnabled ? t("record.cameraOff") : t("record.cameraOn")}
-                className={`press-scale absolute left-3 top-3 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold backdrop-blur-sm transition-colors ${
-                  cameraEnabled
-                    ? "bg-brand-coral text-white shadow-pop"
-                    : "bg-black/60 text-white/70"
-                }`}
-              >
-                <Video className="h-3.5 w-3.5" />
-                {cameraEnabled && t("record.cameraOn")}
-              </button>
-            )}
-
-            <button
-              onClick={toggleMonitor}
-              aria-pressed={monitorEnabled}
-              aria-label={monitorEnabled ? t("record.monitorOff") : t("record.monitorOn")}
-              title={monitorEnabled ? t("record.monitorOff") : t("record.monitorOn")}
-              className={`press-scale absolute right-3 top-3 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold backdrop-blur-sm transition-colors ${
-                monitorEnabled ? "bg-brand-teal text-white shadow-pop" : "bg-black/60 text-white/70"
-              }`}
-            >
-              <Headphones className="h-3.5 w-3.5" />
-              {monitorEnabled && t("record.monitorOn")}
-            </button>
-
             {(selectedTrack || recording || phase === "paused") && (
               <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-3 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pb-3 pt-8">
                 <div className="pointer-events-auto flex items-center gap-3">
@@ -981,16 +991,12 @@ function RecordPage() {
                     </>
                   ) : recording ? (
                     <>
-                      {/* No pause for a camera take — see the cameraEnabled comment near its state
-                        declaration for why this stays start-to-finish only. */}
-                      {!cameraEnabled && (
-                        <ControlButton
-                          onClick={pauseRecording}
-                          icon={<Pause className="h-5 w-5" />}
-                          label={t("common.pause")}
-                          variant="glass"
-                        />
-                      )}
+                      <ControlButton
+                        onClick={pauseRecording}
+                        icon={<Pause className="h-5 w-5" />}
+                        label={t("common.pause")}
+                        variant="glass"
+                      />
                       <ControlButton
                         onClick={finishRecording}
                         icon={<Check className="h-5 w-5" />}
@@ -1054,16 +1060,7 @@ function RecordPage() {
               </div>
             )}
 
-            {(phase === "recording" || phase === "paused") && seconds > 0 && cameraEnabled ? (
-              // Camera takes skip the rewind/cut scrubber entirely — see the cameraEnabled state
-              // comment for why — just a plain elapsed-time readout instead.
-              <div
-                className={`flex items-center justify-between text-[11px] text-muted-foreground ${selectedTrack ? "mt-3" : ""}`}
-              >
-                <span>{t("record.rec")}</span>
-                <span>{formatTime(seconds)}</span>
-              </div>
-            ) : (phase === "recording" || phase === "paused") && seconds > 0 ? (
+            {(phase === "recording" || phase === "paused") && seconds > 0 ? (
               <div className={selectedTrack ? "mt-3" : ""}>
                 <ScrubBar
                   totalSeconds={seconds}
@@ -1095,7 +1092,7 @@ function RecordPage() {
           </div>
         </motion.div>
 
-        <p className="relative mt-4 text-center text-xs text-muted-foreground animate-fade-up stagger-3">
+        <p className="relative mt-4 text-center text-xs text-muted-foreground animate-fade-up stagger-4">
           {t("record.opensStudioHint")}
         </p>
       </div>

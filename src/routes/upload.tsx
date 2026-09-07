@@ -11,8 +11,6 @@ import {
   Lock,
   CheckCircle2,
   Share2,
-  Sparkles,
-  RefreshCw,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -20,10 +18,9 @@ import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
-import { PostCoverBg } from "@/components/PostCoverBg";
+import { CoverImagePicker } from "@/components/CoverImagePicker";
 import { PublishEverywhereModal } from "@/components/PublishEverywhereModal";
 import { getDraft, publishPost } from "@/functions/posts";
-import { generateCoverImage } from "@/functions/cover-image";
 import { smartUploadMedia } from "@/lib/blob-upload";
 import { translateServerError } from "@/lib/i18n";
 
@@ -117,7 +114,6 @@ function UploadPage() {
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const coverFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const uploadFileMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -131,27 +127,6 @@ function UploadPage() {
   const audioUrl = draftId ? draft?.audioUrl : pickedFile?.url;
   const coverSubject = title.trim() || draft?.title || draft?.songTitle || "";
   const attachedVideoUrl = videoUrl ?? draft?.videoUrl;
-
-  const coverMutation = useMutation({
-    mutationFn: () => generateCoverImage({ data: { songTitle: coverSubject, category } }),
-    onSuccess: (result) => setCoverUrl(result.url),
-    onError: (e: Error) => toast.error(translateServerError(e.message)),
-  });
-
-  // Manual cover upload — an alternative to AI generation. An image sets coverUrl exactly like
-  // generation does; a video sets videoUrl instead, since a video post plays that directly in the
-  // feed (see FeedItem in routes/index.tsx) rather than needing a separate static cover.
-  const coverUploadMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const { url } = await smartUploadMedia(file, file.name);
-      return { url, isVideo: file.type.startsWith("video/") };
-    },
-    onSuccess: ({ url, isVideo }) => {
-      if (isVideo) setVideoUrl(url);
-      else setCoverUrl(url);
-    },
-    onError: (e: Error) => toast.error(translateServerError(e.message)),
-  });
 
   const togglePreview = () => {
     if (!audioUrl) return;
@@ -214,72 +189,15 @@ function UploadPage() {
         <p className="mt-4 mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           {t("upload.coverImage")}
         </p>
-        <div className="relative h-56 w-full overflow-hidden rounded-3xl border border-border">
-          <PostCoverBg hue={280} seed={draftId ?? "new"} imageUrl={coverUrl ?? undefined} />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
-          {!coverUrl && (
-            <div className="absolute inset-0 grid place-items-center">
-              <Sparkles className="h-10 w-10 text-white/25" />
-            </div>
-          )}
-          <div className="absolute inset-x-0 bottom-0 p-4">
-            <p className="mb-2 text-xs text-white/80">
-              {attachedVideoUrl
-                ? t("upload.videoAttached")
-                : coverUrl
-                  ? t("upload.coverReady")
-                  : t("upload.coverHint")}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <motion.button
-                type="button"
-                onClick={() => coverMutation.mutate()}
-                disabled={coverMutation.isPending}
-                whileTap={coverMutation.isPending ? undefined : { scale: 0.95 }}
-                whileHover={coverMutation.isPending ? undefined : { scale: 1.03 }}
-                transition={{ type: "spring", stiffness: 450, damping: 28 }}
-                className="inline-flex items-center gap-1.5 rounded-full bg-brand-coral px-4 py-2 text-xs font-bold text-white shadow-pop-coral disabled:opacity-60"
-              >
-                {coverMutation.isPending ? (
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="h-3.5 w-3.5" />
-                )}
-                {coverMutation.isPending
-                  ? t("upload.generatingCover")
-                  : coverUrl
-                    ? t("upload.regenerateCover")
-                    : t("upload.generateCover")}
-              </motion.button>
-              <input
-                ref={coverFileInputRef}
-                type="file"
-                accept="image/*,video/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) coverUploadMutation.mutate(file);
-                }}
-              />
-              <motion.button
-                type="button"
-                onClick={() => coverFileInputRef.current?.click()}
-                disabled={coverUploadMutation.isPending}
-                whileTap={coverUploadMutation.isPending ? undefined : { scale: 0.95 }}
-                whileHover={coverUploadMutation.isPending ? undefined : { scale: 1.03 }}
-                transition={{ type: "spring", stiffness: 450, damping: 28 }}
-                className="inline-flex items-center gap-1.5 rounded-full border border-white/40 bg-white/10 px-4 py-2 text-xs font-bold text-white backdrop-blur-sm disabled:opacity-60"
-              >
-                {coverUploadMutation.isPending ? (
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Upload className="h-3.5 w-3.5" />
-                )}
-                {t("upload.uploadOwnCover")}
-              </motion.button>
-            </div>
-          </div>
-        </div>
+        <CoverImagePicker
+          coverUrl={coverUrl}
+          videoUrl={attachedVideoUrl}
+          coverSubject={coverSubject}
+          category={category}
+          seed={draftId ?? "new"}
+          onCoverGenerated={setCoverUrl}
+          onFileUploaded={({ url, isVideo }) => (isVideo ? setVideoUrl(url) : setCoverUrl(url))}
+        />
 
         {draftId ? (
           <div className="mt-4 flex items-center gap-3 rounded-3xl border border-accent/40 bg-accent/5 p-4">

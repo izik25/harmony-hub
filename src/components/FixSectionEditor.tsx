@@ -8,6 +8,8 @@ import { smartUploadMedia } from "@/lib/blob-upload";
 import { updateDraftAudio } from "@/functions/posts";
 import { processRecording } from "@/lib/mix-recording";
 import { replaceSegment } from "@/lib/audio-splice";
+import * as videoSplice from "@/lib/video-splice";
+import { openSelfieCamera, buildCombinedRecorder } from "@/lib/camera-capture";
 import { translateServerError } from "@/lib/i18n";
 
 // Same idea as record.tsx's MIC_CONSTRAINTS: AEC off (it forces a different, speaker-routing
@@ -47,6 +49,10 @@ export function FixSectionEditor({
   // you scrub to the spot you want fixed, open this panel, and only have to mark the end instead
   // of re-finding the start from scratch.
   initialStartFraction,
+  // When set, this draft has a performance video — the re-recorded punch-in also captures the
+  // selfie camera, and saving splices both the audio (rawVocalUrl, unchanged path) and this video
+  // in lockstep (see video-splice.ts) so the fix shows up in both.
+  videoUrl,
   onSaved,
   onClose,
 }: {
@@ -56,7 +62,8 @@ export function FixSectionEditor({
   vocalGain: number;
   backingGain: number;
   initialStartFraction?: number;
-  onSaved: (urls: { audioUrl: string; rawVocalUrl: string }) => void;
+  videoUrl?: string;
+  onSaved: (urls: { audioUrl: string; rawVocalUrl: string; videoUrl?: string }) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -68,14 +75,18 @@ export function FixSectionEditor({
   const [end, setEnd] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const backingRef = useRef<HTMLVideoElement | null>(null);
+  const camStreamRef = useRef<MediaStream | null>(null);
+  const camVideoRef = useRef<HTMLVideoElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Array<BlobPart>>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const pendingBlobRef = useRef<Blob | null>(null);
+  const pendingVideoBlobRef = useRef<Blob | null>(null);
   // Guards the timeupdate listener that watches for the pre-roll cue crossing `start` — without
   // it, a stray timeupdate firing after the phase has already moved on (e.g. user cancels mid-cue)
   // could kick off a recording nobody asked for anymore.
@@ -89,6 +100,29 @@ export function FixSectionEditor({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Opens the selfie camera for the whole time this panel is open (not just while actually
+  // recording the punch-in) — same reasoning as record.tsx: framed and ready before the user taps
+  // record, and doubles as a live self-preview throughout.
+  useEffect(() => {
+    if (!videoUrl) return;
+    let cancelled = false;
+    openSelfieCamera()
+      .then((camStream) => {
+        if (cancelled) {
+          camStream.getTracks().forEach((tr) => tr.stop());
+          return;
+        }
+        camStreamRef.current = camStream;
+        if (camVideoRef.current) camVideoRef.current.srcObject = camStream;
+      })
+      .catch(() => toast.error(t("record.cameraDenied")));
+    return () => {
+      cancelled = true;
+      camStreamRef.current?.getTracks().forEach((tr) => tr.stop());
+      camStreamRef.current = null;
+    };
+  }, [videoUrl, t]);
 
   const togglePlay = () => {
     const audio = audioRef.current;
@@ -132,7 +166,10 @@ export function FixSectionEditor({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS });
       streamRef.current = stream;
       chunksRef.current = [];
-      const recorder = new MediaRecorder(stream, { audioBitsPerSecond: 128_000 });
+      const recorder =
+        videoUrl && camStreamRef.current
+          ? buildCombinedRecorder(stream, camStreamRef.current).recorder
+          : new MediaRecorder(stream, { audioBitsPerSecond: 128_000 });
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
@@ -192,7 +229,9 @@ export function FixSectionEditor({
     if (!recorder || recorder.state !== "recording") return;
     recorder.onstop = async () => {
       cleanupStream();
-      const newBlob = new Blob(chunksRef.current, { type: "audio/webm" });
+      const newBlob = new Blob(chunksRef.current, {
+        type: recorder.mimeType || (videoUrl ? "video/webm" : "audio/webm"),
+      });
       chunksRef.current = [];
       if (newBlob.size === 0 || start == null || end == null) {
         setPhase("marking");
@@ -200,10 +239,24 @@ export function FixSectionEditor({
       }
       setPhase("splicing");
       try {
-        const baseBlob = await fetch(rawVocalUrl).then((r) => r.blob());
-        const { blob } = await replaceSegment(baseBlob, start, end, newBlob);
-        pendingBlobRef.current = blob;
-        setPreviewUrl(URL.createObjectURL(blob));
+        // audio-splice.ts's decodeAudioData transparently extracts just the audio track even
+        // when newBlob is actually a video file (verified against a real recorded take) — so the
+        // audio side of the fix needs no special-casing here at all.
+        const audioBase = await fetch(rawVocalUrl).then((r) => r.blob());
+        const [audioResult, videoResult] = await Promise.all([
+          replaceSegment(audioBase, start, end, newBlob),
+          videoUrl
+            ? fetch(videoUrl)
+                .then((r) => r.blob())
+                .then((videoBase) => videoSplice.replaceSegment(videoBase, start, end, newBlob))
+            : Promise.resolve(null),
+        ]);
+        pendingBlobRef.current = audioResult.blob;
+        setPreviewUrl(URL.createObjectURL(audioResult.blob));
+        if (videoResult) {
+          pendingVideoBlobRef.current = videoResult.blob;
+          setPreviewVideoUrl(URL.createObjectURL(videoResult.blob));
+        }
         setPhase("reviewing");
       } catch (err) {
         console.error(err);
@@ -216,8 +269,11 @@ export function FixSectionEditor({
 
   const discardFix = () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (previewVideoUrl) URL.revokeObjectURL(previewVideoUrl);
     setPreviewUrl(null);
+    setPreviewVideoUrl(null);
     pendingBlobRef.current = null;
+    pendingVideoBlobRef.current = null;
     setPhase("marking");
   };
 
@@ -229,18 +285,31 @@ export function FixSectionEditor({
         vocalGain,
         backingGain,
       });
-      const [rawUp, mixedUp] = await Promise.all([
+      const videoBlob = pendingVideoBlobRef.current;
+      const [rawUp, mixedUp, videoUp] = await Promise.all([
         smartUploadMedia(raw, `fix-raw-${Date.now()}.wav`),
         smartUploadMedia(mixed, `fix-mixed-${Date.now()}.wav`),
+        videoBlob
+          ? smartUploadMedia(
+              videoBlob,
+              `fix-video-${Date.now()}.${videoBlob.type.includes("mp4") ? "mp4" : "webm"}`,
+            )
+          : Promise.resolve(null),
       ]);
       await updateDraftAudio({
-        data: { id: draftId, audioUrl: mixedUp.url, rawVocalUrl: rawUp.url },
+        data: {
+          id: draftId,
+          audioUrl: mixedUp.url,
+          rawVocalUrl: rawUp.url,
+          ...(videoUp ? { videoUrl: videoUp.url } : {}),
+        },
       });
-      return { audioUrl: mixedUp.url, rawVocalUrl: rawUp.url };
+      return { audioUrl: mixedUp.url, rawVocalUrl: rawUp.url, videoUrl: videoUp?.url };
     },
     onSuccess: (urls) => {
       toast.success(t("studio.fixSavedToast"));
       if (previewUrl) URL.revokeObjectURL(previewUrl);
+      if (previewVideoUrl) URL.revokeObjectURL(previewVideoUrl);
       onSaved(urls);
     },
     onError: (e: Error) => toast.error(translateServerError(e.message)),
@@ -256,6 +325,7 @@ export function FixSectionEditor({
     }
     cleanupStream();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (previewVideoUrl) URL.revokeObjectURL(previewVideoUrl);
     onClose();
   };
 
@@ -278,22 +348,35 @@ export function FixSectionEditor({
         </button>
       </div>
 
-      {backingTrackUrl && (
-        // Visible (and synced to the vocal) during marking/cueing/recording so the karaoke lyrics
-        // baked into this video are on screen at the exact point being fixed — muted outside of
-        // actual recording, since during marking this is just a visual reference, not something
-        // that should also be heard playing alongside the vocal preview.
-        <video
-          ref={backingRef}
-          src={backingTrackUrl}
-          className={
-            phase === "marking" || phase === "cueing" || phase === "recording"
-              ? "mt-1 aspect-video w-full rounded-xl bg-black object-contain"
-              : "hidden"
-          }
-          playsInline
-          muted={phase !== "recording"}
-        />
+      {(backingTrackUrl || videoUrl) && (
+        <div className="relative">
+          {backingTrackUrl && (
+            // Visible (and synced to the vocal) during marking/cueing/recording so the karaoke
+            // lyrics baked into this video are on screen at the exact point being fixed — muted
+            // outside of actual recording, since during marking this is just a visual reference,
+            // not something that should also be heard playing alongside the vocal preview.
+            <video
+              ref={backingRef}
+              src={backingTrackUrl}
+              className={
+                phase === "marking" || phase === "cueing" || phase === "recording"
+                  ? "mt-1 aspect-video w-full rounded-xl bg-black object-contain"
+                  : "hidden"
+              }
+              playsInline
+              muted={phase !== "recording"}
+            />
+          )}
+          {videoUrl && (
+            <video
+              ref={camVideoRef}
+              muted
+              autoPlay
+              playsInline
+              className="absolute bottom-2 end-2 h-16 w-12 rounded-lg border-2 border-white object-cover shadow-lg"
+            />
+          )}
+        </div>
       )}
       <audio
         ref={audioRef}
@@ -480,7 +563,11 @@ export function FixSectionEditor({
             <p className="mb-2 text-xs font-semibold text-muted-foreground">
               {t("studio.fixPreviewTitle")}
             </p>
-            <audio controls src={previewUrl} className="w-full" />
+            {previewVideoUrl ? (
+              <video controls src={previewVideoUrl} className="w-full rounded-xl" />
+            ) : (
+              <audio controls src={previewUrl} className="w-full" />
+            )}
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button
                 onClick={discardFix}

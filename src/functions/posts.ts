@@ -222,7 +222,19 @@ export const getDraft = createServerFn({ method: "GET" })
   });
 
 export const updateDraftAudio = createServerFn({ method: "POST" })
-  .validator((input: unknown) => input as { id: string; audioUrl: string; rawVocalUrl?: string })
+  .validator(
+    (input: unknown) =>
+      input as {
+        id: string;
+        audioUrl: string;
+        rawVocalUrl?: string;
+        // Distinguished from "not passed" (`undefined`, left untouched) so a caller can
+        // explicitly clear either one — e.g. Studio's "replace video with cover image" sends
+        // `videoUrl: ""` to drop the video and `coverUrl` to set the new image.
+        videoUrl?: string;
+        coverUrl?: string;
+      },
+  )
   .handler(async ({ data }) => {
     const userId = await requireUserId();
     await db
@@ -230,6 +242,8 @@ export const updateDraftAudio = createServerFn({ method: "POST" })
       .set({
         audioUrl: data.audioUrl,
         ...(data.rawVocalUrl ? { rawVocalUrl: data.rawVocalUrl } : {}),
+        ...(data.videoUrl !== undefined ? { videoUrl: data.videoUrl } : {}),
+        ...(data.coverUrl !== undefined ? { coverUrl: data.coverUrl } : {}),
       })
       .where(and(eq(posts.id, data.id), eq(posts.userId, userId)));
     return { ok: true };

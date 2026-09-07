@@ -116,8 +116,9 @@ const en = {
       "For the cleanest recording, use headphones — otherwise the mic can pick up the playback.",
     monitorOn: "Hear Yourself",
     monitorOff: "Monitoring Off",
-    cameraOn: "Camera On",
-    cameraOff: "Record with Camera",
+    selfieCameraLabel: "Selfie Camera",
+    selfieCameraHint: "Show yourself on screen while you sing, right over the lyrics.",
+    monitorHint: "Hear your own voice live through headphones while you record.",
     cameraDenied: "Couldn't access the camera — recording audio only.",
     monitorFeedbackWarning:
       "Live monitoring is on — use headphones, or you'll get feedback/howling.",
@@ -190,6 +191,8 @@ const en = {
     fixSpliceFailed: "Couldn't stitch the new part in — nothing was changed.",
     fixSaveFailed: "Couldn't save the fix. Try again.",
     fixSavedToast: "Section updated",
+    replaceVideoWithCover: "Replace video with a cover image",
+    coverReplacedToast: "Video replaced",
   },
   upload: {
     title: "Upload",
@@ -746,8 +749,9 @@ const he = {
       "להקלטה הכי נקייה, מומלץ להשתמש באוזניות — אחרת המיקרופון עלול לקלוט את הפלייבק.",
     monitorOn: "שמיעה עצמית",
     monitorOff: "ניטור כבוי",
-    cameraOn: "מצלמה פועלת",
-    cameraOff: "הקלט עם מצלמה",
+    selfieCameraLabel: "מצלמת סלפי",
+    selfieCameraHint: "הראה את עצמך על המסך תוך כדי שירה, מעל המילים.",
+    monitorHint: "שמע את הקול שלך בזמן אמת דרך אוזניות בזמן ההקלטה.",
     cameraDenied: "לא ניתן היה לגשת למצלמה — מקליט שמע בלבד.",
     monitorFeedbackWarning: "ניטור חי פעיל — השתמש באוזניות, אחרת יתקבל פידבק (צפצוף).",
     monitorBluetoothLatency:
@@ -821,6 +825,8 @@ const he = {
     fixSpliceFailed: "לא הצלחנו לחבר את הקטע החדש — שום דבר לא השתנה.",
     fixSaveFailed: "לא הצלחנו לשמור את התיקון. נסה שוב.",
     fixSavedToast: "הקטע עודכן",
+    replaceVideoWithCover: "החלף את הוידאו בתמונת קאבר",
+    coverReplacedToast: "הוידאו הוחלף",
   },
   upload: {
     title: "העלאה",
@@ -1374,8 +1380,9 @@ const ar = {
       "للحصول على أنظف تسجيل، يُنصح باستخدام سماعات — وإلا فقد يلتقط الميكروفون صوت التشغيل.",
     monitorOn: "استمع لنفسك",
     monitorOff: "المراقبة متوقفة",
-    cameraOn: "الكاميرا مفعّلة",
-    cameraOff: "سجّل بالكاميرا",
+    selfieCameraLabel: "كاميرا سيلفي",
+    selfieCameraHint: "اعرض نفسك على الشاشة أثناء الغناء، فوق الكلمات.",
+    monitorHint: "استمع إلى صوتك مباشرة عبر السماعات أثناء التسجيل.",
     cameraDenied: "تعذّر الوصول إلى الكاميرا — سيتم تسجيل الصوت فقط.",
     monitorFeedbackWarning: "المراقبة الحية مفعّلة — استخدم سماعات وإلا ستحصل على صدى/صفير.",
     monitorBluetoothLatency:
@@ -1451,6 +1458,8 @@ const ar = {
     fixSpliceFailed: "تعذّر دمج الجزء الجديد — لم يتغيّر شيء.",
     fixSaveFailed: "تعذّر حفظ التعديل. حاول مرة أخرى.",
     fixSavedToast: "تم تحديث المقطع",
+    replaceVideoWithCover: "استبدل الفيديو بصورة غلاف",
+    coverReplacedToast: "تم استبدال الفيديو",
   },
   upload: {
     title: "رفع",

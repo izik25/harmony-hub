@@ -10,6 +10,8 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
+  Image as ImageIcon,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -31,6 +33,7 @@ import { audioBufferToWavBlob } from "@/lib/wav-encoder";
 import { generateImpulseResponse } from "@/lib/impulse-response";
 import { translateServerError } from "@/lib/i18n";
 import { FixSectionEditor, FixSectionToggle } from "@/components/FixSectionEditor";
+import { CoverImagePicker } from "@/components/CoverImagePicker";
 
 interface StudioSearch {
   draftId?: string;
@@ -204,6 +207,8 @@ function StudioPage() {
   const [vocalVolume, setVocalVolume] = useState(125);
   const [playbackVolume, setPlaybackVolume] = useState(85);
   const [fixSectionOpen, setFixSectionOpen] = useState(false);
+  // Whether the "replace video with a cover image" picker is expanded — see replaceCoverMutation.
+  const [replacingCover, setReplacingCover] = useState(false);
 
   const chainRef = useRef<VocalChain | null>(null);
   // Playback position bookkeeping for the scrubber — Tone.Player has no native currentTime/
@@ -530,6 +535,39 @@ function StudioPage() {
     onError: (e: Error) => toast.error(translateServerError(e.message)),
   });
 
+  // Swaps a camera take's performance video for a still cover image (AI-generated or manually
+  // uploaded) — or for a different video, mirroring the publish screen's own cover picker, which
+  // accepts either. Doesn't touch audioUrl/rawVocalUrl, so DSP/Mastering/Fix a Section keep
+  // working on the same underlying take either way.
+  const replaceCoverMutation = useMutation({
+    mutationFn: async (result: { url: string; isVideo: boolean }) => {
+      if (!draftId || !draft?.audioUrl) throw new Error(t("studio.nothingToPublish"));
+      await updateDraftAudio({
+        data: {
+          id: draftId,
+          audioUrl: draft.audioUrl,
+          videoUrl: result.isVideo ? result.url : "",
+          coverUrl: result.isVideo ? draft.coverUrl : result.url,
+        },
+      });
+      return result;
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData<DraftDTO>(["draft", draftId], (old) =>
+        old
+          ? {
+              ...old,
+              videoUrl: result.isVideo ? result.url : "",
+              coverUrl: result.isVideo ? old.coverUrl : result.url,
+            }
+          : old,
+      );
+      setReplacingCover(false);
+      toast.success(t("studio.coverReplacedToast"));
+    },
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
+  });
+
   // The one-tap "get me as close to a finished studio vocal as possible" pass. Runs analyzeSignal
   // (mix-recording.ts) on whatever's actually loaded first — this take's own noise floor, dynamic
   // range, and rough tonal brightness — so it can tell an already-clean take from a noisy one
@@ -671,42 +709,54 @@ function StudioPage() {
             </Link>{" "}
             {t("studio.oneFirst")}
           </div>
-        ) : draft?.videoUrl ? (
-          // A camera-recorded (or manually uploaded) performance video — none of the DSP chain
-          // below applies to a flattened video+audio take (it's built around a decodable
-          // Tone.Player buffer, which a video draft doesn't have), so this skips straight to a
-          // plain preview + the same publish actions, unprocessed.
-          <>
-            <div className="mt-4 overflow-hidden rounded-3xl border border-border bg-card shadow-pop">
-              <video
-                src={draft.videoUrl}
-                controls
-                playsInline
-                className="aspect-[9/16] w-full bg-black object-contain"
-              />
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              <motion.button
-                onClick={() => navigate({ to: "/upload", search: { draftId: draftId! } })}
-                whileTap={{ scale: 0.95 }}
-                whileHover={{ scale: 1.03, y: -1 }}
-                transition={{ type: "spring", stiffness: 450, damping: 28 }}
-                className="flex flex-col items-center gap-1 rounded-2xl bg-brand-coral p-3 text-[11px] font-bold text-white shadow-pop-coral"
-              >
-                <Send className="h-4 w-4" /> {t("common.continueToPublish")}
-              </motion.button>
-              <button
-                onClick={() =>
-                  navigate({ to: "/upload", search: { draftId: draftId!, forCompetition: 1 } })
-                }
-                className="press-scale flex flex-col items-center gap-1 rounded-2xl border border-border bg-card/60 p-3 text-[11px] font-semibold"
-              >
-                <Send className="h-4 w-4" /> {t("record.sendComp")}
-              </button>
-            </div>
-          </>
         ) : (
           <>
+            {/* A camera-recorded (or manually uploaded) performance video — the underlying take
+                still carries a normal audioUrl/rawVocalUrl (see finishMutation in record.tsx and
+                the video-aware Fix a Section save below), so the full DSP/Mastering/Fix-a-Section
+                UI further down still applies to it exactly like any audio-only draft. This card
+                just previews the video and lets it be swapped for a still cover image. */}
+            {draft?.videoUrl && (
+              <div className="mt-4 overflow-hidden rounded-3xl border border-border bg-card shadow-pop">
+                <video
+                  src={draft.videoUrl}
+                  controls
+                  playsInline
+                  className="aspect-[9/16] w-full bg-black object-contain"
+                />
+                <div className="p-3">
+                  {replacingCover ? (
+                    <div className="space-y-2">
+                      <CoverImagePicker
+                        coverUrl={draft.coverUrl}
+                        coverSubject={draft.songTitle || draft.title}
+                        category={draft.category}
+                        seed={draftId ?? "video"}
+                        onCoverGenerated={(url) =>
+                          replaceCoverMutation.mutate({ url, isVideo: false })
+                        }
+                        onFileUploaded={(result) => replaceCoverMutation.mutate(result)}
+                      />
+                      <button
+                        onClick={() => setReplacingCover(false)}
+                        disabled={replaceCoverMutation.isPending}
+                        className="press-scale flex w-full items-center justify-center gap-2 rounded-full border border-border px-4 py-2 text-xs font-semibold text-muted-foreground disabled:opacity-40"
+                      >
+                        <X className="h-3.5 w-3.5" /> {t("common.cancel")}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setReplacingCover(true)}
+                      className="press-scale flex w-full items-center justify-center gap-2 rounded-full border border-border bg-card/60 px-4 py-2.5 text-sm font-semibold"
+                    >
+                      <ImageIcon className="h-4 w-4" /> {t("studio.replaceVideoWithCover")}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="mt-4 rounded-3xl border border-border bg-card p-4 shadow-pop">
               <div className="relative h-24 overflow-hidden rounded-xl bg-muted">
                 <div className="absolute inset-0 flex items-center justify-around px-2">
@@ -772,6 +822,7 @@ function StudioPage() {
                 draftId={draftId!}
                 rawVocalUrl={draft.rawVocalUrl}
                 backingTrackUrl={draft.backingTrackUrl}
+                videoUrl={draft.videoUrl || undefined}
                 vocalGain={vocalVolume / 100}
                 backingGain={playbackVolume / 100}
                 initialStartFraction={duration > 0 ? currentTime / duration : 0}
