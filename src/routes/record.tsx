@@ -19,6 +19,7 @@ import {
   ArrowLeft,
   User,
   Video,
+  Sparkles,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import i18n, { translateServerError } from "@/lib/i18n";
@@ -915,7 +916,7 @@ function RecordPage() {
   return (
     <AppShell>
       <TopBar />
-      <div className="relative px-4 pt-3 pb-6">
+      <div className="relative px-4 pt-4 pb-6">
         <FloatingDecor />
         <div className="relative flex items-center justify-between animate-fade-up">
           <h1 className="font-display text-2xl font-bold">{t("record.title")}</h1>
@@ -980,9 +981,9 @@ function RecordPage() {
             read as unlabeled/cryptic — moved up here as a plain, always-visible settings row with
             a name and one-line explanation each, same pattern as the account-type toggle in
             profile settings (ProfileView.tsx). */}
-        <div className="relative mt-3 space-y-1 rounded-3xl border border-border bg-card p-3 shadow-pop animate-fade-up stagger-2">
+        <div className="relative mt-3 divide-y divide-border rounded-3xl border border-border bg-card px-3 shadow-pop animate-fade-up stagger-2">
           {selectedTrack && (
-            <div className="flex items-center justify-between gap-3 p-1">
+            <div className="flex items-center justify-between gap-3 py-3">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-coral/15 text-brand-coral">
                   <Video className="h-4 w-4" />
@@ -1001,10 +1002,16 @@ function RecordPage() {
             </div>
           )}
           {selectedTrack && cameraEnabled && (
-            <div className="p-1 pt-0.5">
-              <p className="mb-1.5 text-xs font-semibold text-muted-foreground">
-                {t("record.backgroundLabel")}
-              </p>
+            <div className="py-3">
+              <div className="mb-2.5 flex items-center gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-indigo/15 text-brand-indigo">
+                  <Sparkles className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{t("record.backgroundLabel")}</p>
+                  <p className="text-xs text-muted-foreground">{t("record.backgroundHint")}</p>
+                </div>
+              </div>
               <BackgroundPicker
                 value={backgroundId}
                 onChange={chooseBackground}
@@ -1012,7 +1019,7 @@ function RecordPage() {
               />
             </div>
           )}
-          <div className="flex items-center justify-between gap-3 p-1">
+          <div className="flex items-center justify-between gap-3 py-3">
             <div className="flex min-w-0 items-center gap-3">
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-teal/15 text-brand-teal">
                 <Headphones className="h-4 w-4" />

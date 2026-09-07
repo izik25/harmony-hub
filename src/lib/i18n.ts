@@ -150,6 +150,7 @@ const en = {
     cutConfirmAction: "Delete & Re-record",
     cutFailed: "Couldn't rewind the recording — nothing was changed.",
     backgroundLabel: "Background",
+    backgroundHint: "Swap what's behind you for a virtual scene — no green screen needed.",
     bg: {
       none: "None",
       blur: "Blur",
@@ -799,6 +800,7 @@ const he = {
     cutConfirmAction: "מחק והקלט מחדש",
     cutFailed: "לא הצלחנו לחזור אחורה בהקלטה — שום דבר לא השתנה.",
     backgroundLabel: "רקע",
+    backgroundHint: "החלף את מה שמאחוריך בסצנה וירטואלית — בלי צורך במסך ירוק.",
     bg: {
       none: "ללא",
       blur: "טשטוש",
@@ -1447,6 +1449,7 @@ const ar = {
     cutConfirmAction: "حذف وإعادة التسجيل",
     cutFailed: "تعذّر الرجوع في التسجيل — لم يتغيّر شيء.",
     backgroundLabel: "الخلفية",
+    backgroundHint: "استبدل ما وراءك بمشهد افتراضي — بدون الحاجة لشاشة خضراء.",
     bg: {
       none: "بدون",
       blur: "تمويه",
