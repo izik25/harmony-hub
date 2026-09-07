@@ -188,7 +188,7 @@ export function ProfileView({ handle }: { handle: string }) {
     <AppShell>
       <TopBar />
       <div className="relative">
-        <div className="relative h-40 overflow-hidden bg-brand-indigo">
+        <div className="relative h-40 overflow-hidden">
           <ProfileBannerBars />
         </div>
         {profile.isMe && (
@@ -451,24 +451,38 @@ export function ProfileView({ handle }: { handle: string }) {
   );
 }
 
-const PROFILE_BANNER_BAR_CLASSES = ["bg-brand-coral", "bg-brand-gold", "bg-brand-teal"];
+const PROFILE_BANNER_BARS = [
+  { cls: "bg-brand-coral", glow: "var(--brand-coral)" },
+  { cls: "bg-brand-gold", glow: "var(--brand-gold)" },
+  { cls: "bg-brand-teal", glow: "var(--brand-teal)" },
+  { cls: "bg-brand-indigo", glow: "var(--brand-indigo)" },
+];
 
-function ProfileBannerBars({ count = 48 }: { count?: number }) {
+function ProfileBannerBars({ count = 56 }: { count?: number }) {
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 px-6"
+      className="pointer-events-none absolute inset-0 flex items-center justify-center gap-[3px] px-4 pb-6"
+      style={{
+        WebkitMaskImage:
+          "linear-gradient(to right, transparent, black 14%, black 86%, transparent)",
+        maskImage: "linear-gradient(to right, transparent, black 14%, black 86%, transparent)",
+      }}
     >
-      {Array.from({ length: count }).map((_, i) => (
-        <span
-          key={i}
-          className={`profile-eq-bar w-1 shrink-0 rounded-full opacity-30 ${PROFILE_BANNER_BAR_CLASSES[i % 3]}`}
-          style={{
-            animationDelay: `${(i % 12) * 0.12}s`,
-            animationDuration: `${1 + (i % 5) * 0.18}s`,
-          }}
-        />
-      ))}
+      {Array.from({ length: count }).map((_, i) => {
+        const bar = PROFILE_BANNER_BARS[i % PROFILE_BANNER_BARS.length];
+        return (
+          <span
+            key={i}
+            className={`profile-eq-bar w-1 shrink-0 rounded-full ${bar.cls}`}
+            style={{
+              animationDelay: `${(i % 12) * 0.12}s`,
+              animationDuration: `${1 + (i % 5) * 0.18}s`,
+              boxShadow: `0 0 8px ${bar.glow}`,
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
