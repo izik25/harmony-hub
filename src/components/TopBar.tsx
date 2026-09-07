@@ -48,11 +48,16 @@ export function TopBar({ transparent = false }: { transparent?: boolean }) {
     >
       <Link
         to="/"
-        className={`font-display text-xl font-bold transition-transform duration-200 ease-out hover:-translate-y-0.5 ${
-          transparent ? "text-white drop-shadow-md" : "text-brand-coral"
-        }`}
+        className="flex items-center gap-2 transition-transform duration-200 ease-out hover:-translate-y-0.5"
       >
-        SONA
+        <img src="/brand/logo-mark.png" alt="" className="h-8 w-8 rounded-lg" />
+        <span
+          className={`font-display text-xl font-bold ${
+            transparent ? "text-white drop-shadow-md" : "text-brand-coral"
+          }`}
+        >
+          Studio26
+        </span>
       </Link>
       <div className="flex items-center gap-1">
         {langs.map((l) => (

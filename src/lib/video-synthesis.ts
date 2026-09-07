@@ -1,5 +1,5 @@
 // Turns a post's (audio, cover art, title) into a vertical video file — YouTube Shorts, TikTok and
-// Instagram Reels all require actual video, but SONA recordings are audio-only. Renders a canvas
+// Instagram Reels all require actual video, but Studio26 recordings are audio-only. Renders a canvas
 // frame (cover art + title) at 30fps, muxes it with the real decoded audio via MediaRecorder, and
 // resolves a Blob ready to upload. Runs entirely in the browser; nothing here touches the server.
 //
@@ -133,11 +133,18 @@ export async function renderCoverVideo(params: {
     ctx.fillStyle = "#ffffff";
     ctx.textAlign = "center";
     ctx.font = "bold 64px system-ui, sans-serif";
-    wrapText(ctx, params.title || "SONA", CANVAS_WIDTH / 2, y + size + 140, CANVAS_WIDTH - 140, 78);
+    wrapText(
+      ctx,
+      params.title || "Studio26",
+      CANVAS_WIDTH / 2,
+      y + size + 140,
+      CANVAS_WIDTH - 140,
+      78,
+    );
 
     ctx.fillStyle = "rgba(255,255,255,0.6)";
     ctx.font = "600 34px system-ui, sans-serif";
-    ctx.fillText("SONA", CANVAS_WIDTH / 2, CANVAS_HEIGHT - 90);
+    ctx.fillText("Studio26", CANVAS_WIDTH / 2, CANVAS_HEIGHT - 90);
   };
 
   const canvasStream = (

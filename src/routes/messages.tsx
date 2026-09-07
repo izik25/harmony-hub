@@ -10,6 +10,15 @@ export const Route = createFileRoute("/messages")({
   component: MessagesPage,
 });
 
+const staggerClasses = [
+  "stagger-1",
+  "stagger-2",
+  "stagger-3",
+  "stagger-4",
+  "stagger-5",
+  "stagger-6",
+];
+
 function MessagesPage() {
   const { t } = useTranslation();
   const { data: conversations } = useQuery({
@@ -25,13 +34,13 @@ function MessagesPage() {
         {conversations?.length === 0 && (
           <p className="mt-6 text-center text-sm text-muted-foreground">{t("messages.empty")}</p>
         )}
-        <ul className="mt-4 divide-y divide-border">
-          {conversations?.map((c) => (
-            <li key={c.id}>
+        <ul className="mt-4 divide-y divide-border rounded-2xl border border-border bg-card shadow-pop">
+          {conversations?.map((c, i) => (
+            <li key={c.id} className={`animate-fade-up ${staggerClasses[i % 6]}`}>
               <Link
                 to="/messages/$conversationId"
                 params={{ conversationId: c.id }}
-                className="flex items-center gap-3 py-3"
+                className="flex items-center gap-3 px-3 py-3 hover-lift"
               >
                 <img src={c.other.avatarUrl} className="h-11 w-11 rounded-full" alt="" />
                 <div className="flex-1 overflow-hidden">

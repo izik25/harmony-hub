@@ -435,7 +435,7 @@ const en = {
     password: "Password",
     loginCta: "Log in",
     signupCta: "Sign up",
-    noAccount: "New to SONA?",
+    noAccount: "New to Studio26?",
     haveAccount: "Already have an account?",
     createOne: "Create an account",
     logIn: "Log in",
@@ -505,7 +505,7 @@ const en = {
   },
   pro: {
     title: "Become Pro",
-    subtitle: "Unlock perks across SONA with a one-time upgrade.",
+    subtitle: "Unlock perks across Studio26 with a one-time upgrade.",
     perks: {
       freeExports: "Free studio-quality exports, every time",
       proBadge: "A Pro badge on your profile",
@@ -548,7 +548,7 @@ const en = {
       kicker: "A social network built for music",
       title: "Where your voice becomes a track",
       subtitle:
-        "SONA is the social network for music — record karaoke, produce your vocals with real studio effects, compete, and publish everywhere from one app.",
+        "Studio26 is the social network for music — record karaoke, produce your vocals with real studio effects, compete, and publish everywhere from one app.",
       ctaPrimary: "Get started free",
       ctaSecondary: "I have an account",
       trust: "Real recording • Real DSP effects • Real competitions",
@@ -624,13 +624,13 @@ const en = {
     },
     cta: {
       title: "Your voice is one recording away from a real release.",
-      subtitle: "Join SONA free — no credit card required.",
+      subtitle: "Join Studio26 free — no credit card required.",
       button: "Create your account",
       loginHint: "Already have an account? Log in",
     },
     footer: {
-      tagline: "SONA — the social network for music.",
-      rights: "© {{year}} SONA. All rights reserved.",
+      tagline: "Studio26 — the social network for music.",
+      rights: "© {{year}} Studio26. All rights reserved.",
     },
   },
 };
@@ -1068,7 +1068,7 @@ const he = {
     password: "סיסמה",
     loginCta: "התחבר",
     signupCta: "הרשמה",
-    noAccount: "חדש ב-SONA?",
+    noAccount: "חדש ב-Studio26?",
     haveAccount: "כבר יש לך חשבון?",
     createOne: "צור חשבון",
     logIn: "התחבר",
@@ -1138,7 +1138,7 @@ const he = {
   },
   pro: {
     title: "הפוך למנוי Pro",
-    subtitle: "פתח הטבות בכל SONA בשדרוג חד-פעמי.",
+    subtitle: "פתח הטבות בכל Studio26 בשדרוג חד-פעמי.",
     perks: {
       freeExports: "ייצוא ברמת אולפן בחינם, בכל פעם",
       proBadge: "תג Pro בפרופיל שלך",
@@ -1183,7 +1183,7 @@ const he = {
       kicker: "רשת חברתית שנבנתה למוזיקה",
       title: "המקום שבו הקול שלכם הופך לטראק",
       subtitle:
-        "SONA היא הרשת החברתית של המוזיקה — הקליטו קריוקי, עבדו את הווקאל שלכם עם אפקטי אולפן אמיתיים, התחרו, ופרסמו לכל מקום מתוך אפליקציה אחת.",
+        "Studio26 היא הרשת החברתית של המוזיקה — הקליטו קריוקי, עבדו את הווקאל שלכם עם אפקטי אולפן אמיתיים, התחרו, ופרסמו לכל מקום מתוך אפליקציה אחת.",
       ctaPrimary: "התחילו בחינם",
       ctaSecondary: "יש לי כבר חשבון",
       trust: "הקלטה אמיתית • אפקטי DSP אמיתיים • תחרויות אמיתיות",
@@ -1255,13 +1255,13 @@ const he = {
     },
     cta: {
       title: "הקול שלכם רחוק הקלטה אחת מפרסום אמיתי.",
-      subtitle: "הצטרפו ל-SONA בחינם — בלי כרטיס אשראי.",
+      subtitle: "הצטרפו ל-Studio26 בחינם — בלי כרטיס אשראי.",
       button: "צרו חשבון",
       loginHint: "כבר יש לכם חשבון? התחברו",
     },
     footer: {
-      tagline: "SONA — הרשת החברתית של המוזיקה.",
-      rights: "© {{year}} SONA. כל הזכויות שמורות.",
+      tagline: "Studio26 — הרשת החברתית של המוזיקה.",
+      rights: "© {{year}} Studio26. כל הזכויות שמורות.",
     },
   },
 };
@@ -1702,7 +1702,7 @@ const ar = {
     password: "كلمة المرور",
     loginCta: "دخول",
     signupCta: "إنشاء حساب",
-    noAccount: "جديد على SONA؟",
+    noAccount: "جديد على Studio26؟",
     haveAccount: "لديك حساب بالفعل؟",
     createOne: "إنشاء حساب",
     logIn: "دخول",
@@ -1772,7 +1772,7 @@ const ar = {
   },
   pro: {
     title: "اشترك في Pro",
-    subtitle: "افتح مزايا في جميع أنحاء SONA بترقية لمرة واحدة.",
+    subtitle: "افتح مزايا في جميع أنحاء Studio26 بترقية لمرة واحدة.",
     perks: {
       freeExports: "تصدير مجاني بجودة الاستوديو، في كل مرة",
       proBadge: "شارة Pro على ملفك الشخصي",
@@ -1818,7 +1818,7 @@ const ar = {
       kicker: "شبكة اجتماعية بُنيت للموسيقى",
       title: "المكان الذي يتحول فيه صوتك إلى أغنية",
       subtitle:
-        "SONA هي الشبكة الاجتماعية للموسيقى — سجّل كاريوكي، أنتج صوتك بمؤثرات استوديو حقيقية، تنافس، وانشر في كل مكان من تطبيق واحد.",
+        "Studio26 هي الشبكة الاجتماعية للموسيقى — سجّل كاريوكي، أنتج صوتك بمؤثرات استوديو حقيقية، تنافس، وانشر في كل مكان من تطبيق واحد.",
       ctaPrimary: "ابدأ مجاناً",
       ctaSecondary: "لدي حساب بالفعل",
       trust: "تسجيل حقيقي • مؤثرات DSP حقيقية • مسابقات حقيقية",
@@ -1890,13 +1890,13 @@ const ar = {
     },
     cta: {
       title: "صوتك على بعد تسجيلة واحدة من نشر حقيقي.",
-      subtitle: "انضم إلى SONA مجاناً — بدون بطاقة ائتمان.",
+      subtitle: "انضم إلى Studio26 مجاناً — بدون بطاقة ائتمان.",
       button: "أنشئ حسابك",
       loginHint: "لديك حساب بالفعل؟ سجّل الدخول",
     },
     footer: {
-      tagline: "SONA — الشبكة الاجتماعية للموسيقى.",
-      rights: "© {{year}} SONA. جميع الحقوق محفوظة.",
+      tagline: "Studio26 — الشبكة الاجتماعية للموسيقى.",
+      rights: "© {{year}} Studio26. جميع الحقوق محفوظة.",
     },
   },
 };

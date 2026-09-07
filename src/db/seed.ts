@@ -84,7 +84,7 @@ async function main() {
         email: u.email,
         passwordHash: demoPasswordHash,
         avatarUrl: avatar(u.seed),
-        bio: "Demo artist account seeded for SONA.",
+        bio: "Demo artist account seeded for Studio26.",
         verified: u.verified,
         voiceType: u.voiceType,
         country: u.country,

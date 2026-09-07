@@ -15,6 +15,8 @@ export const Route = createFileRoute("/explore")({
 
 const tabs = ["artists", "songs", "djs", "producers", "genres"] as const;
 
+const BRAND_TILE_CLASSES = ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold", "bg-brand-teal"];
+
 function ExplorePage() {
   const { t } = useTranslation();
   const [tab, setTab] = useState<(typeof tabs)[number]>("artists");
@@ -113,8 +115,7 @@ function ExplorePage() {
                 {genres.map((g, i) => (
                   <div
                     key={g}
-                    className="rounded-xl p-3 text-sm font-semibold text-white transition-transform duration-200 ease-out hover:-translate-y-0.5"
-                    style={{ backgroundColor: `hsl(${(i * 47) % 360} 62% 46%)` }}
+                    className={`rounded-xl p-3 text-sm font-semibold text-white press-scale hover-lift ${BRAND_TILE_CLASSES[i % 4]}`}
                   >
                     {g}
                   </div>
@@ -173,8 +174,7 @@ function ExplorePage() {
                   .map((g, i) => (
                     <div
                       key={g}
-                      className="rounded-xl p-3 text-sm font-semibold text-white transition-transform duration-200 ease-out hover:-translate-y-0.5"
-                      style={{ backgroundColor: `hsl(${(i * 47) % 360} 62% 46%)` }}
+                      className={`rounded-xl p-3 text-sm font-semibold text-white press-scale hover-lift ${BRAND_TILE_CLASSES[i % 4]}`}
                     >
                       {g}
                     </div>

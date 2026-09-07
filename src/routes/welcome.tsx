@@ -176,7 +176,10 @@ function WelcomePage() {
         className="sticky top-0 z-30 bg-background/70 backdrop-blur-xl"
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 sm:px-8">
-          <span className="font-display text-2xl font-bold text-brand-coral">SONA</span>
+          <span className="flex items-center gap-2">
+            <img src="/brand/logo-mark.png" alt="" className="h-9 w-9 rounded-xl" />
+            <span className="font-display text-2xl font-bold text-brand-coral">Studio26</span>
+          </span>
           <div className="flex items-center gap-2">
             <div className="hidden items-center gap-0.5 rounded-full border border-border/60 p-0.5 sm:flex">
               {LANGS.map((l) => (
@@ -639,7 +642,8 @@ function WelcomePage() {
       <footer className="border-t border-border/60 px-5 py-8 sm:px-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 sm:flex-row">
           <div className="flex items-center gap-2">
-            <span className="font-display text-lg font-bold text-brand-coral">SONA</span>
+            <img src="/brand/logo-mark.png" alt="" className="h-7 w-7 rounded-lg" />
+            <span className="font-display text-lg font-bold text-brand-coral">Studio26</span>
             <span className="text-xs text-muted-foreground">{t("landing.footer.tagline")}</span>
           </div>
           <p className="text-xs text-muted-foreground">

@@ -949,6 +949,11 @@ function StudioPage() {
           </>
         )}
       </div>
+      <style>{`.studio-slider { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 999px; background: var(--color-muted); }
+      .studio-slider::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 999px; background: var(--brand-coral); box-shadow: var(--shadow-pop); cursor: pointer; transition: transform 0.15s var(--ease-snappy); }
+      .studio-slider::-webkit-slider-thumb:active { transform: scale(0.9); }
+      .studio-slider::-moz-range-thumb { height: 16px; width: 16px; border: 0; border-radius: 999px; background: var(--brand-coral); box-shadow: var(--shadow-pop); cursor: pointer; }
+      .studio-slider::-moz-range-progress { background: color-mix(in oklab, var(--brand-coral) 60%, transparent); border-radius: 999px; }`}</style>
     </AppShell>
   );
 }
@@ -983,7 +988,7 @@ function Slider({
         max={max}
         value={v}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-primary"
+        className="w-full studio-slider"
       />
     </div>
   );

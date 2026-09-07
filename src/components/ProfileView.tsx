@@ -188,7 +188,9 @@ export function ProfileView({ handle }: { handle: string }) {
     <AppShell>
       <TopBar />
       <div className="relative">
-        <div className="h-40 bg-brand-indigo" />
+        <div className="relative h-40 overflow-hidden bg-brand-indigo">
+          <ProfileBannerBars />
+        </div>
         {profile.isMe && (
           <div className="absolute right-4 top-4 flex items-center gap-2">
             <button
@@ -441,7 +443,33 @@ export function ProfileView({ handle }: { handle: string }) {
           <PostActionsSheet post={actionsFor} handle={handle} onClose={() => setActionsFor(null)} />
         </>
       )}
+
+      <style>{`.profile-eq-bar { height: 10px; animation: profile-eq-bounce ease-in-out infinite; }
+      @keyframes profile-eq-bounce { 0%, 100% { height: 8px; } 50% { height: 44px; } }
+      @media (prefers-reduced-motion: reduce) { .profile-eq-bar { animation: none; height: 20px; } }`}</style>
     </AppShell>
+  );
+}
+
+const PROFILE_BANNER_BAR_CLASSES = ["bg-brand-coral", "bg-brand-gold", "bg-brand-teal"];
+
+function ProfileBannerBars({ count = 48 }: { count?: number }) {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 px-6"
+    >
+      {Array.from({ length: count }).map((_, i) => (
+        <span
+          key={i}
+          className={`profile-eq-bar w-1 shrink-0 rounded-full opacity-30 ${PROFILE_BANNER_BAR_CLASSES[i % 3]}`}
+          style={{
+            animationDelay: `${(i % 12) * 0.12}s`,
+            animationDuration: `${1 + (i % 5) * 0.18}s`,
+          }}
+        />
+      ))}
+    </div>
   );
 }
 

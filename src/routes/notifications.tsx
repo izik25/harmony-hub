@@ -34,7 +34,14 @@ const iconMap: Record<string, React.ReactNode> = {
   audition_application: <Briefcase className="h-4 w-4 text-brand-coral" />,
 };
 
-const staggerClasses = ["stagger-1", "stagger-2", "stagger-3", "stagger-4", "stagger-5", "stagger-6"];
+const staggerClasses = [
+  "stagger-1",
+  "stagger-2",
+  "stagger-3",
+  "stagger-4",
+  "stagger-5",
+  "stagger-6",
+];
 
 const textKeyMap: Record<string, string> = {
   like: "liked",
@@ -78,11 +85,11 @@ function NotifPage() {
         {notifications?.length === 0 && (
           <p className="mt-6 text-center text-sm text-muted-foreground">{t("notif.empty")}</p>
         )}
-        <ul className="mt-4 divide-y divide-border">
+        <ul className="mt-4 divide-y divide-border rounded-2xl border border-border bg-card shadow-pop">
           {notifications?.map((n, i) => (
             <li
               key={n.id}
-              className={`flex items-center gap-3 py-3 animate-fade-up ${staggerClasses[i % 6]}`}
+              className={`flex items-center gap-3 px-3 py-3 animate-fade-up ${staggerClasses[i % 6]}`}
             >
               <div className="relative">
                 <img src={n.actor.avatarUrl} className="h-11 w-11 rounded-full" alt="" />

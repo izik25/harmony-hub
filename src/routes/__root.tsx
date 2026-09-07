@@ -97,13 +97,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { name: "theme-color", content: "#f9f6f0" },
-      { title: "SONA — Music Social Network" },
+      { title: "Studio26 — Music Social Network" },
       {
         name: "description",
         content:
           "Sing, produce, compete and get discovered. A global music social network for artists, DJs, producers and fans.",
       },
-      { property: "og:title", content: "SONA — Music Social Network" },
+      { property: "og:title", content: "Studio26 — Music Social Network" },
       { property: "og:description", content: "Sing, produce, compete and get discovered." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -111,6 +111,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     links: [
       { rel: "stylesheet", href: appCss },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
       {
