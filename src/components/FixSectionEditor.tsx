@@ -11,6 +11,7 @@ import { replaceSegment } from "@/lib/audio-splice";
 import * as videoSplice from "@/lib/video-splice";
 import { openSelfieCamera, buildCombinedRecorder } from "@/lib/camera-capture";
 import { translateServerError } from "@/lib/i18n";
+import { LogoPulse } from "@/components/LogoPulse";
 
 // Same idea as record.tsx's MIC_CONSTRAINTS: AEC off (it forces a different, speaker-routing
 // audio session on Android), NS/AGC on, mono, 48kHz — kept consistent so a re-recorded section
@@ -368,12 +369,20 @@ export function FixSectionEditor({
             />
           )}
           {videoUrl && (
+            // Same visibility window as the backing video above — its underlying camera stream
+            // stays open (so it's instantly ready for the next punch-in) but hidden once actually
+            // recording is over, rather than floating a live self-preview bubble over nothing
+            // while splicing/reviewing is going on, which read as "did this even stop?".
             <video
               ref={camVideoRef}
               muted
               autoPlay
               playsInline
-              className="absolute bottom-2 end-2 h-16 w-12 rounded-lg border-2 border-white object-cover shadow-lg"
+              className={
+                phase === "marking" || phase === "cueing" || phase === "recording"
+                  ? "absolute bottom-2 end-2 h-16 w-12 rounded-lg border-2 border-white object-cover shadow-lg"
+                  : "hidden"
+              }
             />
           )}
         </div>
@@ -546,9 +555,9 @@ export function FixSectionEditor({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="mt-4 flex items-center justify-center gap-2 py-3 text-sm text-muted-foreground"
+            className="mt-4 flex flex-col items-center justify-center gap-2 py-4"
           >
-            <Loader2 className="h-4 w-4 animate-spin" /> {t("studio.fixSplicing")}
+            <LogoPulse label={t("studio.fixSplicing")} size={48} />
           </motion.div>
         )}
 

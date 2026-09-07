@@ -211,6 +211,11 @@ function StudioPage() {
   const [replacingCover, setReplacingCover] = useState(false);
 
   const chainRef = useRef<VocalChain | null>(null);
+  // The camera take's own video, when present — muted, and driven entirely by the Tone chain's
+  // play/pause/seek below rather than its own <audio> track, so the take reads as one finished
+  // video+audio product on one shared timeline instead of two separate, unsynced players (a plain
+  // video with its own controls sitting above an unrelated audio scrubber).
+  const draftVideoRef = useRef<HTMLVideoElement | null>(null);
   // Playback position bookkeeping for the scrubber — Tone.Player has no native currentTime/
   // timeupdate the way <audio> does, so position is hand-tracked: positionRef is the source of
   // truth (in buffer seconds), advanced each animation frame by real elapsed time scaled by the
@@ -315,8 +320,15 @@ function StudioPage() {
     const rate = paramsRef.current.speed / 100;
     positionRef.current = Math.min(positionRef.current + dt * rate, durationRef.current);
     setCurrentTime(positionRef.current);
+    // The video plays on its own native clock once started (see togglePlay) — this only nudges
+    // it back in line if it's drifted noticeably, rather than fighting it every frame.
+    const video = draftVideoRef.current;
+    if (video && Math.abs(video.currentTime - positionRef.current) > 0.25) {
+      video.currentTime = positionRef.current;
+    }
     if (positionRef.current >= durationRef.current) {
       chainRef.current?.player.stop();
+      video?.pause();
       setPlaying(false);
       stopTicking();
       return;
@@ -331,6 +343,10 @@ function StudioPage() {
     setPlaying(false);
     positionRef.current = 0;
     setCurrentTime(0);
+    if (draftVideoRef.current) {
+      draftVideoRef.current.pause();
+      draftVideoRef.current.currentTime = 0;
+    }
     const chain = buildChain();
     chainRef.current = chain;
     gateAppliedRef.current = false;
@@ -391,14 +407,17 @@ function StudioPage() {
       compression: comp,
       gainDb,
     });
+    if (draftVideoRef.current) draftVideoRef.current.playbackRate = speed / 100;
   }, [noise, reverbAmt, eq, comp, speed, gainDb]);
 
   const togglePlay = async () => {
     const chain = chainRef.current;
     if (!chain || !ready) return;
     await Tone.start();
+    const video = draftVideoRef.current;
     if (playing) {
       chain.player.stop();
+      video?.pause();
       setPlaying(false);
       stopTicking();
     } else {
@@ -407,6 +426,10 @@ function StudioPage() {
         setCurrentTime(0);
       }
       chain.player.start(0, positionRef.current);
+      if (video) {
+        video.currentTime = positionRef.current;
+        video.play().catch(() => {});
+      }
       setPlaying(true);
       lastFrameRef.current = null;
       rafIdRef.current = requestAnimationFrame(tick);
@@ -415,7 +438,8 @@ function StudioPage() {
 
   // Lets the scrubber move playback to any point without restarting from the top — the whole
   // point being that after tweaking a slider or re-recording a section, you can jump straight
-  // back to that spot instead of listening through the entire take again.
+  // back to that spot instead of listening through the entire take again. Seeks the video (when
+  // present) to the same point so it never falls out of sync with the audio being dragged.
   const handleSeek = (value: number) => {
     const chain = chainRef.current;
     if (!chain || !ready) return;
@@ -424,6 +448,7 @@ function StudioPage() {
     setCurrentTime(clamped);
     lastFrameRef.current = null;
     chain.player.seek(clamped);
+    if (draftVideoRef.current) draftVideoRef.current.currentTime = clamped;
   };
 
   // Stops the main preview before opening Fix a Section — two audio sources (this one plus its
@@ -434,6 +459,7 @@ function StudioPage() {
     const chain = chainRef.current;
     if (chain && playing) {
       chain.player.stop();
+      draftVideoRef.current?.pause();
       setPlaying(false);
       stopTicking();
     }
@@ -711,63 +737,39 @@ function StudioPage() {
           </div>
         ) : (
           <>
-            {/* A camera-recorded (or manually uploaded) performance video — the underlying take
-                still carries a normal audioUrl/rawVocalUrl (see finishMutation in record.tsx and
-                the video-aware Fix a Section save below), so the full DSP/Mastering/Fix-a-Section
-                UI further down still applies to it exactly like any audio-only draft. This card
-                just previews the video and lets it be swapped for a still cover image. */}
-            {draft?.videoUrl && (
-              <div className="mt-4 overflow-hidden rounded-3xl border border-border bg-card shadow-pop">
-                <video
-                  src={draft.videoUrl}
-                  controls
-                  playsInline
-                  className="aspect-[9/16] w-full bg-black object-contain"
-                />
-                <div className="p-3">
-                  {replacingCover ? (
-                    <div className="space-y-2">
-                      <CoverImagePicker
-                        coverUrl={draft.coverUrl}
-                        coverSubject={draft.songTitle || draft.title}
-                        category={draft.category}
-                        seed={draftId ?? "video"}
-                        onCoverGenerated={(url) =>
-                          replaceCoverMutation.mutate({ url, isVideo: false })
-                        }
-                        onFileUploaded={(result) => replaceCoverMutation.mutate(result)}
-                      />
-                      <button
-                        onClick={() => setReplacingCover(false)}
-                        disabled={replaceCoverMutation.isPending}
-                        className="press-scale flex w-full items-center justify-center gap-2 rounded-full border border-border px-4 py-2 text-xs font-semibold text-muted-foreground disabled:opacity-40"
-                      >
-                        <X className="h-3.5 w-3.5" /> {t("common.cancel")}
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setReplacingCover(true)}
-                      className="press-scale flex w-full items-center justify-center gap-2 rounded-full border border-border bg-card/60 px-4 py-2.5 text-sm font-semibold"
-                    >
-                      <ImageIcon className="h-4 w-4" /> {t("studio.replaceVideoWithCover")}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
+            {/* One shared player for the whole take: when a camera video is attached, it's the
+                visual (muted — audio comes from the Tone chain below, driven by the same
+                play/scrub controls), otherwise the usual bar visualizer. Either way, this is a
+                single finished product on one timeline — drag to scrub, tap to play, and the
+                video and the (possibly DSP-processed) audio always move together — rather than a
+                video with its own controls sitting above an unrelated, separately-scrubbed audio
+                player. The underlying take still carries a normal audioUrl/rawVocalUrl (see
+                finishMutation in record.tsx and the video-aware Fix a Section save below), so the
+                full DSP/Mastering/Fix-a-Section UI further down applies to it exactly like any
+                audio-only draft. */}
             <div className="mt-4 rounded-3xl border border-border bg-card p-4 shadow-pop">
-              <div className="relative h-24 overflow-hidden rounded-xl bg-muted">
-                <div className="absolute inset-0 flex items-center justify-around px-2">
-                  {Array.from({ length: 60 }).map((_, i) => (
-                    <span
-                      key={i}
-                      className={`w-0.5 rounded-full ${BRAND_BAR_COLORS[i % BRAND_BAR_COLORS.length]}`}
-                      style={{ height: `${12 + Math.abs(Math.sin(i / 3)) * 60}%` }}
-                    />
-                  ))}
-                </div>
+              <div
+                className={`relative overflow-hidden rounded-xl bg-muted ${draft?.videoUrl ? "aspect-[9/16]" : "h-24"}`}
+              >
+                {draft?.videoUrl ? (
+                  <video
+                    ref={draftVideoRef}
+                    src={draft.videoUrl}
+                    muted
+                    playsInline
+                    className="h-full w-full bg-black object-contain"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-around px-2">
+                    {Array.from({ length: 60 }).map((_, i) => (
+                      <span
+                        key={i}
+                        className={`w-0.5 rounded-full ${BRAND_BAR_COLORS[i % BRAND_BAR_COLORS.length]}`}
+                        style={{ height: `${12 + Math.abs(Math.sin(i / 3)) * 60}%` }}
+                      />
+                    ))}
+                  </div>
+                )}
                 <div className="absolute inset-0 flex items-center justify-center">
                   <motion.button
                     onClick={togglePlay}
@@ -807,6 +809,39 @@ function StudioPage() {
                 <span>{ready ? formatTime(currentTime) : t("studio.loading")}</span>
                 <span>{ready ? formatTime(duration) : ""}</span>
               </div>
+
+              {draft?.videoUrl && (
+                <div className="mt-3 border-t border-border pt-3">
+                  {replacingCover ? (
+                    <div className="space-y-2">
+                      <CoverImagePicker
+                        coverUrl={draft.coverUrl}
+                        coverSubject={draft.songTitle || draft.title}
+                        category={draft.category}
+                        seed={draftId ?? "video"}
+                        onCoverGenerated={(url) =>
+                          replaceCoverMutation.mutate({ url, isVideo: false })
+                        }
+                        onFileUploaded={(result) => replaceCoverMutation.mutate(result)}
+                      />
+                      <button
+                        onClick={() => setReplacingCover(false)}
+                        disabled={replaceCoverMutation.isPending}
+                        className="press-scale flex w-full items-center justify-center gap-2 rounded-full border border-border px-4 py-2 text-xs font-semibold text-muted-foreground disabled:opacity-40"
+                      >
+                        <X className="h-3.5 w-3.5" /> {t("common.cancel")}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setReplacingCover(true)}
+                      className="press-scale flex w-full items-center justify-center gap-2 rounded-full border border-border bg-card/60 px-4 py-2.5 text-sm font-semibold"
+                    >
+                      <ImageIcon className="h-4 w-4" /> {t("studio.replaceVideoWithCover")}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Right under the scrubber, not buried below the mix/master sections — scrub to the

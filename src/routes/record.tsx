@@ -24,6 +24,8 @@ import { motion } from "framer-motion";
 import i18n, { translateServerError } from "@/lib/i18n";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
+import { LogoPulse } from "@/components/LogoPulse";
+import { BackgroundPicker } from "@/components/BackgroundPicker";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   AlertDialog,
@@ -42,6 +44,11 @@ import { processRecording } from "@/lib/mix-recording";
 import { commitCheckpoint, trimCheckpoint } from "@/lib/audio-splice";
 import * as videoSplice from "@/lib/video-splice";
 import { openSelfieCamera, buildCombinedRecorder } from "@/lib/camera-capture";
+import {
+  startVirtualBackground,
+  type BackgroundId,
+  type VirtualBackgroundComposer,
+} from "@/lib/virtual-background";
 import {
   routeToHeadphonesIfAvailable,
   routeAudioContextToHeadphonesIfAvailable,
@@ -252,6 +259,117 @@ function useMicLevels(active: boolean, monitor: boolean) {
   return { levels, stream: streamRef };
 }
 
+// Opens the raw selfie camera and, whenever a virtual background is chosen, layers a live
+// segment→composite loop (virtual-background.ts) on top of it — the returned stream is always
+// what should actually be shown/recorded, whether that's the plain camera feed ("none") or the
+// background-replaced one. Keeping preview and recording on the exact same stream means what you
+// see while framing the shot is exactly what ends up in the take.
+function useSelfieCameraStream(enabled: boolean, backgroundId: BackgroundId, onDenied: () => void) {
+  const [rawStream, setRawStream] = useState<MediaStream | null>(null);
+  const [outputStream, setOutputStream] = useState<MediaStream | null>(null);
+  const composerRef = useRef<VirtualBackgroundComposer | null>(null);
+  const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setRawStream(null);
+      return;
+    }
+    let cancelled = false;
+    openSelfieCamera()
+      .then((camStream) => {
+        if (cancelled) {
+          camStream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        setRawStream(camStream);
+      })
+      .catch(() => onDenied());
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled]);
+
+  // A hidden <video> (never attached to the DOM, same technique video-splice.ts uses for its own
+  // offscreen decoding) plays the raw stream purely as a frame source for the segmenter — the
+  // visible preview is driven by `outputStream` instead, so it can be swapped to the composited
+  // canvas stream without the raw feed itself ever needing to change.
+  useEffect(() => {
+    if (!rawStream) {
+      sourceVideoRef.current = null;
+      return;
+    }
+    const source = document.createElement("video");
+    source.muted = true;
+    source.playsInline = true;
+    source.srcObject = rawStream;
+    source.play().catch(() => {});
+    sourceVideoRef.current = source;
+    return () => {
+      rawStream.getTracks().forEach((t) => t.stop());
+      source.pause();
+      source.srcObject = null;
+      if (sourceVideoRef.current === source) sourceVideoRef.current = null;
+    };
+  }, [rawStream]);
+
+  // Tears down whatever composer belongs to this camera session the moment that session ends
+  // (a new rawStream, camera turned off, or unmount) — kept separate from the retarget effect
+  // below so switching between backgrounds mid-session doesn't trip this cleanup.
+  useEffect(() => {
+    return () => {
+      composerRef.current?.stop();
+      composerRef.current = null;
+    };
+  }, [rawStream]);
+
+  useEffect(() => {
+    if (!rawStream) {
+      setOutputStream(null);
+      return;
+    }
+    if (backgroundId === "none") {
+      composerRef.current?.stop();
+      composerRef.current = null;
+      setOutputStream(rawStream);
+      return;
+    }
+    // Already running for this session — just retarget it at the newly picked background instead
+    // of tearing down and reloading the segmentation model again.
+    if (composerRef.current) {
+      composerRef.current.setBackground(backgroundId);
+      return;
+    }
+    let cancelled = false;
+    const source = sourceVideoRef.current;
+    if (!source) return;
+    const begin = () => {
+      startVirtualBackground(source, backgroundId)
+        .then((composer) => {
+          if (cancelled) {
+            composer.stop();
+            return;
+          }
+          composerRef.current = composer;
+          setOutputStream(composer.stream);
+        })
+        .catch((err) => {
+          console.error(err);
+          setOutputStream(rawStream); // fall back to the plain feed rather than a stuck preview
+        });
+    };
+    if (source.readyState >= 2) begin();
+    else source.addEventListener("loadeddata", begin, { once: true });
+    return () => {
+      cancelled = true;
+      source.removeEventListener("loadeddata", begin);
+    };
+  }, [rawStream, backgroundId]);
+
+  return outputStream;
+}
+
 function formatTime(s: number) {
   const m = String(Math.floor(s / 60)).padStart(2, "0");
   const ss = String(Math.floor(s % 60)).padStart(2, "0");
@@ -431,8 +549,16 @@ function RecordPage() {
   // slicing) when !cameraEnabled, video-splice.ts (plays segments through a canvas + MediaRecorder
   // re-encode — see that file) when cameraEnabled.
   const [cameraEnabled, setCameraEnabled] = useState(false);
-  const camStreamRef = useRef<MediaStream | null>(null);
+  // Which virtual background (if any) replaces whatever's actually behind the singer — "none"
+  // keeps the real camera feed exactly as before. Persisted the same way monitorEnabled is, so a
+  // returning user's last pick sticks instead of resetting to "none" every session.
+  const [backgroundId, setBackgroundId] = useState<BackgroundId>("none");
   const camVideoRef = useRef<HTMLVideoElement | null>(null);
+  // The stream actually shown in camVideoRef and fed to the recorder — the plain camera feed, or
+  // the live background-replaced one from useSelfieCameraStream once a background is picked. Kept
+  // in a ref (in addition to the hook's own state) so the recording-start effect below, which
+  // polls on an interval rather than re-running per render, always reads the latest value.
+  const effectiveCamStreamRef = useRef<MediaStream | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Array<BlobPart>>([]);
@@ -487,33 +613,27 @@ function RecordPage() {
 
   // Opens (or tears down) the camera as soon as the toggle changes — independent of `phase` —
   // so the self-preview is already framed and ready before the user taps record, the same way
-  // the mic-level meter is already live before recording starts.
+  // the mic-level meter is already live before recording starts. Background replacement (if any)
+  // is layered on top by the hook itself; the effect below just mirrors whichever stream comes
+  // back into the preview element and the ref the recorder reads from.
+  const selfieStream = useSelfieCameraStream(cameraEnabled, backgroundId, () => {
+    toast.error(t("record.cameraDenied"));
+    setCameraEnabled(false);
+  });
   useEffect(() => {
-    if (!cameraEnabled) {
-      camStreamRef.current?.getTracks().forEach((tr) => tr.stop());
-      camStreamRef.current = null;
-      return;
-    }
-    let cancelled = false;
-    openSelfieCamera()
-      .then((camStream) => {
-        if (cancelled) {
-          camStream.getTracks().forEach((tr) => tr.stop());
-          return;
-        }
-        camStreamRef.current = camStream;
-        if (camVideoRef.current) camVideoRef.current.srcObject = camStream;
-      })
-      .catch(() => {
-        toast.error(t("record.cameraDenied"));
-        setCameraEnabled(false);
-      });
-    return () => {
-      cancelled = true;
-      camStreamRef.current?.getTracks().forEach((tr) => tr.stop());
-      camStreamRef.current = null;
-    };
-  }, [cameraEnabled, t]);
+    effectiveCamStreamRef.current = selfieStream;
+    if (camVideoRef.current) camVideoRef.current.srcObject = selfieStream;
+  }, [selfieStream]);
+
+  // Remembers the last background pick across visits, same pattern as monitorEnabled above.
+  useEffect(() => {
+    const stored = localStorage.getItem("hh:backgroundId");
+    if (stored) setBackgroundId(stored as BackgroundId);
+  }, []);
+  const chooseBackground = (id: BackgroundId) => {
+    setBackgroundId(id);
+    localStorage.setItem("hh:backgroundId", id);
+  };
 
   useEffect(() => {
     if (phase === "recording") {
@@ -617,9 +737,9 @@ function RecordPage() {
         // Explicit bitrate — MediaRecorder's default Opus encoding is conservative enough that
         // the raw capture itself can come out sounding thin/"voice memo"-like before any
         // cleanup even runs. 128kbps is comfortably high quality for a mono voice track.
-        const usingCamera = cameraEnabled && !!camStreamRef.current;
+        const usingCamera = cameraEnabled && !!effectiveCamStreamRef.current;
         const recorder = usingCamera
-          ? buildCombinedRecorder(stream.current, camStreamRef.current!).recorder
+          ? buildCombinedRecorder(stream.current, effectiveCamStreamRef.current!).recorder
           : new MediaRecorder(stream.current, { audioBitsPerSecond: 128_000 });
         // Which splice implementation folds/cuts this take's checkpoints — audio-splice.ts's
         // in-memory buffer slicing for a normal take, video-splice.ts's canvas re-encode for a
@@ -880,6 +1000,18 @@ function RecordPage() {
               />
             </div>
           )}
+          {selectedTrack && cameraEnabled && (
+            <div className="p-1 pt-0.5">
+              <p className="mb-1.5 text-xs font-semibold text-muted-foreground">
+                {t("record.backgroundLabel")}
+              </p>
+              <BackgroundPicker
+                value={backgroundId}
+                onChange={chooseBackground}
+                disabled={recording || phase === "paused"}
+              />
+            </div>
+          )}
           <div className="flex items-center justify-between gap-3 p-1">
             <div className="flex min-w-0 items-center gap-3">
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-teal/15 text-brand-teal">
@@ -959,6 +1091,19 @@ function RecordPage() {
                 playsInline
                 className="absolute bottom-3 end-3 h-28 w-20 rounded-xl border-2 border-white object-cover shadow-lg"
               />
+            )}
+
+            {/* Recording has genuinely stopped the instant Finish is tapped, but the camera
+                self-preview above keeps its live feed running underneath (its own MediaStream
+                isn't torn down until the camera toggle or this page unmounts) — without this, the
+                screen looked exactly like it was still filming for however long processing takes,
+                with no sign anything had actually happened. This covers the whole stage so nothing
+                behind it reads as "still recording", and gives an unambiguous "processing" signal
+                instead of the small spinner in the control button being the only clue. */}
+            {finishMutation.isPending && (
+              <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/75 backdrop-blur-sm">
+                <LogoPulse label={t("record.processingOverlay")} labelClassName="text-white" />
+              </div>
             )}
 
             {recording && (
