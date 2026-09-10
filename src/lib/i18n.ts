@@ -494,6 +494,7 @@ const en = {
   },
   serverError: {
     unexpectedError: "Something went wrong on our end. Please try again in a moment.",
+    "Failed to fetch": "Connection dropped while saving — check your network and try again.",
     unauthorized: "You need to be logged in.",
     handleTooShort: "Handle must be at least 3 characters (letters, numbers, underscore).",
     nameRequired: "Enter your name.",
@@ -1176,6 +1177,7 @@ const he = {
   },
   serverError: {
     unexpectedError: "משהו השתבש אצלנו. נסה שוב בעוד רגע.",
+    "Failed to fetch": "החיבור התנתק בזמן השמירה — בדוק את הרשת ונסה שוב.",
     unauthorized: "עליך להתחבר.",
     handleTooShort: "שם המשתמש חייב להכיל לפחות 3 תווים (אותיות, ספרות, קו תחתון).",
     nameRequired: "הזן את שמך.",
@@ -1859,6 +1861,7 @@ const ar = {
   },
   serverError: {
     unexpectedError: "حدث خطأ ما من جانبنا. يرجى المحاولة مرة أخرى خلال لحظات.",
+    "Failed to fetch": "انقطع الاتصال أثناء الحفظ — تحقق من الشبكة وحاول مرة أخرى.",
     unauthorized: "يجب تسجيل الدخول.",
     handleTooShort: "يجب أن يتكون اسم المستخدم من 3 أحرف على الأقل (حروف، أرقام، شرطة سفلية).",
     nameRequired: "أدخل اسمك.",

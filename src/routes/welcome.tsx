@@ -57,7 +57,6 @@ function WelcomePage() {
   const { t, i18n } = useTranslation();
   const rtl = isRTL(i18n.language);
   const reduceMotion = useReducedMotion();
-  const marqueeItems = t("landing.marquee").split(" • ");
 
   const { scrollYProgress } = useScroll();
   const parallax1 = useTransform(scrollYProgress, [0, 1], [0, -120]);
@@ -72,7 +71,7 @@ function WelcomePage() {
 
   const heroMX = useMotionValue(50);
   const heroMY = useMotionValue(50);
-  const heroSpotlight = useMotionTemplate`radial-gradient(650px circle at ${heroMX}% ${heroMY}%, color-mix(in oklab, var(--color-primary) 18%, transparent), transparent 60%)`;
+  const heroSpotlight = useMotionTemplate`radial-gradient(650px circle at ${heroMX}% ${heroMY}%, color-mix(in oklab, var(--color-primary) 9%, transparent), transparent 60%)`;
   const handleHeroMove = (e: React.MouseEvent<HTMLElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     heroMX.set(((e.clientX - rect.left) / rect.width) * 100);
@@ -126,13 +125,13 @@ function WelcomePage() {
         aria-hidden
         animate={reduceMotion ? undefined : { x: [0, -30, 0], y: [0, 40, 0] }}
         transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
-        className="pointer-events-none fixed -right-40 top-[30vh] -z-10 h-[520px] w-[520px] rounded-full bg-brand-coral opacity-[0.14] blur-[130px]"
+        className="pointer-events-none fixed -right-40 top-[30vh] -z-10 h-[520px] w-[520px] rounded-full bg-brand-coral opacity-[0.06] blur-[130px]"
       />
       <motion.div
         aria-hidden
         animate={reduceMotion ? undefined : { x: [0, 25, 0], y: [0, -35, 0] }}
         transition={{ duration: 18, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-        className="pointer-events-none fixed -left-40 top-[2vh] -z-10 h-[420px] w-[420px] rounded-full bg-brand-gold opacity-[0.12] blur-[130px]"
+        className="pointer-events-none fixed -left-40 top-[2vh] -z-10 h-[420px] w-[420px] rounded-full bg-brand-gold opacity-[0.04] blur-[130px]"
       />
 
       {/* header */}
@@ -235,46 +234,31 @@ function WelcomePage() {
             variants={fadeUp}
             transition={{ duration: 0.6 }}
           >
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/70">
-              <Sparkles className="h-3.5 w-3.5 text-brand-gold" />
-              {t("landing.hero.kicker")}
-              <EqualizerBars count={5} className="ms-1" />
-            </span>
-
             <motion.h1
               initial="hidden"
               animate="visible"
               variants={titleContainer}
-              className="mt-5 font-display text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl lg:text-7xl"
+              className="font-display text-5xl font-bold leading-[1.02] tracking-tight sm:text-6xl lg:text-7xl"
             >
               {t("landing.hero.title")
                 .split(" ")
-                .map((word, i) => (
+                .map((word, i, words) => (
                   <motion.span
                     key={i}
                     variants={titleWord}
                     transition={{ duration: 0.55, ease: "easeOut" }}
-                    className="text-brand-coral me-3 inline-block"
+                    className={`me-3 inline-block ${i === words.length - 1 ? "text-brand-coral" : "text-white"}`}
                   >
                     {word}
                   </motion.span>
                 ))}
             </motion.h1>
 
-            <motion.p
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.5 }}
-              className="mt-5 max-w-md text-lg font-medium text-white/60"
-            >
-              {t("auth.welcome")}
-            </motion.p>
-
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.65 }}
-              className="mt-8 flex flex-wrap items-center gap-3"
+              transition={{ duration: 0.5, delay: 0.5 }}
+              className="mt-9 flex flex-wrap items-center gap-3"
             >
               <Magnetic>
                 <Link
@@ -311,9 +295,9 @@ function WelcomePage() {
             >
               <motion.div
                 aria-hidden
-                animate={reduceMotion ? undefined : { opacity: [0.3, 0.55, 0.3] }}
+                animate={reduceMotion ? undefined : { opacity: [0.16, 0.32, 0.16] }}
                 transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
-                className="absolute inset-0 -z-10 scale-95 rounded-[2.5rem] bg-brand-coral opacity-30 blur-2xl"
+                className="absolute inset-0 -z-10 scale-95 rounded-[2.5rem] bg-brand-coral opacity-20 blur-2xl"
               />
               <motion.div
                 onMouseMove={handlePhoneMove}
@@ -325,10 +309,10 @@ function WelcomePage() {
                 }}
                 className="relative aspect-[9/17.5] w-full overflow-hidden rounded-[2.5rem] border border-white/10 shadow-2xl"
               >
-                <div className="absolute inset-0 animate-cover-breathe">
+                <div className="absolute inset-0 animate-cover-breathe [filter:saturate(0.6)_brightness(0.55)]">
                   <PostCoverBg hue={27} seed="welcome-hero" />
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/40" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-black/45" />
 
                 <div className="absolute end-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-5">
                   {[
@@ -379,68 +363,30 @@ function WelcomePage() {
               variants={fadeUp}
               whileTap={{ scale: 0.96 }}
               transition={{ duration: 0.4, delay: i * 0.06 }}
-              className="relative aspect-[9/16] w-28 shrink-0 overflow-hidden rounded-2xl border border-white/10 sm:w-36"
+              className="relative aspect-[9/16] w-28 shrink-0 overflow-hidden rounded-2xl border border-white/5 sm:w-36"
             >
-              <PostCoverBg hue={c.hue} seed={c.seed} />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/10" />
-              <Play className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 fill-white/90 text-white/90" />
+              <div className="absolute inset-0 [filter:saturate(0.55)_brightness(0.5)]">
+                <PostCoverBg hue={c.hue} seed={c.seed} />
+              </div>
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/30" />
+              <Play className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 fill-white/80 text-white/80" />
             </motion.div>
           ))}
         </div>
       </section>
 
-      {/* marquee */}
-      <div className="marquee-mask relative overflow-hidden border-y border-white/10 py-4">
-        <div className="marquee-track flex w-max items-center gap-10">
-          {[...marqueeItems, ...marqueeItems].map((item, i) => (
-            <span
-              key={i}
-              className="flex items-center gap-3 whitespace-nowrap font-display text-lg font-semibold text-white/40"
-            >
-              {item}
-              <span className="h-1.5 w-1.5 rounded-full bg-brand-coral/60" />
-            </span>
-          ))}
-        </div>
-      </div>
-
       {/* footer */}
-      <footer className="px-5 py-8 sm:px-8">
+      <footer className="border-t border-white/5 px-5 py-8 sm:px-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 sm:flex-row">
           <div className="flex items-center gap-2">
-            <img src="/brand/logo-mark.png" alt="" className="h-7 w-7 rounded-lg" />
-            <span className="font-display text-lg font-bold text-brand-coral">Studio26</span>
-            <span className="text-xs text-white/40">{t("landing.footer.tagline")}</span>
+            <img src="/brand/logo-mark.png" alt="" className="h-7 w-7 rounded-lg opacity-80" />
+            <span className="font-display text-sm font-bold text-white/50">Studio26</span>
           </div>
-          <p className="text-xs text-white/40">
+          <p className="text-xs text-white/30">
             {t("landing.footer.rights", { year: new Date().getFullYear() })}
           </p>
         </div>
       </footer>
-
-      <style>{`
-        .marquee-mask {
-          -webkit-mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
-          mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
-        }
-        .marquee-track { animation: marquee-scroll 28s linear infinite; }
-        @keyframes marquee-scroll {
-          from { transform: translateX(0); }
-          to { transform: translateX(-50%); }
-        }
-        .eq-bar {
-          height: 5px;
-          animation: eq-bounce ease-in-out infinite;
-        }
-        @keyframes eq-bounce {
-          0%, 100% { height: 4px; opacity: .5; }
-          50% { height: 14px; opacity: 1; }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .marquee-track { animation: none; }
-          .eq-bar { animation: none; height: 9px; }
-        }
-      `}</style>
     </div>
   );
 }
@@ -471,7 +417,7 @@ function FloatingIcon({
         transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay }}
         className="grid place-items-center rounded-2xl border border-white/10 bg-white/5 p-2 backdrop-blur-md sm:p-3"
       >
-        <Icon style={{ width: size, height: size }} className="text-brand-coral/70" />
+        <Icon style={{ width: size, height: size }} className="text-white/25" />
       </motion.div>
     </motion.div>
   );
@@ -492,7 +438,7 @@ function AmbientNotes({ count = 6 }: { count?: number }) {
       {notes.map((n, i) => (
         <motion.span
           key={i}
-          className="absolute bottom-0 text-brand-coral/40"
+          className="absolute bottom-0 text-white/10"
           style={{ left: n.left }}
           animate={{ y: ["0%", "-380%"], opacity: [0, 0.75, 0], rotate: [0, 20, -12, 0] }}
           transition={{ duration: n.duration, repeat: Infinity, ease: "easeInOut", delay: n.delay }}
@@ -501,25 +447,6 @@ function AmbientNotes({ count = 6 }: { count?: number }) {
         </motion.span>
       ))}
     </div>
-  );
-}
-
-function EqualizerBars({ count = 5, className = "" }: { count?: number; className?: string }) {
-  return (
-    <span className={`inline-flex items-end gap-[2px] ${className}`} aria-hidden>
-      {Array.from({ length: count }).map((_, i) => (
-        <span
-          key={i}
-          className={`eq-bar w-[2.5px] rounded-full ${
-            ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold", "bg-brand-teal"][i % 4]
-          }`}
-          style={{
-            animationDelay: `${(i % count) * 0.14}s`,
-            animationDuration: `${0.8 + (i % 4) * 0.15}s`,
-          }}
-        />
-      ))}
-    </span>
   );
 }
 

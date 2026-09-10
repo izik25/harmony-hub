@@ -30,7 +30,6 @@ import { BackgroundPicker } from "@/components/BackgroundPicker";
 import { FilterShop, type FilterGift } from "@/components/FilterShop";
 import { FaceFilterOverlay } from "@/components/FaceFilterOverlay";
 import type { FilterKind } from "@/lib/face-filters";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -575,6 +574,10 @@ function RecordPage() {
   // TikTok-style icon rail opens one of these instead of the settings-card rows the idle/no-track
   // page still uses.
   const [openPanel, setOpenPanel] = useState<"background" | "filters" | null>(null);
+  // The icon rail's small text labels (see the immersive stage below) are only there so a
+  // first-time visitor can tell what each icon does — once you've actually used one, you know,
+  // so all of them fade away together rather than permanently crowding the video.
+  const [railHintsSeen, setRailHintsSeen] = useState(false);
   const camVideoRef = useRef<HTMLVideoElement | null>(null);
   // The stream actually shown in camVideoRef and fed to the recorder — the plain camera feed, or
   // the live background-replaced one from useSelfieCameraStream once a background is picked. Kept
@@ -975,7 +978,7 @@ function RecordPage() {
   };
 
   return (
-    <AppShell hideNav={!!selectedTrack}>
+    <AppShell hideNav={!!selectedTrack || karaokeOpen}>
       {!selectedTrack && <TopBar />}
       {selectedTrack ? (
         // Full-screen, TikTok-style capture stage: the karaoke video (lyrics baked in) fills the
@@ -984,10 +987,18 @@ function RecordPage() {
         // live in this component's own state, untouched by this branch) and never blocking the
         // lyrics, which always stay centered and readable.
         <div className="fixed inset-0 z-40 mx-auto flex max-w-[520px] flex-col bg-black">
+          {/* These karaoke clips are 640x360 (16:9) — object-cover on a tall phone screen scales
+              by height and crops nearly 75% off the sides, which was slicing most of every lyric
+              line in half since the text runs almost the full width of the frame. object-contain
+              fixes that (the whole clip, every word, always visible) but leaves real letterboxing
+              above/below on a portrait screen; BlurredVideoBackdrop fills that space with a
+              softened, scaled-up copy of the same live video (sampled from this exact element, so
+              it can never drift out of sync) instead of leaving it flat black. */}
+          <BlurredVideoBackdrop videoRef={videoRef} />
           <video
             ref={videoRef}
             src={selectedTrack.videoUrl}
-            className="absolute inset-0 h-full w-full object-cover"
+            className="absolute inset-0 h-full w-full object-contain"
             playsInline
             muted={false}
           />
@@ -1040,40 +1051,54 @@ function RecordPage() {
           )}
 
           {/* The TikTok-style control column — a toggle/trigger icon per feature instead of the
-              named settings-card rows the pre-selection page above still uses. */}
+              named settings-card rows the pre-selection page above still uses. Each carries a
+              small caption the first time you see this screen (RailControl below); the moment you
+              actually use one, all of them drop the captions and go icon-only. */}
           <div className="absolute top-1/2 end-3 z-20 flex -translate-y-1/2 flex-col items-center gap-3">
-            <ControlButton
+            <RailControl
               icon={<Video className="h-5 w-5" />}
               label={t("record.selfieCameraLabel")}
-              onClick={() => setCameraEnabled((v) => !v)}
+              showLabel={!railHintsSeen}
+              onClick={() => {
+                setRailHintsSeen(true);
+                setCameraEnabled((v) => !v);
+              }}
               disabled={recording || phase === "paused"}
               active={cameraEnabled}
-              variant="glass"
             />
-            <ControlButton
+            <RailControl
               icon={<Sparkles className="h-5 w-5" />}
               label={t("record.backgroundLabel")}
-              onClick={() => openTray("background")}
+              showLabel={!railHintsSeen}
+              onClick={() => {
+                setRailHintsSeen(true);
+                openTray("background");
+              }}
               disabled={recording || phase === "paused"}
               active={openPanel === "background" || backgroundId !== "none"}
-              variant="glass"
             />
             {filterGifts.length > 0 && (
-              <ControlButton
+              <RailControl
                 icon={<PartyPopper className="h-5 w-5" />}
                 label={t("record.filterShopLabel")}
-                onClick={() => openTray("filters")}
+                showLabel={!railHintsSeen}
+                onClick={() => {
+                  setRailHintsSeen(true);
+                  openTray("filters");
+                }}
                 disabled={recording || phase === "paused"}
                 active={openPanel === "filters"}
-                variant="glass"
               />
             )}
-            <ControlButton
+            <RailControl
               icon={<Headphones className="h-5 w-5" />}
               label={t("record.monitorOn")}
-              onClick={toggleMonitor}
+              showLabel={!railHintsSeen}
+              onClick={() => {
+                setRailHintsSeen(true);
+                toggleMonitor();
+              }}
               active={monitorEnabled}
-              variant="glass"
             />
           </div>
 
@@ -1396,7 +1421,7 @@ function RecordPage() {
         </div>
       )}
 
-      <KaraokePickerSheet
+      <KaraokePickerFullScreen
         open={karaokeOpen}
         onClose={() => setKaraokeOpen(false)}
         onSelect={(track) => {
@@ -1573,10 +1598,12 @@ function ScrubBar({
 
 // Entry point for "Choose Karaoke": lands on a photo grid of artists first, and only drops into
 // that artist's own track list once one is tapped — browsing 2M+ tracks by scrolling a flat list
-// was the thing this replaced. `artist` (not just a boolean) drives which sheet is showing, so the
-// track list can render its header/query scoped to that artist and the back arrow can return to
-// the grid without closing the sheet.
-function KaraokePickerSheet({
+// was the thing this replaced. `artist` (not just a boolean) drives which screen is showing, so
+// the track list can scope its header/query to that artist and the back arrow can return to the
+// grid without closing the picker. Full-screen (not a bottom sheet) so picking a track flows
+// straight into the immersive recording stage below without a jarring size change in between —
+// the whole "record" experience, picker included, stays edge-to-edge from the moment it opens.
+function KaraokePickerFullScreen({
   open,
   onClose,
   onSelect,
@@ -1585,24 +1612,56 @@ function KaraokePickerSheet({
   onClose: () => void;
   onSelect: (track: KaraokeTrack) => void;
 }) {
+  const { t } = useTranslation();
   const [artist, setArtist] = useState<KaraokeArtist | null>(null);
 
-  // Reset back to the artist grid every time the sheet is (re)opened, so closing mid-browse and
+  // Reset back to the artist grid every time the picker is (re)opened, so closing mid-browse and
   // reopening later doesn't strand the user on a stale track list.
   useEffect(() => {
     if (open) setArtist(null);
   }, [open]);
 
   return (
-    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent side="bottom" className="flex h-[70vh] flex-col rounded-t-3xl">
-        {artist ? (
-          <KaraokeTrackList artist={artist} onBack={() => setArtist(null)} onSelect={onSelect} />
-        ) : (
-          <KaraokeArtistGrid open={open} onSelect={setArtist} />
-        )}
-      </SheetContent>
-    </Sheet>
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 24 }}
+          transition={{ duration: 0.22 }}
+          className="fixed inset-0 z-40 mx-auto flex max-w-[520px] flex-col bg-background"
+        >
+          <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+            {artist ? (
+              <button
+                onClick={() => setArtist(null)}
+                className="flex items-center gap-1.5 text-sm text-muted-foreground"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                {t("record.backToArtists")}
+              </button>
+            ) : (
+              <h2 className="text-lg font-semibold">{t("record.chooseArtist")}</h2>
+            )}
+            <div className="flex-1" />
+            <button
+              onClick={onClose}
+              aria-label={t("common.cancel")}
+              className="rounded-full p-1.5 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="flex flex-1 flex-col overflow-hidden px-4 pb-4 pt-3">
+            {artist ? (
+              <KaraokeTrackList artist={artist} onSelect={onSelect} />
+            ) : (
+              <KaraokeArtistGrid open={open} onSelect={setArtist} />
+            )}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -1626,10 +1685,7 @@ function KaraokeArtistGrid({
 
   return (
     <>
-      <SheetHeader>
-        <SheetTitle>{t("record.chooseArtist")}</SheetTitle>
-      </SheetHeader>
-      <label className="mt-2 flex items-center gap-2 rounded-full bg-muted/60 px-4 py-2.5 ring-1 ring-border">
+      <label className="flex items-center gap-2 rounded-full bg-muted/60 px-4 py-2.5 ring-1 ring-border">
         <Search className="h-4 w-4 text-muted-foreground" />
         <input
           value={query}
@@ -1684,11 +1740,9 @@ function KaraokeArtistGrid({
 
 function KaraokeTrackList({
   artist,
-  onBack,
   onSelect,
 }: {
   artist: KaraokeArtist;
-  onBack: () => void;
   onSelect: (track: KaraokeTrack) => void;
 }) {
   const { t } = useTranslation();
@@ -1700,17 +1754,8 @@ function KaraokeTrackList({
 
   return (
     <>
-      <SheetHeader>
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {t("record.backToArtists")}
-        </button>
-        <SheetTitle>{artist.name}</SheetTitle>
-      </SheetHeader>
-      <label className="mt-2 flex items-center gap-2 rounded-full bg-muted/60 px-4 py-2.5 ring-1 ring-border">
+      <p className="mb-2 text-lg font-semibold">{artist.name}</p>
+      <label className="flex items-center gap-2 rounded-full bg-muted/60 px-4 py-2.5 ring-1 ring-border">
         <Search className="h-4 w-4 text-muted-foreground" />
         <input
           value={query}
@@ -1749,6 +1794,104 @@ function KaraokeTrackList({
         ))}
       </div>
     </>
+  );
+}
+
+// Fills the letterboxing around an object-contain karaoke video with a softened, scaled-up copy
+// of the same live frame instead of leaving it flat black — samples directly from the real
+// `<video>` element every tick (via drawImage), so unlike a second video element it can never
+// drift out of sync with whatever the real one is currently doing (playing, paused, mid-scrub).
+// Throttled well below the visible video's own frame rate since it's purely decorative.
+function BlurredVideoBackdrop({
+  videoRef,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+
+    let raf = 0;
+    let lastDrawAt = 0;
+    const FRAME_INTERVAL = 1000 / 12;
+
+    const draw = (now: number) => {
+      raf = requestAnimationFrame(draw);
+      if (now - lastDrawAt < FRAME_INTERVAL) return;
+      lastDrawAt = now;
+
+      const video = videoRef.current;
+      if (!video || video.readyState < 2 || !video.videoWidth) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const w = Math.max(1, Math.round(rect.width * dpr));
+      const h = Math.max(1, Math.round(rect.height * dpr));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+
+      const scale = Math.max(w / video.videoWidth, h / video.videoHeight);
+      const dw = video.videoWidth * scale;
+      const dh = video.videoHeight * scale;
+      ctx.filter = "blur(36px)";
+      ctx.drawImage(video, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [videoRef]);
+
+  return (
+    <canvas ref={canvasRef} aria-hidden className="absolute inset-0 h-full w-full opacity-70" />
+  );
+}
+
+// The immersive stage's icon-rail button: same circular glass icon as ControlButton, plus a small
+// pill caption that's only there for a first-time visitor and fades away (see railHintsSeen in
+// RecordPage) the moment any rail icon actually gets used.
+function RailControl({
+  icon,
+  label,
+  onClick,
+  disabled,
+  active,
+  showLabel,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  showLabel: boolean;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <ControlButton
+        icon={icon}
+        label={label}
+        onClick={onClick}
+        disabled={disabled}
+        active={active}
+        variant="glass"
+      />
+      <AnimatePresence>
+        {showLabel && (
+          <motion.span
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.18 }}
+            className="whitespace-nowrap rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm"
+          >
+            {label}
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
