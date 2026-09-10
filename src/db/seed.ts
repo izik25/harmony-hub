@@ -17,6 +17,15 @@ async function main() {
       { id: "g4", key: "diamond", emoji: "💎", coins: 500 },
       { id: "g5", key: "crown", emoji: "👑", coins: 1200 },
       { id: "g6", key: "rocket", emoji: "🚀", coins: 3000 },
+      // Filter gifts — same catalog, same coin-spend flow as the plain gifts above, but
+      // filterKind marks them as also triggering a live face-filter effect (see
+      // src/lib/face-filters.ts) instead of just an emoji, whether bought for yourself on
+      // /record or sent to someone else's post like any other gift.
+      { id: "g7", key: "partyhat", emoji: "🎉", coins: 80, filterKind: "partyhat" },
+      { id: "g8", key: "sunglasses", emoji: "😎", coins: 120, filterKind: "sunglasses" },
+      { id: "g9", key: "mask", emoji: "🎭", coins: 250, filterKind: "mask" },
+      { id: "g10", key: "catears", emoji: "🐱", coins: 150, filterKind: "catears" },
+      { id: "g11", key: "bunnyears", emoji: "🐰", coins: 150, filterKind: "bunnyears" },
     ])
     .onConflictDoNothing();
 

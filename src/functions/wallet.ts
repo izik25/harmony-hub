@@ -104,6 +104,39 @@ export const withdraw = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// "Buy for yourself" for a filter gift (party hat, sunglasses, ...) — a flat self-deduction like
+// purchasePro above, not a sendGift transfer: there's no recipient, so cantGiftSelf doesn't apply
+// here the way it does to sendGift. Only usable on catalog rows that actually have a filterKind;
+// plain coin-value gifts (rose, mic, ...) have no visual effect to trigger for yourself.
+export const buyFilterForSelf = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input as { giftId: string })
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    const [gift] = await db.select().from(giftsCatalog).where(eq(giftsCatalog.id, data.giftId));
+    if (!gift) throw new Error("unknownGift");
+    if (!gift.filterKind) throw new Error("unknownGift");
+
+    const [user] = await db
+      .select({ coinsBalance: users.coinsBalance })
+      .from(users)
+      .where(eq(users.id, userId));
+    if (!user || user.coinsBalance < gift.coins) throw new Error("notEnoughCoins");
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({ coinsBalance: sql`${users.coinsBalance} - ${gift.coins}` })
+        .where(eq(users.id, userId));
+      await tx.insert(walletTransactions).values({
+        userId,
+        kind: "filter_purchase",
+        coins: -gift.coins,
+        description: gift.key,
+      });
+    });
+    return { ok: true, filterKind: gift.filterKind };
+  });
+
 export const sendGift = createServerFn({ method: "POST" })
   .validator((input: unknown) => input as { toUserId: string; giftId: string; postId?: string })
   .handler(async ({ data }) => {

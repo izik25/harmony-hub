@@ -121,6 +121,10 @@ export const giftsCatalog = pgTable("gifts_catalog", {
   key: text("key").notNull(),
   emoji: text("emoji").notNull(),
   coins: integer("coins").notNull(),
+  // Set only for gifts that are also a wearable face filter (party hat, sunglasses, mask, ...) —
+  // see src/lib/face-filters.ts for the matching FilterKind values. Null for plain coin-value
+  // gifts (rose, mic, diamond, ...), which have no visual effect of their own beyond the emoji.
+  filterKind: text("filter_kind"),
 });
 
 export const giftEvents = pgTable("gift_events", {

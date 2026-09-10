@@ -1,8 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  animate,
   motion,
-  useInView,
   useMotionTemplate,
   useMotionValue,
   useReducedMotion,
@@ -11,27 +9,21 @@ import {
   useTransform,
   type MotionValue,
 } from "framer-motion";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
   BadgeCheck,
   Disc3,
   Gift,
-  Globe2,
   Headphones,
   Heart,
   MessageCircle,
-  Mic2,
   Music2,
   Music4,
   Play,
-  Radio,
   Share2,
   Sparkles,
-  SlidersHorizontal,
-  Trophy,
-  Users,
   Waves,
 } from "lucide-react";
 import { isRTL, setLanguage } from "@/lib/i18n";
@@ -47,18 +39,14 @@ const LANGS = [
   { code: "ar", label: "عر" },
 ];
 
-const FEATURE_ICONS = {
-  feed: Music2,
-  karaoke: Mic2,
-  studio: SlidersHorizontal,
-  competitions: Trophy,
-  wallet: Gift,
-  messages: MessageCircle,
-  labelHub: Users,
-  publish: Share2,
-  languages: Globe2,
-  live: Radio,
-} as const;
+const PREVIEW_CARDS = [
+  { hue: 27, seed: "welcome-1" },
+  { hue: 210, seed: "welcome-2" },
+  { hue: 320, seed: "welcome-3" },
+  { hue: 93, seed: "welcome-4" },
+  { hue: 160, seed: "welcome-5" },
+  { hue: 265, seed: "welcome-6" },
+];
 
 const fadeUp = {
   hidden: { opacity: 0, y: 34, scale: 0.97, filter: "blur(6px)" },
@@ -69,9 +57,6 @@ function WelcomePage() {
   const { t, i18n } = useTranslation();
   const rtl = isRTL(i18n.language);
   const reduceMotion = useReducedMotion();
-
-  const featureKeys = Object.keys(FEATURE_ICONS) as (keyof typeof FEATURE_ICONS)[];
-  const steps = ["step1", "step2", "step3"] as const;
   const marqueeItems = t("landing.marquee").split(" • ");
 
   const { scrollYProgress } = useScroll();
@@ -82,12 +67,12 @@ function WelcomePage() {
   const headerShadow = useTransform(
     scrollYProgress,
     [0, 0.03],
-    ["0 1px 0 0 transparent", "0 1px 0 0 var(--color-border)"],
+    ["0 1px 0 0 transparent", "0 1px 0 0 rgba(255,255,255,0.08)"],
   );
 
   const heroMX = useMotionValue(50);
   const heroMY = useMotionValue(50);
-  const heroSpotlight = useMotionTemplate`radial-gradient(650px circle at ${heroMX}% ${heroMY}%, color-mix(in oklab, var(--color-primary) 14%, transparent), transparent 60%)`;
+  const heroSpotlight = useMotionTemplate`radial-gradient(650px circle at ${heroMX}% ${heroMY}%, color-mix(in oklab, var(--color-primary) 18%, transparent), transparent 60%)`;
   const handleHeroMove = (e: React.MouseEvent<HTMLElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     heroMX.set(((e.clientX - rect.left) / rect.width) * 100);
@@ -110,12 +95,6 @@ function WelcomePage() {
     tiltY.set(0);
   };
 
-  const stepsRef = useRef<HTMLDivElement>(null);
-  const { scrollYProgress: stepsProgress } = useScroll({
-    target: stepsRef,
-    offset: ["start 85%", "end 65%"],
-  });
-
   const heroRef = useRef<HTMLElement>(null);
   const { scrollYProgress: heroProgress } = useScroll({
     target: heroRef,
@@ -124,20 +103,6 @@ function WelcomePage() {
   const phoneParallaxY = useTransform(heroProgress, [0, 1], [0, 130]);
   const phoneParallaxScale = useTransform(heroProgress, [0, 1], [1, 0.86]);
   const phoneParallaxOpacity = useTransform(heroProgress, [0, 0.85], [1, 0.25]);
-
-  const featuresRef = useRef<HTMLElement>(null);
-  const { scrollYProgress: featuresProgress } = useScroll({
-    target: featuresRef,
-    offset: ["start end", "end start"],
-  });
-  const featuresFloatY = useTransform(featuresProgress, [0, 1], [90, -90]);
-
-  const ctaRef = useRef<HTMLElement>(null);
-  const { scrollYProgress: ctaProgress } = useScroll({
-    target: ctaRef,
-    offset: ["start end", "end start"],
-  });
-  const ctaFloatY = useTransform(ctaProgress, [0, 1], [70, -70]);
 
   const titleContainer = {
     hidden: {},
@@ -149,7 +114,7 @@ function WelcomePage() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-x-clip bg-background text-foreground">
+    <div className="relative min-h-screen overflow-x-clip bg-black text-white">
       {/* scroll progress */}
       <motion.div
         aria-hidden
@@ -161,19 +126,19 @@ function WelcomePage() {
         aria-hidden
         animate={reduceMotion ? undefined : { x: [0, -30, 0], y: [0, 40, 0] }}
         transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
-        className="pointer-events-none fixed -right-40 top-[38vh] -z-10 h-[520px] w-[520px] rounded-full bg-brand-indigo opacity-[0.08] blur-[120px]"
+        className="pointer-events-none fixed -right-40 top-[30vh] -z-10 h-[520px] w-[520px] rounded-full bg-brand-coral opacity-[0.14] blur-[130px]"
       />
       <motion.div
         aria-hidden
         animate={reduceMotion ? undefined : { x: [0, 25, 0], y: [0, -35, 0] }}
         transition={{ duration: 18, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-        className="pointer-events-none fixed -left-40 top-[2vh] -z-10 h-[420px] w-[420px] rounded-full bg-brand-gold opacity-[0.1] blur-[120px]"
+        className="pointer-events-none fixed -left-40 top-[2vh] -z-10 h-[420px] w-[420px] rounded-full bg-brand-gold opacity-[0.12] blur-[130px]"
       />
 
       {/* header */}
       <motion.header
         style={{ boxShadow: headerShadow }}
-        className="sticky top-0 z-30 bg-background/70 backdrop-blur-xl"
+        className="sticky top-0 z-30 bg-black/60 backdrop-blur-xl"
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 sm:px-8">
           <span className="flex items-center gap-2">
@@ -181,15 +146,15 @@ function WelcomePage() {
             <span className="font-display text-2xl font-bold text-brand-coral">Studio26</span>
           </span>
           <div className="flex items-center gap-2">
-            <div className="hidden items-center gap-0.5 rounded-full border border-border/60 p-0.5 sm:flex">
+            <div className="hidden items-center gap-0.5 rounded-full border border-white/15 p-0.5 sm:flex">
               {LANGS.map((l) => (
                 <button
                   key={l.code}
                   onClick={() => setLanguage(l.code)}
                   className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                     i18n.language?.startsWith(l.code)
-                      ? "bg-primary/20 text-primary"
-                      : "text-muted-foreground hover:text-foreground"
+                      ? "bg-brand-coral/25 text-brand-coral"
+                      : "text-white/50 hover:text-white"
                   }`}
                 >
                   {l.label}
@@ -198,7 +163,7 @@ function WelcomePage() {
             </div>
             <Link
               to="/login"
-              className="rounded-full px-4 py-2 text-sm font-semibold text-foreground/85 hover:text-foreground"
+              className="rounded-full px-4 py-2 text-sm font-semibold text-white/80 hover:text-white"
             >
               {t("landing.nav.login")}
             </Link>
@@ -216,7 +181,7 @@ function WelcomePage() {
       <section
         ref={heroRef}
         onMouseMove={handleHeroMove}
-        className="relative mx-auto max-w-6xl overflow-clip px-5 pb-16 pt-14 sm:px-8 sm:pb-24 sm:pt-20"
+        className="relative mx-auto flex min-h-[92vh] max-w-6xl flex-col justify-center overflow-clip px-5 py-14 sm:px-8"
       >
         <motion.div
           aria-hidden
@@ -270,8 +235,8 @@ function WelcomePage() {
             variants={fadeUp}
             transition={{ duration: 0.6 }}
           >
-            <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/60 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
-              <Sparkles className="h-3.5 w-3.5 text-accent" />
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/70">
+              <Sparkles className="h-3.5 w-3.5 text-brand-gold" />
               {t("landing.hero.kicker")}
               <EqualizerBars count={5} className="ms-1" />
             </span>
@@ -280,7 +245,7 @@ function WelcomePage() {
               initial="hidden"
               animate="visible"
               variants={titleContainer}
-              className="mt-5 font-display text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl"
+              className="mt-5 font-display text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl lg:text-7xl"
             >
               {t("landing.hero.title")
                 .split(" ")
@@ -300,9 +265,9 @@ function WelcomePage() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.5 }}
-              className="mt-5 max-w-lg text-base leading-relaxed text-muted-foreground sm:text-lg"
+              className="mt-5 max-w-md text-lg font-medium text-white/60"
             >
-              {t("landing.hero.subtitle")}
+              {t("auth.welcome")}
             </motion.p>
 
             <motion.div
@@ -322,20 +287,11 @@ function WelcomePage() {
               </Magnetic>
               <Link
                 to="/login"
-                className="rounded-full border border-border px-7 py-3.5 text-sm font-semibold text-foreground/90 transition-colors hover:border-primary/60 hover:text-primary"
+                className="rounded-full border border-white/20 px-7 py-3.5 text-sm font-semibold text-white/90 transition-colors hover:border-brand-coral/60 hover:text-brand-coral"
               >
                 {t("landing.hero.ctaSecondary")}
               </Link>
             </motion.div>
-
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.5, delay: 0.85 }}
-              className="mt-6 text-xs font-medium tracking-wide text-muted-foreground/80"
-            >
-              {t("landing.hero.trust")}
-            </motion.p>
           </motion.div>
 
           <motion.div
@@ -370,7 +326,7 @@ function WelcomePage() {
                 className="relative aspect-[9/17.5] w-full overflow-hidden rounded-[2.5rem] border border-white/10 shadow-2xl"
               >
                 <div className="absolute inset-0 animate-cover-breathe">
-                  <PostCoverBg hue={27} seed="landing-hero" />
+                  <PostCoverBg hue={27} seed="welcome-hero" />
                 </div>
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/40" />
 
@@ -396,7 +352,7 @@ function WelcomePage() {
                   </span>
                   <div className="min-w-0">
                     <p className="flex items-center gap-1 truncate text-sm font-bold text-white">
-                      Nova Ray <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-primary" />
+                      Nova Ray <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-brand-coral" />
                     </p>
                     <p className="truncate text-xs text-white/75">Midnight Echo — Original</p>
                   </div>
@@ -411,242 +367,52 @@ function WelcomePage() {
         </div>
       </section>
 
+      {/* preview strip */}
+      <section className="relative mx-auto max-w-6xl px-5 pb-14 sm:px-8">
+        <div className="no-scrollbar flex gap-3 overflow-x-auto">
+          {PREVIEW_CARDS.map((c, i) => (
+            <motion.div
+              key={c.seed}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, amount: 0.4 }}
+              variants={fadeUp}
+              whileTap={{ scale: 0.96 }}
+              transition={{ duration: 0.4, delay: i * 0.06 }}
+              className="relative aspect-[9/16] w-28 shrink-0 overflow-hidden rounded-2xl border border-white/10 sm:w-36"
+            >
+              <PostCoverBg hue={c.hue} seed={c.seed} />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/10" />
+              <Play className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 fill-white/90 text-white/90" />
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
       {/* marquee */}
-      <div className="marquee-mask relative overflow-hidden border-y border-border/50 py-4">
+      <div className="marquee-mask relative overflow-hidden border-y border-white/10 py-4">
         <div className="marquee-track flex w-max items-center gap-10">
           {[...marqueeItems, ...marqueeItems].map((item, i) => (
             <span
               key={i}
-              className="flex items-center gap-3 whitespace-nowrap font-display text-lg font-semibold text-muted-foreground/70"
+              className="flex items-center gap-3 whitespace-nowrap font-display text-lg font-semibold text-white/40"
             >
               {item}
-              <span className="h-1.5 w-1.5 rounded-full bg-primary/60" />
+              <span className="h-1.5 w-1.5 rounded-full bg-brand-coral/60" />
             </span>
           ))}
         </div>
       </div>
 
-      {/* stats */}
-      <section className="mx-auto max-w-6xl px-5 py-12 sm:px-8">
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-          {[
-            { Icon: Globe2, value: 3, suffix: "", label: t("landing.stats.languages"), color: "bg-brand-coral" },
-            { Icon: Sparkles, value: 10, suffix: "+", label: t("landing.stats.features"), color: "bg-brand-indigo" },
-            { Icon: SlidersHorizontal, value: 100, suffix: "%", label: t("landing.stats.dsp"), color: "bg-brand-gold" },
-          ].map(({ Icon, value, suffix, label, color }, i) => (
-            <motion.div
-              key={i}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, amount: 0.5 }}
-              variants={fadeUp}
-              whileTap={{ scale: 0.97 }}
-              transition={{ duration: 0.45, delay: i * 0.08 }}
-              className="flex items-center gap-4 rounded-2xl border border-border bg-card p-5 shadow-pop hover-lift"
-            >
-              <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${color}`}>
-                <Icon className="h-5 w-5 text-white" />
-              </span>
-              <div>
-                <p className="font-display text-2xl font-bold text-foreground">
-                  <CountUp value={value} suffix={suffix} />
-                </p>
-                <p className="text-sm text-muted-foreground">{label}</p>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* features */}
-      <section
-        ref={featuresRef}
-        className="relative mx-auto max-w-6xl overflow-clip px-5 py-16 sm:px-8 sm:py-24"
-      >
-        {!reduceMotion && (
-          <FloatingIcon
-            Icon={Sparkles}
-            top="4%"
-            left="90%"
-            size={20}
-            delay={0.2}
-            parallaxY={featuresFloatY}
-          />
-        )}
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.3 }}
-          variants={fadeUp}
-          transition={{ duration: 0.5 }}
-          className="mx-auto max-w-2xl text-center"
-        >
-          <span className="text-xs font-bold uppercase tracking-widest text-primary">
-            {t("landing.features.kicker")}
-          </span>
-          <h2 className="mt-3 font-display text-3xl font-bold sm:text-4xl">
-            {t("landing.features.title")}
-          </h2>
-          <p className="mt-3 text-muted-foreground">{t("landing.features.subtitle")}</p>
-        </motion.div>
-
-        <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {featureKeys.map((key, i) => {
-            const Icon = FEATURE_ICONS[key];
-            const isLive = key === "live";
-            const badgeColor = [
-              "bg-brand-coral",
-              "bg-brand-indigo",
-              "bg-brand-gold",
-              "bg-brand-teal",
-            ][i % 4];
-            return (
-              <motion.div
-                key={key}
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true, amount: 0.3 }}
-                variants={fadeUp}
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.45, delay: (i % 3) * 0.08 }}
-              >
-                <SpotlightCard>
-                  <div className="relative flex items-start justify-between">
-                    <span className={`grid h-11 w-11 place-items-center rounded-2xl ${badgeColor} shadow-pop`}>
-                      <Icon className="h-5 w-5 text-white" />
-                    </span>
-                    {isLive && (
-                      <span className="rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-[10px] font-bold text-accent">
-                        {t("landing.features.live.badge")}
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="relative mt-4 font-display text-lg font-bold">
-                    {t(`landing.features.${key}.title`)}
-                  </h3>
-                  <p className="relative mt-2 text-sm leading-relaxed text-muted-foreground">
-                    {t(`landing.features.${key}.desc`)}
-                  </p>
-                </SpotlightCard>
-              </motion.div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* how it works */}
-      <section className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-24">
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.3 }}
-          variants={fadeUp}
-          transition={{ duration: 0.5 }}
-          className="mx-auto max-w-2xl text-center"
-        >
-          <span className="text-xs font-bold uppercase tracking-widest text-primary">
-            {t("landing.howItWorks.kicker")}
-          </span>
-          <h2 className="mt-3 font-display text-3xl font-bold sm:text-4xl">
-            {t("landing.howItWorks.title")}
-          </h2>
-        </motion.div>
-
-        <div ref={stepsRef} className="relative mt-14 grid grid-cols-1 gap-8 sm:grid-cols-3">
-          <div aria-hidden className="absolute inset-x-0 top-6 hidden h-px bg-border sm:block" />
-          <motion.div
-            aria-hidden
-            className="absolute inset-x-0 top-6 hidden h-px bg-brand-coral sm:block"
-            style={{ scaleX: stepsProgress, transformOrigin: rtl ? "100% 0%" : "0% 0%" }}
-          />
-          {steps.map((step, i) => (
-            <motion.div
-              key={step}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, amount: 0.4 }}
-              variants={fadeUp}
-              transition={{ duration: 0.45, delay: i * 0.12 }}
-              className="relative text-center sm:text-start"
-            >
-              <span
-                className={`relative z-10 mx-auto flex h-12 w-12 items-center justify-center rounded-full font-display text-lg font-bold text-white shadow-pop sm:mx-0 ${
-                  ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold"][i % 3]
-                }`}
-              >
-                {i + 1}
-              </span>
-              <h3 className="mt-4 font-display text-xl font-bold">
-                {t(`landing.howItWorks.${step}.title`)}
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                {t(`landing.howItWorks.${step}.desc`)}
-              </p>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* final CTA */}
-      <section
-        ref={ctaRef}
-        className="relative mx-auto max-w-6xl overflow-clip px-5 pb-20 sm:px-8 sm:pb-28"
-      >
-        {!reduceMotion && (
-          <FloatingIcon
-            Icon={Headphones}
-            top="2%"
-            left="8%"
-            size={20}
-            delay={0.3}
-            parallaxY={ctaFloatY}
-          />
-        )}
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.4 }}
-          variants={fadeUp}
-          transition={{ duration: 0.5 }}
-          className="relative overflow-hidden rounded-[2rem] border border-border bg-brand-coral px-6 py-14 text-center sm:px-16"
-        >
-          <div className="relative">
-            <h2 className="mx-auto max-w-xl font-display text-3xl font-bold text-white sm:text-4xl">
-              {t("landing.cta.title")}
-            </h2>
-            <p className="mx-auto mt-3 max-w-md text-white/85">
-              {t("landing.cta.subtitle")}
-            </p>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-              <Magnetic>
-                <Link
-                  to="/signup"
-                  className="inline-flex items-center gap-2 rounded-full bg-white px-8 py-3.5 text-sm font-bold text-brand-coral shadow-pop-lg hover-lift"
-                >
-                  {t("landing.cta.button")}
-                  <ArrowRight className="h-4 w-4 rtl:rotate-180" />
-                </Link>
-              </Magnetic>
-            </div>
-            <Link
-              to="/login"
-              className="mt-5 inline-block text-sm font-medium text-white/80 hover:text-white"
-            >
-              {t("landing.cta.loginHint")}
-            </Link>
-          </div>
-        </motion.div>
-      </section>
-
       {/* footer */}
-      <footer className="border-t border-border/60 px-5 py-8 sm:px-8">
+      <footer className="px-5 py-8 sm:px-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 sm:flex-row">
           <div className="flex items-center gap-2">
             <img src="/brand/logo-mark.png" alt="" className="h-7 w-7 rounded-lg" />
             <span className="font-display text-lg font-bold text-brand-coral">Studio26</span>
-            <span className="text-xs text-muted-foreground">{t("landing.footer.tagline")}</span>
+            <span className="text-xs text-white/40">{t("landing.footer.tagline")}</span>
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-white/40">
             {t("landing.footer.rights", { year: new Date().getFullYear() })}
           </p>
         </div>
@@ -705,7 +471,7 @@ function FloatingIcon({
         transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay }}
         className="grid place-items-center rounded-2xl border border-white/10 bg-white/5 p-2 backdrop-blur-md sm:p-3"
       >
-        <Icon style={{ width: size, height: size }} className="text-primary/70" />
+        <Icon style={{ width: size, height: size }} className="text-brand-coral/70" />
       </motion.div>
     </motion.div>
   );
@@ -726,7 +492,7 @@ function AmbientNotes({ count = 6 }: { count?: number }) {
       {notes.map((n, i) => (
         <motion.span
           key={i}
-          className="absolute bottom-0 text-primary/40"
+          className="absolute bottom-0 text-brand-coral/40"
           style={{ left: n.left }}
           animate={{ y: ["0%", "-380%"], opacity: [0, 0.75, 0], rotate: [0, 20, -12, 0] }}
           transition={{ duration: n.duration, repeat: Infinity, ease: "easeInOut", delay: n.delay }}
@@ -783,54 +549,5 @@ function Magnetic({ children, strength = 0.3 }: { children: ReactNode; strength?
     >
       {children}
     </motion.div>
-  );
-}
-
-function SpotlightCard({ children }: { children: ReactNode }) {
-  const mx = useMotionValue(50);
-  const my = useMotionValue(50);
-  const spotlight = useMotionTemplate`radial-gradient(240px circle at ${mx}% ${my}%, color-mix(in oklab, var(--color-primary) 20%, transparent), transparent 70%)`;
-
-  const handleMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    mx.set(((e.clientX - rect.left) / rect.width) * 100);
-    my.set(((e.clientY - rect.top) / rect.height) * 100);
-  };
-
-  return (
-    <div
-      onMouseMove={handleMove}
-      className="group relative h-full overflow-hidden rounded-3xl border border-border/60 bg-card/50 p-6 transition-colors hover:border-primary/50"
-    >
-      <motion.div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-        style={{ background: spotlight }}
-      />
-      {children}
-    </div>
-  );
-}
-
-function CountUp({ value, suffix = "" }: { value: number; suffix?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const isInView = useInView(ref, { once: true, amount: 0.6 });
-  const [display, setDisplay] = useState(0);
-
-  useEffect(() => {
-    if (!isInView) return;
-    const controls = animate(0, value, {
-      duration: 1.3,
-      ease: "easeOut",
-      onUpdate: (v) => setDisplay(Math.round(v)),
-    });
-    return () => controls.stop();
-  }, [isInView, value]);
-
-  return (
-    <span ref={ref}>
-      {display}
-      {suffix}
-    </span>
   );
 }

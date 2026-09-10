@@ -151,6 +151,8 @@ const en = {
     cutFailed: "Couldn't rewind the recording — nothing was changed.",
     backgroundLabel: "Background",
     backgroundHint: "Swap what's behind you for a virtual scene — no green screen needed.",
+    filterShopLabel: "Filters",
+    filterShopHint: "Spend coins on a face filter — pops up live for a few seconds, just for fun.",
     bg: {
       none: "None",
       blur: "Blur",
@@ -417,6 +419,11 @@ const en = {
       crown: "Crown",
       rose: "Rose",
       rocket: "Rocket",
+      partyhat: "Party Hat",
+      sunglasses: "Sunglasses",
+      mask: "Masquerade Mask",
+      catears: "Cat Ears",
+      bunnyears: "Bunny Ears",
     },
   },
   notif: {
@@ -827,6 +834,8 @@ const he = {
     cutFailed: "לא הצלחנו לחזור אחורה בהקלטה — שום דבר לא השתנה.",
     backgroundLabel: "רקע",
     backgroundHint: "החלף את מה שמאחוריך בסצנה וירטואלית — בלי צורך במסך ירוק.",
+    filterShopLabel: "פילטרים",
+    filterShopHint: "בזבז מטבעות על פילטר לפנים — קופץ בזמן אמת לכמה שניות, סתם בשביל הכיף.",
     bg: {
       none: "ללא",
       blur: "טשטוש",
@@ -1092,6 +1101,11 @@ const he = {
       crown: "כתר",
       rose: "ורד",
       rocket: "רקטה",
+      partyhat: "כובע מסיבה",
+      sunglasses: "משקפי שמש",
+      mask: "מסכת נשף",
+      catears: "אוזני חתול",
+      bunnyears: "אוזני ארנב",
     },
   },
   notif: {
@@ -1502,6 +1516,8 @@ const ar = {
     cutFailed: "تعذّر الرجوع في التسجيل — لم يتغيّر شيء.",
     backgroundLabel: "الخلفية",
     backgroundHint: "استبدل ما وراءك بمشهد افتراضي — بدون الحاجة لشاشة خضراء.",
+    filterShopLabel: "الفلاتر",
+    filterShopHint: "أنفق عملات على فلتر للوجه — يظهر مباشرة لبضع ثوانٍ، فقط للمرح.",
     bg: {
       none: "بدون",
       blur: "تمويه",
@@ -1768,6 +1784,11 @@ const ar = {
       crown: "تاج",
       rose: "وردة",
       rocket: "صاروخ",
+      partyhat: "قبعة حفلة",
+      sunglasses: "نظارة شمسية",
+      mask: "قناع تنكري",
+      catears: "أذنا قطة",
+      bunnyears: "أذنا أرنب",
     },
   },
   notif: {
