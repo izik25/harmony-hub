@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Mic,
-  MicVocal,
   Music2,
   ChevronRight,
   Search,
@@ -20,6 +19,7 @@ import {
   Video,
   Sparkles,
   PartyPopper,
+  Upload,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import i18n, { translateServerError } from "@/lib/i18n";
@@ -39,7 +39,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { smartUploadMedia } from "@/lib/blob-upload";
 import { createDraft } from "@/functions/posts";
 import { listGiftCatalog, buyFilterForSelf } from "@/functions/wallet";
@@ -442,93 +441,6 @@ function FloatingDecor({ count = 6 }: { count?: number }) {
   );
 }
 
-// Idle invitation state for the visualizer panel: a breathing mic with expanding rings and two
-// small orbiting note glyphs, replacing the near-flat bars that used to sit there before the mic
-// stream is even open (levels default to a flat 6px until recording actually starts).
-//
-// This IS the record button when no karaoke track is loaded — a single big, unmistakable tap
-// target rather than a small decorative icon plus a separate tiny record button at the bottom
-// (that duplication read as cluttered/confusing). The bottom control bar only reappears once a
-// karaoke video is loaded (a different layout, where the button has to sit over the video) or
-// once recording has actually started.
-function IdleRecordStage({
-  onStart,
-  pending,
-  label,
-}: {
-  onStart: () => void;
-  pending: boolean;
-  label: string;
-}) {
-  return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-5">
-      {/* soft flat-color glow "stage light" behind the button — sells depth/elevation without
-          ever blending two colors into a gradient */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute h-64 w-64 rounded-full bg-brand-coral opacity-[0.14] blur-3xl"
-      />
-
-      {/* sparse floating note/mic glyphs anchored to the stage's corners, well clear of the
-          button itself so nothing crowds the main tap target */}
-      <motion.span
-        aria-hidden
-        className="absolute left-[14%] top-[16%] text-brand-gold"
-        animate={{ y: [0, -10, 0], opacity: [0.35, 0.75, 0.35], rotate: [0, 12, 0] }}
-        transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
-      >
-        <Music2 className="h-5 w-5" />
-      </motion.span>
-      <motion.span
-        aria-hidden
-        className="absolute right-[16%] top-[22%] text-brand-indigo"
-        animate={{ y: [0, -14, 0], opacity: [0.3, 0.7, 0.3], rotate: [0, -14, 0] }}
-        transition={{ duration: 4.2, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-      >
-        <Music2 className="h-4 w-4" />
-      </motion.span>
-      <motion.span
-        aria-hidden
-        className="absolute left-[18%] bottom-[20%] text-brand-teal"
-        animate={{ y: [0, -8, 0], opacity: [0.3, 0.65, 0.3] }}
-        transition={{ duration: 3.9, repeat: Infinity, ease: "easeInOut", delay: 1.1 }}
-      >
-        <MicVocal className="h-4 w-4" />
-      </motion.span>
-
-      <motion.div className="relative grid place-items-center" style={{ width: 118, height: 118 }}>
-        {!pending &&
-          [0, 1].map((i) => (
-            <motion.span
-              key={i}
-              className="absolute h-24 w-24 rounded-full border-2 border-brand-coral"
-              animate={{ scale: [1, 1.7], opacity: [0.45, 0] }}
-              transition={{ duration: 2.2, repeat: Infinity, ease: "easeOut", delay: i * 1.1 }}
-            />
-          ))}
-        <motion.button
-          onClick={onStart}
-          disabled={pending}
-          aria-label={label}
-          animate={pending ? {} : { y: [0, -7, 0] }}
-          transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-          whileTap={pending ? undefined : { scale: 0.93 }}
-          whileHover={pending ? undefined : { scale: 1.04 }}
-          className="relative grid h-24 w-24 place-items-center rounded-full bg-brand-coral text-white shadow-pop-coral disabled:opacity-70"
-        >
-          {pending ? (
-            <Loader2 className="h-8 w-8 animate-spin" />
-          ) : (
-            <MicVocal className="h-8 w-8" />
-          )}
-        </motion.button>
-      </motion.div>
-
-      <p className="relative text-sm font-semibold text-foreground">{label}</p>
-    </div>
-  );
-}
-
 function RecordPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -612,10 +524,7 @@ function RecordPage() {
   // real rewind (or answering "no" to the cut prompt) knows whether to resume or stay paused.
   const wasRecordingRef = useRef(false);
   const recording = phase === "recording";
-  const { levels, stream } = useMicLevels(
-    phase === "recording" || phase === "paused",
-    monitorEnabled,
-  );
+  const { stream } = useMicLevels(phase === "recording" || phase === "paused", monitorEnabled);
 
   // Remember the monitor preference across visits, same as any other studio setting — but only
   // once someone's actually made a choice. No stored value yet means "first time here," which
@@ -1236,20 +1145,22 @@ function RecordPage() {
           </div>
         </div>
       ) : (
-        <div className="relative px-4 pt-4 pb-6">
+        // A plain two-way chooser — nothing to configure here, nothing recording yet. The old
+        // freestyle "just record over a mic, no song" stage used to live on this screen too, but
+        // it had nothing to do with either path below, so it's gone: every take now starts from
+        // one of these two doors, straight into the full-screen stage or into /upload.
+        <div className="relative flex min-h-[calc(100vh-4rem)] flex-col justify-center px-4 pb-6">
           <FloatingDecor />
-          <div className="relative flex items-center justify-between animate-fade-up">
+          <div className="relative text-center animate-fade-up">
             <h1 className="font-display text-2xl font-bold">{t("record.title")}</h1>
-            <Link to="/upload" search={{}} className="text-xs text-accent underline">
-              {t("record.skipUpload")}
-            </Link>
+            <p className="mt-1 text-sm text-muted-foreground">{t("record.chooserSubtitle")}</p>
           </div>
 
-          <div className="relative mt-4 flex items-center gap-2 animate-fade-up stagger-1">
+          <div className="relative mt-8 flex flex-col gap-3">
             <motion.button
               onClick={() => setKaraokeOpen(true)}
               whileTap={{ scale: 0.97 }}
-              className="hover-lift relative flex flex-1 items-center gap-4 overflow-hidden rounded-3xl border border-border bg-card p-4 text-start shadow-pop"
+              className="hover-lift relative flex items-center gap-4 overflow-hidden rounded-3xl border border-border bg-card p-4 text-start shadow-pop animate-fade-up stagger-1"
             >
               <div
                 aria-hidden
@@ -1266,158 +1177,28 @@ function RecordPage() {
               </div>
               <ChevronRight className="relative h-5 w-5 shrink-0 text-muted-foreground" />
             </motion.button>
-          </div>
 
-          {/* Camera/background/filters only ever apply once a karaoke track is chosen (see the
-              full-screen stage above) — a freestyle take with no track has no self-preview to
-              attach them to, so this compact card only ever needs the monitor toggle. */}
-          <div className="relative mt-3 rounded-3xl border border-border bg-card px-3 shadow-pop animate-fade-up stagger-2">
-            <div className="flex items-center justify-between gap-3 py-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-teal/15 text-brand-teal">
-                  <Headphones className="h-4 w-4" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">{t("record.monitorOn")}</p>
-                  <p className="text-xs text-muted-foreground">{t("record.monitorHint")}</p>
-                </div>
-              </div>
-              <Switch
-                checked={monitorEnabled}
-                onCheckedChange={toggleMonitor}
-                aria-label={t("record.monitorOn")}
+            <Link
+              to="/upload"
+              search={{}}
+              className="hover-lift relative flex items-center gap-4 overflow-hidden rounded-3xl border border-border bg-card p-4 text-start shadow-pop animate-fade-up stagger-2"
+            >
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-brand-teal opacity-[0.12] blur-2xl"
               />
-            </div>
+              <div className="relative grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-brand-teal shadow-pop">
+                <Upload className="h-7 w-7 text-white" />
+              </div>
+              <div className="relative flex-1 overflow-hidden">
+                <p className="line-clamp-1 text-base font-bold">{t("upload.title")}</p>
+                <p className="line-clamp-1 mt-0.5 text-xs text-muted-foreground">
+                  {t("record.uploadDesc")}
+                </p>
+              </div>
+              <ChevronRight className="relative h-5 w-5 shrink-0 text-muted-foreground" />
+            </Link>
           </div>
-
-          <motion.div
-            animate={
-              recording
-                ? {
-                    boxShadow: [
-                      "0 0 0 0 color-mix(in oklab, var(--brand-coral) 55%, transparent)",
-                      "0 0 0 10px color-mix(in oklab, var(--brand-coral) 0%, transparent)",
-                    ],
-                  }
-                : { boxShadow: "0 0 0 0 transparent" }
-            }
-            transition={
-              recording ? { duration: 1.6, repeat: Infinity, ease: "easeOut" } : { duration: 0.3 }
-            }
-            className="relative mt-6 overflow-hidden rounded-[2rem] border border-border bg-card shadow-pop-lg animate-fade-up stagger-3"
-          >
-            {/* This idle/freestyle stage is deliberately much taller than a normal video card —
-                it's the hero of the page when there's nothing else to look at yet, not a cramped
-                little box. Once a track is picked, the full-screen stage above takes over instead
-                of this ever growing an aspect-video mode of its own. */}
-            <div className="relative h-[440px] overflow-hidden bg-muted">
-              {recording || phase === "paused" ? (
-                <div className="absolute inset-0 flex items-center justify-around px-4">
-                  {levels.map((h, i) => (
-                    <span
-                      key={i}
-                      className={`w-1.5 rounded-full transition-[height] duration-75 ${BRAND_COLOR_ROTATION[i % BRAND_COLOR_ROTATION.length]}`}
-                      style={{ height: h * 2.2 }}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <IdleRecordStage
-                  onStart={startOrResume}
-                  pending={finishing}
-                  label={phase === "finished" ? t("record.reRecord") : t("common.record")}
-                />
-              )}
-
-              {finishing && (
-                <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/75 backdrop-blur-sm">
-                  <LogoPulse label={t("record.processingOverlay")} labelClassName="text-white" />
-                </div>
-              )}
-
-              {recording && (
-                <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="absolute inline-flex h-full w-full animate-ring-pulse rounded-full bg-white" />
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
-                  </span>
-                  {mm}:{ss}
-                </span>
-              )}
-
-              {(recording || phase === "paused") && (
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-3 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pb-3 pt-8">
-                  <div className="pointer-events-auto flex items-center gap-3">
-                    {phase === "paused" ? (
-                      <>
-                        <ControlButton
-                          onClick={startOrResume}
-                          icon={<Mic className="h-5 w-5" />}
-                          label={t("record.continueRecording")}
-                          variant="primary"
-                        />
-                        <ControlButton
-                          onClick={finishRecording}
-                          icon={<Check className="h-5 w-5" />}
-                          label={t("record.finishRecording")}
-                          variant="accent"
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <ControlButton
-                          onClick={pauseRecording}
-                          icon={<Pause className="h-5 w-5" />}
-                          label={t("common.pause")}
-                          variant="glass"
-                        />
-                        <ControlButton
-                          onClick={finishRecording}
-                          icon={<Check className="h-5 w-5" />}
-                          label={t("record.finishRecording")}
-                          variant="accent"
-                        />
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="p-4">
-              {(phase === "recording" || phase === "paused") && seconds > 0 ? (
-                <div>
-                  <ScrubBar
-                    totalSeconds={seconds}
-                    previewSeconds={previewSeconds}
-                    onDragStart={handleScrubStart}
-                    onDragMove={handleScrubMove}
-                    onDragEnd={handleScrubEnd}
-                  />
-                  <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>{t("record.scrubHint")}</span>
-                    <span className="flex items-center gap-1.5">
-                      {phase === "recording" ? t("record.rec") : t("record.paused")}{" "}
-                      {formatTime(previewSeconds ?? seconds)}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>00:00</span>
-                  <span className="flex items-center gap-1.5">
-                    {finishing && <Loader2 className="h-3 w-3 animate-spin" />}
-                    {finishing ? t("record.processing") : t("record.idle")} {mm}:{ss}
-                  </span>
-                  <span>—</span>
-                </div>
-              )}
-            </div>
-          </motion.div>
-
-          <p className="relative mt-4 text-center text-xs text-muted-foreground animate-fade-up stagger-4">
-            {t("record.opensStudioHint")}
-          </p>
         </div>
       )}
 
