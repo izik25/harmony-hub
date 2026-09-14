@@ -7,9 +7,12 @@ import { BottomNav } from "./BottomNav";
 export function AppShell({
   children,
   hideNav = false,
+  overlayNav = false,
 }: {
   children: ReactNode;
   hideNav?: boolean;
+  /** Nav floats over the content instead of reserving space below it — for a full-bleed screen like the feed. */
+  overlayNav?: boolean;
 }) {
   const { i18n } = useTranslation();
 
@@ -23,8 +26,8 @@ export function AppShell({
 
   return (
     <div className="relative mx-auto flex min-h-screen w-full max-w-[520px] flex-col bg-background text-foreground">
-      <main className={`relative flex-1 ${hideNav ? "" : "pb-20"}`}>{children}</main>
-      {!hideNav && <BottomNav />}
+      <main className={`relative flex-1 ${hideNav || overlayNav ? "" : "pb-20"}`}>{children}</main>
+      {!hideNav && <BottomNav overlay={overlayNav} />}
     </div>
   );
 }

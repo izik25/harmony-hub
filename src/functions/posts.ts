@@ -26,22 +26,24 @@ export type FeedPostDTO = {
 
 async function hydrateFeed(
   rows: Array<typeof posts.$inferSelect & { author: typeof users.$inferSelect }>,
-  viewerId: string,
+  viewerId: string | null,
 ): Promise<FeedPostDTO[]> {
   if (rows.length === 0) return [];
   const postIds = rows.map((r) => r.id);
   const authorIds = [...new Set(rows.map((r) => r.author.id))];
 
-  const [likedRows, followedRows] = await Promise.all([
-    db
-      .select({ postId: likes.postId })
-      .from(likes)
-      .where(and(eq(likes.userId, viewerId), inArray(likes.postId, postIds))),
-    db
-      .select({ followeeId: follows.followeeId })
-      .from(follows)
-      .where(and(eq(follows.followerId, viewerId), inArray(follows.followeeId, authorIds))),
-  ]);
+  const [likedRows, followedRows] = viewerId
+    ? await Promise.all([
+        db
+          .select({ postId: likes.postId })
+          .from(likes)
+          .where(and(eq(likes.userId, viewerId), inArray(likes.postId, postIds))),
+        db
+          .select({ followeeId: follows.followeeId })
+          .from(follows)
+          .where(and(eq(follows.followerId, viewerId), inArray(follows.followeeId, authorIds))),
+      ])
+    : [[], []];
   const likedSet = new Set(likedRows.map((r) => r.postId));
   const followedSet = new Set(followedRows.map((r) => r.followeeId));
 
@@ -84,6 +86,24 @@ export const listFeed = createServerFn({ method: "GET" }).handler(
     return hydrateFeed(
       rows.map((r) => ({ ...r.posts, author: r.users })),
       userId,
+    );
+  },
+);
+
+// Unauthenticated preview of the feed (the welcome screen) — same published/public posts, no
+// per-viewer like/follow state since there's no logged-in viewer yet.
+export const listPublicFeed = createServerFn({ method: "GET" }).handler(
+  async (): Promise<FeedPostDTO[]> => {
+    const rows = await db
+      .select()
+      .from(posts)
+      .innerJoin(users, eq(users.id, posts.userId))
+      .where(and(eq(posts.status, "published"), eq(posts.visibility, "public")))
+      .orderBy(desc(posts.createdAt))
+      .limit(20);
+    return hydrateFeed(
+      rows.map((r) => ({ ...r.posts, author: r.users })),
+      null,
     );
   },
 );

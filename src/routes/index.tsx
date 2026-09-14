@@ -42,7 +42,7 @@ function HomePage() {
   const { data } = useQuery({ queryKey: ["feed"], queryFn: () => listFeed() });
 
   return (
-    <AppShell>
+    <AppShell overlayNav>
       <TopBar transparent />
       <div className="relative -mt-14">
         <FeedSlider posts={data ?? []} />
@@ -102,7 +102,7 @@ function FeedSlider({ posts }: { posts: FeedPostDTO[] }) {
       onClick={() => {
         if (!hasInteracted) unmute();
       }}
-      className="h-[calc(100dvh-80px)] snap-y snap-mandatory overflow-y-auto no-scrollbar"
+      className="h-dvh snap-y snap-mandatory overflow-y-auto no-scrollbar"
     >
       {posts.map((p, i) => {
         const activeIndex = posts.findIndex((x) => x.id === activeId);
@@ -268,7 +268,7 @@ function FeedItem({
     <section
       data-post-id={post.id}
       style={{ scrollSnapStop: "always" }}
-      className="relative h-[calc(100dvh-80px)] snap-start overflow-hidden"
+      className="relative h-dvh snap-start overflow-hidden"
     >
       <motion.div
         onClick={handleCoverTap}
@@ -429,7 +429,7 @@ function FeedItem({
         initial={false}
         animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: 24 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1], delay: active ? 0.1 : 0 }}
-        className="absolute inset-x-0 bottom-0 z-10 p-4 pb-6"
+        className="absolute inset-x-0 bottom-0 z-10 p-4 pb-24"
       >
         <Link
           to="/profile/$handle"

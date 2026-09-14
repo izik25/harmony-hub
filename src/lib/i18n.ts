@@ -596,6 +596,10 @@ const en = {
   },
   landing: {
     nav: { login: "Log in", signup: "Sign up" },
+    gate: {
+      title: "Join Studio26 to continue",
+      subtitle: "Create a free account to like, comment, follow and send gifts.",
+    },
     hero: {
       kicker: "A social network built for music",
       title: "Where your voice becomes a track",
@@ -1283,6 +1287,10 @@ const he = {
   },
   landing: {
     nav: { login: "התחברות", signup: "הרשמה" },
+    gate: {
+      title: "הצטרפו ל-Studio26 כדי להמשיך",
+      subtitle: "צרו חשבון בחינם כדי לייק, להגיב, לעקוב ולשלוח מתנות.",
+    },
     hero: {
       kicker: "רשת חברתית שנבנתה למוזיקה",
       title: "המקום שבו הקול שלכם הופך לטראק",
@@ -1970,6 +1978,10 @@ const ar = {
   },
   landing: {
     nav: { login: "تسجيل الدخول", signup: "إنشاء حساب" },
+    gate: {
+      title: "انضم إلى Studio26 للمتابعة",
+      subtitle: "أنشئ حساباً مجانياً للإعجاب والتعليق والمتابعة وإرسال الهدايا.",
+    },
     hero: {
       kicker: "شبكة اجتماعية بُنيت للموسيقى",
       title: "المكان الذي يتحول فيه صوتك إلى أغنية",
