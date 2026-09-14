@@ -42,7 +42,7 @@ import { Button } from "@/components/ui/button";
 import { smartUploadMedia } from "@/lib/blob-upload";
 import { createDraft } from "@/functions/posts";
 import { listGiftCatalog, buyFilterForSelf } from "@/functions/wallet";
-import { listKaraokeArtists, listKaraokeTracks } from "@/functions/karaoke";
+import { listKaraokeArtists, listKaraokeTracks, getKaraokeTrack } from "@/functions/karaoke";
 import { processRecording } from "@/lib/mix-recording";
 import { commitCheckpoint, trimCheckpoint } from "@/lib/audio-splice";
 import * as videoSplice from "@/lib/video-splice";
@@ -58,6 +58,12 @@ import {
 } from "@/lib/audio-output";
 
 export const Route = createFileRoute("/record")({
+  // A song page's "Use this sound" button lands here with the track already picked, so recording
+  // can start straight into the full-screen stage instead of routing back through the artist/track
+  // picker — same shortcut TikTok's "Use this sound" gives you.
+  validateSearch: (search: Record<string, unknown>): { trackId?: string } => ({
+    trackId: typeof search.trackId === "string" ? search.trackId : undefined,
+  }),
   component: RecordPage,
 });
 
@@ -213,7 +219,26 @@ function useMicLevels(active: boolean, monitor: boolean) {
           return;
         }
         monitorStream = stream;
-        ctx = new AudioContext({ latencyHint: "interactive" });
+        // `latencyHint: "interactive"` is a broadly-safe preset the browser picks to cover any
+        // kind of app; passing an explicit `0` instead is the spec's own escape hatch for exactly
+        // this case — it asks the platform for the smallest render buffer it's actually willing
+        // to hand a page, not a generic safety margin, and on Chrome/Android in particular that's
+        // a materially smaller buffer than "interactive" lands on. Also matches the context's
+        // processing rate to whatever the track actually negotiated (MONITOR_CONSTRAINTS only
+        // asks for 48000 "ideally" — a Bluetooth headset mic especially can land well under
+        // that), since a mismatch forces Web Audio to resample the track before anything else can
+        // run, adding its own smearing/delay on top. Some platforms (older Safari in particular)
+        // reject an explicit sampleRate they can't honor outright, so this falls back to the
+        // browser's own default rather than leaving the monitor silently broken there.
+        const negotiatedRate = stream.getAudioTracks()[0]?.getSettings().sampleRate;
+        try {
+          ctx = new AudioContext({
+            latencyHint: 0,
+            ...(negotiatedRate ? { sampleRate: negotiatedRate } : {}),
+          });
+        } catch {
+          ctx = new AudioContext({ latencyHint: 0 });
+        }
         ctx.resume().catch(() => {});
         const source = ctx.createMediaStreamSource(stream);
         // Plain BiquadFilterNodes, not a compressor or anything with lookahead — these are
@@ -457,6 +482,25 @@ function RecordPage() {
   const [finishing, setFinishing] = useState(false);
   const [karaokeOpen, setKaraokeOpen] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<KaraokeTrack | null>(null);
+  const search = Route.useSearch();
+  // A sound page's "Use this sound" button (see routes/sound_.$id.tsx) sends the user here with
+  // ?trackId=... instead of a full track object — fetch it once and drop straight into the
+  // full-screen stage the same way picking it from the artist/track browser would.
+  const { data: deepLinkedTrack } = useQuery({
+    queryKey: ["karaokeTrack", search.trackId],
+    queryFn: () => getKaraokeTrack({ data: { id: search.trackId! } }),
+    enabled: !!search.trackId,
+  });
+  // Only auto-select once, the moment the deep-linked track first loads — otherwise tapping the
+  // clear-track (X) button would immediately re-select it, since that also sets selectedTrack back
+  // to null and this effect would fire again.
+  const appliedDeepLinkRef = useRef(false);
+  useEffect(() => {
+    if (deepLinkedTrack && !appliedDeepLinkRef.current) {
+      appliedDeepLinkRef.current = true;
+      setSelectedTrack(deepLinkedTrack);
+    }
+  }, [deepLinkedTrack]);
   // Defaults to on — hearing yourself as you sing is the point, so it should just work the
   // moment you start recording rather than requiring a tap to discover. localStorage still lets
   // an explicit "no" from a previous session stick.
@@ -653,6 +697,7 @@ function RecordPage() {
           rawVocalUrl: raw.url,
           videoUrl: cameraEnabled ? raw.url : undefined,
           backingTrackUrl: selectedTrack?.videoUrl,
+          karaokeTrackId: selectedTrack?.id,
           title: selectedTrack
             ? [selectedTrack.artist, selectedTrack.title].filter(Boolean).join(" — ")
             : undefined,

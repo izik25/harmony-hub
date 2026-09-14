@@ -28,6 +28,8 @@ export const users = pgTable("users", {
   coinsBalance: integer("coins_balance").notNull().default(500),
   accountType: text("account_type").notNull().default("user"), // user | artist
   isPro: boolean("is_pro").notNull().default(false),
+  role: text("role").notNull().default("user"), // user | admin
+  isBanned: boolean("is_banned").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -54,6 +56,13 @@ export const posts = pgTable("posts", {
   // anything published without going through that flow (plain uploads, older drafts, etc.).
   rawVocalUrl: text("raw_vocal_url").notNull().default(""),
   backingTrackUrl: text("backing_track_url").notNull().default(""),
+  // Which curated karaoke track this take was recorded over, if any — lets the feed link a post
+  // back to that track's "sound page" (usage count + every other video recorded over it), the same
+  // way TikTok links a post to the sound it used. Null for original songs, plain uploads, and any
+  // take from before this column existed.
+  karaokeTrackId: uuid("karaoke_track_id").references(() => karaokeTracks.id, {
+    onDelete: "set null",
+  }),
   coverUrl: text("cover_url").notNull().default(""),
   // A self-recorded (webcam + karaoke) or manually-uploaded performance video. When set, this is
   // what plays in the feed for this post instead of audioUrl + coverUrl — see FeedItem in
@@ -408,6 +417,36 @@ export const artistSongs = pgTable("artist_songs", {
   youtubeUrl: text("youtube_url").notNull().default(""),
   appleMusicUrl: text("apple_music_url").notNull().default(""),
   position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// One row per promotion request — either a user "boosting" one of their own posts (kind
+// "boost", tied to userId/postId, coins pre-charged into escrow when submitted) or a sponsor/
+// business ad placed directly by an admin (kind "sponsor_ad", no in-app user attached). Both
+// flow through the same pending -> approved/rejected admin review queue. `status` only ever
+// stores those three values — whether an approved promotion is currently "active" or already
+// "completed" is derived by comparing endAt to now, not stored, so nothing needs a background
+// job to keep it in sync.
+export const promotions = pgTable("promotions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  kind: text("kind").notNull(), // boost | sponsor_ad
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+  postId: uuid("post_id").references(() => posts.id, { onDelete: "cascade" }),
+  title: text("title").notNull().default(""),
+  description: text("description").notNull().default(""),
+  imageUrl: text("image_url").notNull().default(""),
+  targetUrl: text("target_url").notNull().default(""),
+  advertiserName: text("advertiser_name").notNull().default(""),
+  budgetCoins: integer("budget_coins").notNull().default(0),
+  durationDays: integer("duration_days").notNull().default(1),
+  status: text("status").notNull().default("pending"), // pending | approved | rejected
+  rejectionReason: text("rejection_reason").notNull().default(""),
+  reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  startAt: timestamp("start_at", { withTimezone: true }),
+  endAt: timestamp("end_at", { withTimezone: true }),
+  impressions: integer("impressions").notNull().default(0),
+  clicks: integer("clicks").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

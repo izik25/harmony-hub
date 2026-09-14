@@ -1,5 +1,6 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
+import { eq } from "drizzle-orm";
 import { db } from "./client";
 import { users, posts, giftsCatalog, competitions, auditions } from "./schema";
 
@@ -102,6 +103,10 @@ async function main() {
     )
     .onConflictDoNothing()
     .returning();
+
+  // Nova is the one demo account with admin access to /admin — set unconditionally so this
+  // stays true on re-runs even though the insert above no-ops once the user already exists.
+  await db.update(users).set({ role: "admin" }).where(eq(users.email, "nova@demo.sona"));
 
   const byHandle = new Map(insertedUsers.map((u) => [u.handle, u]));
   // If users already existed (re-run), fetch them so seeding posts still works.

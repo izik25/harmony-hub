@@ -2,7 +2,17 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Pencil, MessageSquare, Trophy, Share2, Trash2, Loader2, Globe, Lock } from "lucide-react";
+import {
+  Pencil,
+  MessageSquare,
+  Trophy,
+  Share2,
+  Trash2,
+  Loader2,
+  Globe,
+  Lock,
+  Rocket,
+} from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Dialog,
@@ -15,11 +25,12 @@ import { PostCoverBg } from "@/components/PostCoverBg";
 import { updatePost, deletePost, listComments, deleteComment, sharePost } from "@/functions/posts";
 import type { listUserPosts } from "@/functions/profile";
 import { listCompetitions, joinCompetition } from "@/functions/competitions";
+import { createBoost, BOOST_PACKAGES } from "@/functions/promotions";
 import { translateServerError } from "@/lib/i18n";
 import { shareContent } from "@/lib/share";
 
 type PostRow = Awaited<ReturnType<typeof listUserPosts>>[number];
-type SubView = "edit" | "comments" | "competition" | "deleteConfirm" | null;
+type SubView = "edit" | "comments" | "competition" | "boost" | "deleteConfirm" | null;
 
 const categories = ["Pop", "Hip-Hop", "Electronic", "Rock", "R&B"];
 
@@ -119,6 +130,11 @@ function PostActionsMenu({
           onClick={() => setView("competition")}
         />
         <MenuButton
+          icon={Rocket}
+          label={t("profile.postActions.boostPost")}
+          onClick={() => setView("boost")}
+        />
+        <MenuButton
           icon={shareMutation.isPending ? Loader2 : Share2}
           label={t("common.share")}
           onClick={() => shareMutation.mutate()}
@@ -155,6 +171,13 @@ function PostActionsMenu({
         onOpenChange={(v) => setView(v ? "competition" : null)}
         postId={post.id}
         onEntered={onClose}
+      />
+
+      <BoostDialog
+        open={view === "boost"}
+        onOpenChange={(v) => setView(v ? "boost" : null)}
+        postId={post.id}
+        onSubmitted={onClose}
       />
 
       <Dialog
@@ -460,6 +483,67 @@ function CompetitionPickerDialog({
             </button>
           ))}
         </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BoostDialog({
+  open,
+  onOpenChange,
+  postId,
+  onSubmitted,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  postId: string;
+  onSubmitted: () => void;
+}) {
+  const { t } = useTranslation();
+  const [packageId, setPackageId] = useState<string>(BOOST_PACKAGES[0].id);
+
+  const boostMutation = useMutation({
+    mutationFn: () => createBoost({ data: { postId, packageId } }),
+    onSuccess: () => {
+      toast.success(t("profile.postActions.boostSubmittedToast"));
+      onSubmitted();
+    },
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("profile.postActions.boostPost")}</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">{t("profile.postActions.boostDesc")}</p>
+        <div className="grid gap-2">
+          {BOOST_PACKAGES.map((pkg) => (
+            <button
+              key={pkg.id}
+              onClick={() => setPackageId(pkg.id)}
+              className={`flex items-center justify-between rounded-2xl border p-3 text-start press-scale ${
+                packageId === pkg.id ? "border-primary bg-primary/10" : "border-border bg-card"
+              }`}
+            >
+              <span className="text-sm font-semibold">
+                {t("profile.postActions.boostDays", { count: pkg.days })}
+              </span>
+              <span className="font-mono text-sm text-accent">{pkg.coins}</span>
+            </button>
+          ))}
+        </div>
+        <DialogFooter>
+          <button
+            onClick={() => boostMutation.mutate()}
+            disabled={boostMutation.isPending}
+            className="flex w-full items-center justify-center gap-2 rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-60"
+          >
+            {boostMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {t("profile.postActions.boostSubmit")}
+          </button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

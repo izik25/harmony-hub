@@ -14,6 +14,7 @@ export type FeedPostDTO = {
   coverUrl: string;
   audioUrl: string;
   videoUrl: string;
+  karaokeTrackId: string | null;
   user: { id: string; name: string; handle: string; verified: boolean; avatar: string };
   likes: number;
   comments: number;
@@ -56,6 +57,7 @@ async function hydrateFeed(
     coverUrl: r.coverUrl,
     audioUrl: r.audioUrl,
     videoUrl: r.videoUrl,
+    karaokeTrackId: r.karaokeTrackId,
     user: {
       id: r.author.id,
       name: r.author.name,
@@ -207,6 +209,7 @@ export const createDraft = createServerFn({ method: "POST" })
         rawVocalUrl?: string;
         backingTrackUrl?: string;
         videoUrl?: string;
+        karaokeTrackId?: string;
       },
   )
   .handler(async ({ data }) => {
@@ -221,6 +224,7 @@ export const createDraft = createServerFn({ method: "POST" })
         rawVocalUrl: data.rawVocalUrl ?? "",
         backingTrackUrl: data.backingTrackUrl ?? "",
         videoUrl: data.videoUrl ?? "",
+        karaokeTrackId: data.karaokeTrackId ?? null,
         hue: Math.floor(Math.random() * 360),
         credits: { performer: "", writer: "", composer: "", producer: "" },
         status: "draft",

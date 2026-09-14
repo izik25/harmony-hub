@@ -37,6 +37,7 @@ export const getProfileByHandle = createServerFn({ method: "GET" })
       country: user.country,
       openToLabel: user.openToLabel,
       accountType: user.accountType,
+      role: user.role,
       isMe: user.id === viewerId,
       isFollowing: !!isFollowing,
       followerCount: followerCount.n,

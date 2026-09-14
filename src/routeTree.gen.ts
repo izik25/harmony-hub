@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CompetitionsRouteImport } from './routes/competitions'
 import { Route as ExploreRouteImport } from './routes/explore'
 import { Route as LabelHubRouteImport } from './routes/label-hub'
@@ -28,10 +29,16 @@ import { Route as CompetitionsIdRouteImport } from './routes/competitions_.$id'
 import { Route as LiveRoomIdRouteImport } from './routes/live_.$roomId'
 import { Route as MessagesConversationIdRouteImport } from './routes/messages_.$conversationId'
 import { Route as ProfileHandleRouteImport } from './routes/profile_.$handle'
+import { Route as SoundIdRouteImport } from './routes/sound_.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CompetitionsRoute = CompetitionsRouteImport.update({
@@ -124,9 +131,15 @@ const ProfileHandleRoute = ProfileHandleRouteImport.update({
   path: '/profile/$handle',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SoundIdRoute = SoundIdRouteImport.update({
+  id: '/sound_/$id',
+  path: '/sound/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/competitions': typeof CompetitionsRoute
   '/explore': typeof ExploreRoute
   '/label-hub': typeof LabelHubRoute
@@ -145,9 +158,11 @@ export interface FileRoutesByFullPath {
   '/live/$roomId': typeof LiveRoomIdRoute
   '/messages/$conversationId': typeof MessagesConversationIdRoute
   '/profile/$handle': typeof ProfileHandleRoute
+  '/sound/$id': typeof SoundIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/competitions': typeof CompetitionsRoute
   '/explore': typeof ExploreRoute
   '/label-hub': typeof LabelHubRoute
@@ -166,10 +181,12 @@ export interface FileRoutesByTo {
   '/live/$roomId': typeof LiveRoomIdRoute
   '/messages/$conversationId': typeof MessagesConversationIdRoute
   '/profile/$handle': typeof ProfileHandleRoute
+  '/sound/$id': typeof SoundIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/competitions': typeof CompetitionsRoute
   '/explore': typeof ExploreRoute
   '/label-hub': typeof LabelHubRoute
@@ -188,11 +205,13 @@ export interface FileRoutesById {
   '/live_/$roomId': typeof LiveRoomIdRoute
   '/messages_/$conversationId': typeof MessagesConversationIdRoute
   '/profile_/$handle': typeof ProfileHandleRoute
+  '/sound_/$id': typeof SoundIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/competitions'
     | '/explore'
     | '/label-hub'
@@ -211,9 +230,11 @@ export interface FileRouteTypes {
     | '/live/$roomId'
     | '/messages/$conversationId'
     | '/profile/$handle'
+    | '/sound/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admin'
     | '/competitions'
     | '/explore'
     | '/label-hub'
@@ -232,9 +253,11 @@ export interface FileRouteTypes {
     | '/live/$roomId'
     | '/messages/$conversationId'
     | '/profile/$handle'
+    | '/sound/$id'
   id:
     | '__root__'
     | '/'
+    | '/admin'
     | '/competitions'
     | '/explore'
     | '/label-hub'
@@ -253,10 +276,12 @@ export interface FileRouteTypes {
     | '/live_/$roomId'
     | '/messages_/$conversationId'
     | '/profile_/$handle'
+    | '/sound_/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   CompetitionsRoute: typeof CompetitionsRoute
   ExploreRoute: typeof ExploreRoute
   LabelHubRoute: typeof LabelHubRoute
@@ -275,6 +300,7 @@ export interface RootRouteChildren {
   LiveRoomIdRoute: typeof LiveRoomIdRoute
   MessagesConversationIdRoute: typeof MessagesConversationIdRoute
   ProfileHandleRoute: typeof ProfileHandleRoute
+  SoundIdRoute: typeof SoundIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -284,6 +310,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/competitions': {
@@ -412,11 +445,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProfileHandleRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sound_/$id': {
+      id: '/sound_/$id'
+      path: '/sound/$id'
+      fullPath: '/sound/$id'
+      preLoaderRoute: typeof SoundIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   CompetitionsRoute: CompetitionsRoute,
   ExploreRoute: ExploreRoute,
   LabelHubRoute: LabelHubRoute,
@@ -435,6 +476,7 @@ const rootRouteChildren: RootRouteChildren = {
   LiveRoomIdRoute: LiveRoomIdRoute,
   MessagesConversationIdRoute: MessagesConversationIdRoute,
   ProfileHandleRoute: ProfileHandleRoute,
+  SoundIdRoute: SoundIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

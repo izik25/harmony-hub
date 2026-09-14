@@ -418,11 +418,22 @@ function FeedItem({
           icon={<Share2 className="h-7 w-7" />}
           count={formatCount(post.shares)}
         />
-        <button
-          className={`grid h-10 w-10 place-items-center rounded-full glass ${isPlaying ? "animate-spin-fast" : ""}`}
-        >
-          <Music className="h-5 w-5 text-white" />
-        </button>
+        {post.karaokeTrackId ? (
+          <Link
+            to="/sound/$id"
+            params={{ id: post.karaokeTrackId }}
+            aria-label={t("feed.viewSound")}
+            className={`grid h-10 w-10 place-items-center rounded-full glass ${isPlaying ? "animate-spin-fast" : ""}`}
+          >
+            <Music className="h-5 w-5 text-white" />
+          </Link>
+        ) : (
+          <button
+            className={`grid h-10 w-10 place-items-center rounded-full glass ${isPlaying ? "animate-spin-fast" : ""}`}
+          >
+            <Music className="h-5 w-5 text-white" />
+          </button>
+        )}
       </motion.div>
 
       <motion.div
@@ -456,7 +467,19 @@ function FeedItem({
           ) : (
             <Volume2 className="h-3.5 w-3.5" />
           )}
-          <span className="line-clamp-1">{post.song}</span>
+          {post.karaokeTrackId ? (
+            <Link
+              to="/sound/$id"
+              params={{ id: post.karaokeTrackId }}
+              onClick={(e) => e.stopPropagation()}
+              className="line-clamp-1 flex min-w-0 items-center gap-1 font-semibold hover:underline"
+            >
+              <Music className="h-3 w-3 shrink-0" />
+              <span className="line-clamp-1">{post.song}</span>
+            </Link>
+          ) : (
+            <span className="line-clamp-1">{post.song}</span>
+          )}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button

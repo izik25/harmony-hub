@@ -26,6 +26,7 @@ export type SessionUser = {
   coinsBalance: number;
   accountType: string;
   isPro: boolean;
+  role: string;
 };
 
 function toSessionUser(u: typeof users.$inferSelect): SessionUser {
@@ -44,6 +45,7 @@ function toSessionUser(u: typeof users.$inferSelect): SessionUser {
     coinsBalance: u.coinsBalance,
     accountType: u.accountType,
     isPro: u.isPro,
+    role: u.role,
   };
 }
 
@@ -55,7 +57,8 @@ export const getSessionUser = createServerOnlyFn(async (): Promise<SessionUser |
     const [session] = await db.select().from(sessions).where(eq(sessions.id, token));
     if (!session || session.expiresAt.getTime() < Date.now()) return null;
     const [user] = await db.select().from(users).where(eq(users.id, session.userId));
-    return user ? toSessionUser(user) : null;
+    if (!user || user.isBanned) return null;
+    return toSessionUser(user);
   } catch (error) {
     throw toSafeError(error);
   }
@@ -142,6 +145,7 @@ export const login = createServerFn({ method: "POST" })
       if (!user || !user.passwordHash) throw new Error("invalidCredentials");
       const ok = await bcrypt.compare(data.password, user.passwordHash);
       if (!ok) throw new Error("invalidCredentials");
+      if (user.isBanned) throw new Error("accountBanned");
       await createSession(user.id);
       return toSessionUser(user);
     } catch (error) {

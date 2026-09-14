@@ -21,6 +21,7 @@ import {
   Play,
   Pause,
   Swords,
+  ShieldCheck,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -211,36 +212,48 @@ export function ProfileView({ handle }: { handle: string }) {
     <AppShell>
       <TopBar />
       <div className="relative">
-        <div className="relative h-40 overflow-hidden">
-          <ProfileBannerBars />
+        <div className="flex items-center justify-end gap-2 px-4 pt-2">
+          {profile.isMe && (
+            <>
+              {profile.role === "admin" && (
+                <Link
+                  to="/admin"
+                  className="rounded-full p-2 text-foreground/80 press-scale hover:text-primary"
+                  aria-label="Admin"
+                >
+                  <ShieldCheck className="h-5 w-5" />
+                </Link>
+              )}
+              <button
+                onClick={async () => {
+                  const url = `${window.location.origin}/profile/${profile.handle}`;
+                  const result = await shareContent({ title: profile.name, url });
+                  if (result === "copied") toast.success(t("profile.linkCopied"));
+                }}
+                className="rounded-full p-2 text-foreground/80 press-scale hover:text-primary"
+              >
+                <Share2 className="h-5 w-5" />
+              </button>
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="rounded-full p-2 text-foreground/80 press-scale hover:text-primary"
+              >
+                <Settings className="h-5 w-5" />
+              </button>
+            </>
+          )}
         </div>
-        {profile.isMe && (
-          <div className="absolute right-4 top-4 flex items-center gap-2">
-            <button
-              onClick={async () => {
-                const url = `${window.location.origin}/profile/${profile.handle}`;
-                const result = await shareContent({ title: profile.name, url });
-                if (result === "copied") toast.success(t("profile.linkCopied"));
-              }}
-              className="rounded-full glass p-2 press-scale"
-            >
-              <Share2 className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="rounded-full glass p-2 press-scale"
-            >
-              <Settings className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-        <div className="-mt-12 px-4">
-          <img
+
+        <div className="flex flex-col items-center px-6 text-center">
+          <motion.img
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 22 }}
             src={profile.avatarUrl}
             alt=""
-            className="h-24 w-24 rounded-full border-4 border-background"
+            className="h-24 w-24 rounded-full ring-2 ring-border"
           />
-          <div className="mt-2 flex items-center gap-1">
+          <div className="mt-3 flex items-center gap-1">
             <h1 className="font-display text-xl font-bold">{profile.name}</h1>
             {profile.verified && <BadgeCheck className="h-5 w-5 text-accent" />}
           </div>
@@ -248,22 +261,30 @@ export function ProfileView({ handle }: { handle: string }) {
             @{profile.handle}
             {profile.verified ? ` · ${t("profile.verified")}` : ""}
           </p>
-          {profile.bio && <p className="mt-2 max-w-md text-sm">{profile.bio}</p>}
+          {profile.bio && <p className="mt-2 max-w-xs text-sm">{profile.bio}</p>}
 
-          <div className="mt-3 flex items-center gap-3 text-sm">
-            <Stat n={profile.followerCount} k={t("profile.followers")} delay={0} />
-            <Stat n={profile.followingCount} k={t("profile.following")} delay={0.05} />
+          <div className="mt-4 flex items-center justify-center gap-6">
+            <Stat n={profile.followingCount} k={t("profile.following")} delay={0} />
+            <Stat n={profile.followerCount} k={t("profile.followers")} delay={0.05} />
             <Stat n={profile.likesTotal} k={t("profile.likes")} delay={0.1} />
           </div>
 
-          {!profile.isMe && (
-            <div className="mt-4 flex gap-2">
+          {profile.isMe ? (
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setSettingsOpen(true)}
+              className="mt-4 w-full max-w-xs rounded-lg border border-border bg-card py-2 text-sm font-semibold shadow-pop press-scale"
+            >
+              {t("profile.edit")}
+            </motion.button>
+          ) : (
+            <div className="mt-4 flex w-full max-w-xs items-center justify-center gap-2">
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 whileHover={{ scale: 1.01 }}
                 transition={{ type: "spring", stiffness: 420, damping: 24 }}
                 onClick={() => followMutation.mutate()}
-                className={`flex-1 rounded-full py-2 text-sm font-bold ${
+                className={`flex-1 rounded-lg py-2 text-sm font-bold ${
                   profile.isFollowing
                     ? "border border-border bg-card text-foreground"
                     : "bg-brand-coral text-white shadow-pop-coral"
@@ -276,7 +297,7 @@ export function ProfileView({ handle }: { handle: string }) {
                 whileHover={{ scale: 1.05 }}
                 transition={{ type: "spring", stiffness: 420, damping: 24 }}
                 onClick={() => messageMutation.mutate()}
-                className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold"
+                className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold"
               >
                 <MessageSquare className="h-4 w-4" />
               </motion.button>
@@ -287,7 +308,7 @@ export function ProfileView({ handle }: { handle: string }) {
                 onClick={() => setDuelConfirmOpen(true)}
                 disabled={duelMutation.isPending}
                 title={t("profile.challengeToDuet")}
-                className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-brand-gold disabled:opacity-60"
+                className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-brand-gold disabled:opacity-60"
               >
                 <Swords className="h-4 w-4" />
               </motion.button>
@@ -300,7 +321,7 @@ export function ProfileView({ handle }: { handle: string }) {
                   const result = await shareContent({ title: profile.name, url });
                   if (result === "copied") toast.success(t("profile.linkCopied"));
                 }}
-                className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold"
+                className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold"
               >
                 <Share2 className="h-4 w-4" />
               </motion.button>
@@ -317,15 +338,15 @@ export function ProfileView({ handle }: { handle: string }) {
               <button
                 key={k}
                 onClick={() => setTab(k)}
-                className={`relative shrink-0 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors duration-150 ${
-                  tab === k ? "text-primary" : "text-muted-foreground"
+                className={`relative shrink-0 px-3 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors duration-150 ${
+                  tab === k ? "text-foreground" : "text-muted-foreground"
                 }`}
               >
                 {t(`profile.${k}`)}
                 {tab === k && (
                   <motion.span
                     layoutId="profile-tab-underline"
-                    className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded-full bg-primary"
+                    className="absolute inset-x-2 -bottom-0.5 h-0.5 rounded-full bg-foreground"
                     transition={{ type: "spring", stiffness: 500, damping: 32 }}
                   />
                 )}
@@ -508,47 +529,7 @@ export function ProfileView({ handle }: { handle: string }) {
           </DialogContent>
         </Dialog>
       )}
-
-      <style>{`.profile-eq-bar { height: 10px; animation: profile-eq-bounce ease-in-out infinite; }
-      @keyframes profile-eq-bounce { 0%, 100% { height: 8px; } 50% { height: 44px; } }
-      @media (prefers-reduced-motion: reduce) { .profile-eq-bar { animation: none; height: 20px; } }`}</style>
     </AppShell>
-  );
-}
-
-const PROFILE_BANNER_BARS = [
-  { cls: "bg-brand-coral", glow: "var(--brand-coral)" },
-  { cls: "bg-brand-gold", glow: "var(--brand-gold)" },
-  { cls: "bg-brand-teal", glow: "var(--brand-teal)" },
-  { cls: "bg-brand-indigo", glow: "var(--brand-indigo)" },
-];
-
-function ProfileBannerBars({ count = 56 }: { count?: number }) {
-  return (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute inset-0 flex items-center justify-center gap-[3px] px-4 pb-6"
-      style={{
-        WebkitMaskImage:
-          "linear-gradient(to right, transparent, black 14%, black 86%, transparent)",
-        maskImage: "linear-gradient(to right, transparent, black 14%, black 86%, transparent)",
-      }}
-    >
-      {Array.from({ length: count }).map((_, i) => {
-        const bar = PROFILE_BANNER_BARS[i % PROFILE_BANNER_BARS.length];
-        return (
-          <span
-            key={i}
-            className={`profile-eq-bar w-1 shrink-0 rounded-full ${bar.cls}`}
-            style={{
-              animationDelay: `${(i % 12) * 0.12}s`,
-              animationDuration: `${1 + (i % 5) * 0.18}s`,
-              boxShadow: `0 0 8px ${bar.glow}`,
-            }}
-          />
-        );
-      })}
-    </div>
   );
 }
 
@@ -621,14 +602,14 @@ function ArtistLinksRow({ links }: { links: Profile["artistLinks"] }) {
   if (pills.length === 0 && !links.ticketsUrl && !links.genre && !links.label) return null;
 
   return (
-    <div className="mt-4 rounded-2xl border border-border bg-card p-3 shadow-pop">
+    <div className="mt-4 w-full max-w-xs rounded-2xl border border-border bg-card p-3 text-center shadow-pop">
       {(links.genre || links.label) && (
         <p className="text-xs text-muted-foreground">
           {[links.genre, links.label].filter(Boolean).join(" · ")}
         </p>
       )}
       {pills.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-2 flex flex-wrap justify-center gap-2">
           {pills.map((p) => (
             <a
               key={p.label}
