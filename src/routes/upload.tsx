@@ -23,6 +23,7 @@ import { PublishEverywhereModal } from "@/components/PublishEverywhereModal";
 import { getDraft, publishPost } from "@/functions/posts";
 import { smartUploadMedia } from "@/lib/blob-upload";
 import { translateServerError } from "@/lib/i18n";
+import { renderPerformanceVideo } from "@/lib/video-splice";
 
 interface UploadSearch {
   draftId?: string;
@@ -144,12 +145,49 @@ function UploadPage() {
   };
 
   const publishMutation = useMutation({
-    mutationFn: () =>
-      publishPost({
+    mutationFn: async () => {
+      let finalVideoUrl = videoUrl ?? undefined;
+      // A camera take recorded over a karaoke track only ever carries its own raw selfie footage
+      // server-side (draft.videoUrl, set by record.tsx) — the backing video with the lyrics never
+      // got baked in, and that footage's own audio track is the dry, unmixed mic capture rather
+      // than draft.audioUrl's final balanced/mastered mix. Composite the two together right here,
+      // right before the post is actually created — not at record time, since Fix a Section and
+      // Studio's remix/mastering both still need to operate on the plain raw take, so this has to
+      // be the last step, not an earlier one. Skipped when the user replaced the video with their
+      // own upload (videoUrl already set) or there's no backing track to composite against.
+      if (
+        !finalVideoUrl &&
+        draftId &&
+        draft?.videoUrl &&
+        draft?.backingTrackUrl &&
+        draft?.audioUrl
+      ) {
+        try {
+          const [cameraBlob, mixedAudioBlob] = await Promise.all([
+            fetch(draft.videoUrl).then((r) => r.blob()),
+            fetch(draft.audioUrl).then((r) => r.blob()),
+          ]);
+          const performanceBlob = await renderPerformanceVideo({
+            cameraBlob,
+            backingVideoUrl: draft.backingTrackUrl,
+            mixedAudioBlob,
+          });
+          const uploaded = await smartUploadMedia(
+            performanceBlob,
+            `performance-${Date.now()}.${performanceBlob.type.includes("mp4") ? "mp4" : "webm"}`,
+          );
+          finalVideoUrl = uploaded.url;
+        } catch (err) {
+          console.error(err);
+          toast.error(t("upload.performanceComposeFailed"));
+          // fall back to publishing the raw selfie clip rather than blocking the whole publish
+        }
+      }
+      return publishPost({
         data: {
           draftId,
           audioUrl: draftId ? undefined : pickedFile?.url,
-          videoUrl: videoUrl ?? undefined,
+          videoUrl: finalVideoUrl,
           coverUrl: coverUrl ?? undefined,
           type,
           title: title.trim() || t("upload.untitled"),
@@ -159,7 +197,8 @@ function UploadPage() {
           credits: { performer, writer, composer, producer },
           visibility,
         },
-      }),
+      });
+    },
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ["feed"] });
       queryClient.invalidateQueries({ queryKey: ["userPosts"] });

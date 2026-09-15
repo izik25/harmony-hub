@@ -27,7 +27,7 @@ export function pickSupportedMimeType(): string {
   return "video/webm";
 }
 
-function roundRectPath(
+export function roundRectPath(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
