@@ -44,6 +44,23 @@ interface StudioSearch {
 // old neon rainbow gradient sweep.
 const BRAND_BAR_COLORS = ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold", "bg-brand-teal"];
 
+// True peak, not RMS — vocalLevelDb (analyzeSignal) is an 85th-percentile short-window RMS
+// measure, and vocal takes routinely have a 10dB+ crest factor, so a take that reads e.g. -18dB
+// RMS can already have peaks sitting right under 0dBFS. applyMaster used to size its makeup-gain
+// boost off vocalLevelDb alone, with no idea how much real headroom the take had left — see the
+// comment by gainBoostDb below for why that's what was actually causing AI Mastering to distort.
+function peakDbOf(buffer: AudioBuffer): number {
+  let peak = 0;
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const data = buffer.getChannelData(ch);
+    for (let i = 0; i < data.length; i++) {
+      const abs = Math.abs(data[i]);
+      if (abs > peak) peak = abs;
+    }
+  }
+  return peak > 0 ? 20 * Math.log10(peak) : -100;
+}
+
 function formatTime(s: number) {
   const m = String(Math.floor(s / 60)).padStart(2, "0");
   const ss = String(Math.floor(s % 60)).padStart(2, "0");
@@ -692,13 +709,30 @@ function StudioPage() {
     // recorded at. -12dB is meaningfully hotter than the -20dB target record.tsx's own auto-gain
     // already normalized every take to (see processRecording in mix-recording.ts) — without this,
     // AI Mastering was re-deriving a level the take had already arrived at, which is exactly why it
-    // could land on barely-perceptible knob movements for an already-decent take. Boost-only
-    // (floored at 0) so a hot take never gets turned down by hitting Master, and capped at 6dB (was
-    // 9) so the limiter (buildChain, threshold -1dB, 100ms release) only ever has a sane amount of
-    // gain reduction to do — 9dB of makeup gain into a limiter is enough on its own to read as
-    // pumping/distortion no matter how the limiter itself is tuned.
+    // could land on barely-perceptible knob movements for an already-decent take.
+    //
+    // This used to be derived from vocalLevelDb alone (an RMS measure — see peakDbOf's comment
+    // above) with no cap based on how much headroom the take actually had left. record.tsx's own
+    // auto-mix already runs every take through its own limiter sitting near -1dBFS before it ever
+    // reaches Studio, so a typical loaded take's peaks are already close to full scale even when
+    // its RMS reads well under -12dB. Asking for a further 6-9dB of makeup gain on a take with
+    // maybe 1dB of real headroom left is what was actually producing the distortion: the limiter
+    // here (buildChain) is a fast compressor, not a true zero-latency brickwall, so a large,
+    // sudden overshoot like that punches straight through its 3ms attack on every consonant and
+    // plosive instead of being caught cleanly. Capping the boost to the headroom the take's own
+    // measured peak actually leaves (minus a safety margin for the EQ tilt and reverb send still
+    // ahead of the limiter) means the limiter is only ever asked to trim a small, catchable amount
+    // — which is what makes the loudness increase audible without the crunch.
+    const peakDb = peakDbOf(buffer);
+    const limiterThresholdDb = -1;
+    const headroomMarginDb = 3; // slack for the EQ high-shelf and reverb send between here and the limiter
+    const availableHeadroomDb = limiterThresholdDb - peakDb - headroomMarginDb;
     const targetMasterDb = -12;
-    const gainBoostDb = clamp(targetMasterDb - after.vocalLevelDb, 0, 6);
+    const gainBoostDb = clamp(
+      Math.min(targetMasterDb - after.vocalLevelDb, availableHeadroomDb),
+      0,
+      6,
+    );
 
     // Drives the same Autotune slider/engine a manual adjustment would (see runPitchCorrection
     // above) — Master just decides a sensible strength on the take's behalf instead of leaving it
