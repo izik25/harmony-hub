@@ -147,37 +147,26 @@ function UploadPage() {
   const publishMutation = useMutation({
     mutationFn: async () => {
       let finalVideoUrl = videoUrl ?? undefined;
-      // A camera take recorded over a karaoke track only ever carries its own raw selfie footage
-      // server-side (draft.videoUrl, set by record.tsx) — the backing video with the lyrics never
-      // got baked in, and that footage's own audio track is the dry, unmixed mic capture rather
-      // than draft.audioUrl's final balanced/mastered mix. Composite the two together right here,
-      // right before the post is actually created — not at record time, since Fix a Section and
-      // Studio's remix/mastering both still need to operate on the plain raw take, so this has to
-      // be the last step, not an earlier one. Skipped when the user replaced the video with their
-      // own upload (videoUrl already set) or there's no backing track to composite against.
-      if (
-        !finalVideoUrl &&
-        draftId &&
-        draft?.videoUrl &&
-        draft?.backingTrackUrl &&
-        draft?.audioUrl
-      ) {
+      // A camera take only ever carries its own raw selfie footage server-side (draft.videoUrl,
+      // set by record.tsx), and that footage's own audio track is the dry, unmixed mic capture
+      // rather than draft.audioUrl's final balanced/mastered mix. Re-render the footage with the
+      // real mix as its soundtrack right here, right before the post is actually created — not at
+      // record time, since Fix a Section and Studio's remix/mastering both still need to operate
+      // on the plain raw take, so this has to be the last step, not an earlier one. Skipped when
+      // the user replaced the video with their own upload (videoUrl already set).
+      if (!finalVideoUrl && draftId && draft?.videoUrl && draft?.audioUrl) {
         try {
           const [cameraBlob, mixedAudioBlob] = await Promise.all([
             fetch(draft.videoUrl).then((r) => r.blob()),
             fetch(draft.audioUrl).then((r) => r.blob()),
           ]);
           // Belt-and-suspenders: renderPerformanceVideo already bounds its own internal wait, but
-          // this races the whole step (including the video/backing-track loads before it) against
-          // a hard ceiling too, so a stalled fetch or a browser quirk we didn't anticipate can
-          // never leave "Publish" stuck forever — it just falls back to the raw selfie clip below,
-          // same as any other failure here.
+          // this races the whole step (including the fetches above) against a hard ceiling too, so
+          // a stalled fetch or a browser quirk we didn't anticipate can never leave "Publish" stuck
+          // forever — it just falls back to the raw selfie clip below, same as any other failure
+          // here.
           const performanceBlob = await Promise.race([
-            renderPerformanceVideo({
-              cameraBlob,
-              backingVideoUrl: draft.backingTrackUrl,
-              mixedAudioBlob,
-            }),
+            renderPerformanceVideo({ cameraBlob, mixedAudioBlob }),
             new Promise<Blob>((_, reject) =>
               setTimeout(() => reject(new Error("performance compose timed out")), 5 * 60_000),
             ),

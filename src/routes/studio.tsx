@@ -750,8 +750,20 @@ function StudioPage() {
     const pitchProfile = analyzePitch(buffer);
     const clamp01 = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
     let pitchStrength = 0;
-    if (pitchProfile.voicedRatio > 0.2 && pitchProfile.avgAbsCents > 12) {
-      pitchStrength = clamp01(0.3 + (pitchProfile.avgAbsCents / 150) * 0.4, 0.3, 0.7);
+    // 12 cents (the old bar) sits well inside normal vibrato — a singer's vibrato alone typically
+    // swings +/-50-100 cents around the true note, and avgAbsCents measures each frame against the
+    // nearest *chromatic* note rather than a vibrato-aware note center, so that swing shows up
+    // directly as "off pitch" even on a well-sung, deliberately expressive take. At 12 cents this
+    // fired on almost every real vocal performance and immediately pulled at least 30% of the way
+    // to the chromatic grid — flattening natural vibrato/expression into a processed, auto-tuned
+    // character. That's a destructive change baked straight into the take (unlike the EQ/compressor/
+    // reverb knobs, which stay adjustable), so it's very likely the dominant reason Master reads as
+    // making a take worse rather than better even after the gain-staging/EQ/compressor fixes above.
+    // 30 cents is closer to where a take actually reads as pitchy rather than just expressively
+    // sung, and the floor strength once triggered is gentler (0.15 vs 0.3) so a take just over the
+    // bar gets nudged, not yanked.
+    if (pitchProfile.voicedRatio > 0.2 && pitchProfile.avgAbsCents > 30) {
+      pitchStrength = clamp01(0.15 + (pitchProfile.avgAbsCents / 220) * 0.55, 0.15, 0.7);
       applyPitchCorrection(buffer, pitchStrength);
     }
     pitchAppliedRef.current = pitchStrength;

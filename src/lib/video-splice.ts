@@ -1,4 +1,4 @@
-import { pickSupportedMimeType, roundRectPath } from "./video-synthesis";
+import { pickSupportedMimeType } from "./video-synthesis";
 
 /**
  * Video-level analogue of audio-splice.ts's pause/rewind/fix operations, with the same three-
@@ -164,62 +164,25 @@ export async function replaceSegment(
   ]);
 }
 
-// Fixed vertical export resolution for the published performance video — independent of both the
-// selfie camera's own (much smaller, record.tsx caps it ~480px wide) capture resolution and the
-// karaoke clip's native size, so the composite reads the same regardless of what either source
-// happened to record at.
-const PERFORMANCE_WIDTH = 1080;
-const PERFORMANCE_HEIGHT = 1920;
-
-// Mirrors the self-preview box record.tsx's live full-screen stage draws at `top-20 end-3 h-32
-// w-24` on its ~393px-wide mobile viewport — scaled up to this export's fixed resolution — so the
-// published video reproduces the same picture-in-picture layout the singer actually saw and
-// recorded against, not an arbitrarily different one.
-const PIP_WIDTH = 260;
-const PIP_HEIGHT = 345;
-const PIP_TOP = 170;
-const PIP_RIGHT = 40;
-const PIP_RADIUS = 28;
-
 /**
- * Builds the actual publish-ready performance video: the karaoke backing video (lyrics baked in)
- * full-frame — the same object-contain-over-a-blurred-backdrop treatment record.tsx's live stage
- * uses — with the selfie camera composited on top as a picture-in-picture overlay in the same
- * corner, and the take's final mixed vocal+backing audio (never either source's own raw track) as
- * the soundtrack. Without this, a camera take's own MediaRecorder output only ever carries the
- * bare cropped selfie clip and its own dry, unprocessed mic audio — never the backing video the
- * viewer needs to see the lyrics against, and never the properly balanced mix. This has to run as
- * its own step, separate from the live recording (record.tsx) and from Fix a Section
- * (FixSectionEditor.tsx / this module's replaceSegment), both of which still operate on the plain
- * selfie-only footage so punch-ins stay simple splices — compositing only makes sense once, after
- * every edit is done, right before the take is actually published.
+ * Re-renders a camera take's own footage, full-frame and exactly as recorded — no karaoke lyrics
+ * screen, no picture-in-picture layout — with the take's final mixed vocal+backing audio (never
+ * the camera clip's own dry, unprocessed mic track) as the soundtrack. That prompter/PiP layout
+ * only ever belonged on the live recording stage (record.tsx) so the singer had the lyrics to
+ * follow while performing; the published result should look like any other performance video, so
+ * this only ever touches the audio track, never the picture. Runs as its own step, separate from
+ * the live recording and from Fix a Section (replaceSegment above), both of which still operate on
+ * the plain selfie-only footage so punch-ins stay simple splices — this only makes sense once,
+ * after every edit is done, right before the take is actually published. Kept to the camera's own
+ * native resolution (record.tsx caps it ~480px wide) rather than upscaling to a fixed export size —
+ * far less canvas/encoder work per frame, which is most of what made this slow to begin with.
  */
 export async function renderPerformanceVideo(params: {
   cameraBlob: Blob;
-  backingVideoUrl: string;
   mixedAudioBlob: Blob;
 }): Promise<Blob> {
   const { video: camVideo, url: camUrl } = await loadVideo(params.cameraBlob);
   camVideo.muted = true;
-
-  // Loaded directly from its served URL (not re-fetched into a blob first) — same as
-  // video-synthesis.ts's cover-image loader, and the karaoke storage already serves these
-  // cross-origin-readable (sync-karaoke.ts puts them on Vercel Blob's public storage, or a
-  // same-origin /karaoke/files/ path), which drawImage()-ing a video frame onto a canvas requires
-  // to avoid tainting it.
-  const backingVideo = document.createElement("video");
-  backingVideo.crossOrigin = "anonymous";
-  backingVideo.muted = true;
-  backingVideo.playsInline = true;
-  backingVideo.src = params.backingVideoUrl;
-  await new Promise<void>((resolve, reject) => {
-    backingVideo.addEventListener("loadedmetadata", () => resolve(), { once: true });
-    backingVideo.addEventListener(
-      "error",
-      () => reject(new Error("videoSpliceBackingLoadFailed")),
-      { once: true },
-    );
-  });
 
   const audioCtx = new AudioContext();
   let audioBuffer: AudioBuffer;
@@ -234,52 +197,13 @@ export async function renderPerformanceVideo(params: {
   audioSource.buffer = audioBuffer;
   audioSource.connect(dest);
 
+  const width = camVideo.videoWidth || 480;
+  const height = camVideo.videoHeight || 854;
   const canvas = document.createElement("canvas");
-  canvas.width = PERFORMANCE_WIDTH;
-  canvas.height = PERFORMANCE_HEIGHT;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("videoSynthCanvasUnavailable");
-
-  const pipX = PERFORMANCE_WIDTH - PIP_RIGHT - PIP_WIDTH;
-
-  const drawContain = (video: HTMLVideoElement) => {
-    if (!video.videoWidth || !video.videoHeight) return;
-    const coverScale = Math.max(
-      PERFORMANCE_WIDTH / video.videoWidth,
-      PERFORMANCE_HEIGHT / video.videoHeight,
-    );
-    const bw = video.videoWidth * coverScale;
-    const bh = video.videoHeight * coverScale;
-    ctx.filter = "blur(36px)";
-    ctx.drawImage(video, (PERFORMANCE_WIDTH - bw) / 2, (PERFORMANCE_HEIGHT - bh) / 2, bw, bh);
-    ctx.filter = "none";
-
-    const containScale = Math.min(
-      PERFORMANCE_WIDTH / video.videoWidth,
-      PERFORMANCE_HEIGHT / video.videoHeight,
-    );
-    const cw = video.videoWidth * containScale;
-    const ch = video.videoHeight * containScale;
-    ctx.drawImage(video, (PERFORMANCE_WIDTH - cw) / 2, (PERFORMANCE_HEIGHT - ch) / 2, cw, ch);
-  };
-
-  const drawPip = (video: HTMLVideoElement) => {
-    if (!video.videoWidth || !video.videoHeight) return;
-    ctx.save();
-    roundRectPath(ctx, pipX, PIP_TOP, PIP_WIDTH, PIP_HEIGHT, PIP_RADIUS);
-    ctx.clip();
-    const scale = Math.max(PIP_WIDTH / video.videoWidth, PIP_HEIGHT / video.videoHeight);
-    const vw = video.videoWidth * scale;
-    const vh = video.videoHeight * scale;
-    ctx.drawImage(video, pipX + (PIP_WIDTH - vw) / 2, PIP_TOP + (PIP_HEIGHT - vh) / 2, vw, vh);
-    ctx.restore();
-    ctx.save();
-    roundRectPath(ctx, pipX, PIP_TOP, PIP_WIDTH, PIP_HEIGHT, PIP_RADIUS);
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = "#ffffff";
-    ctx.stroke();
-    ctx.restore();
-  };
 
   const canvasStream = (
     canvas as HTMLCanvasElement & { captureStream(fps?: number): MediaStream }
@@ -292,7 +216,7 @@ export async function renderPerformanceVideo(params: {
   const mimeType = pickSupportedMimeType();
   const recorder = new MediaRecorder(combined, {
     mimeType,
-    videoBitsPerSecond: 4_000_000,
+    videoBitsPerSecond: 2_500_000,
     audioBitsPerSecond: 128_000,
   });
   const chunks: Blob[] = [];
@@ -305,37 +229,26 @@ export async function renderPerformanceVideo(params: {
 
   let raf = 0;
   const drawFrame = () => {
-    drawContain(backingVideo);
-    drawPip(camVideo);
+    ctx.drawImage(camVideo, 0, 0, width, height);
     raf = requestAnimationFrame(drawFrame);
   };
 
   try {
     await audioCtx.resume();
-    await Promise.all([seekTo(camVideo, 0), seekTo(backingVideo, 0)]);
-    await Promise.all([camVideo.play(), backingVideo.play()]);
+    await seekTo(camVideo, 0);
+    await camVideo.play();
     recorder.start();
     audioSource.start(0);
     drawFrame();
 
     await new Promise<void>((resolve) => {
       let done = false;
-      // The karaoke clip can be shorter than the take (a short backing loop under a longer
-      // performance) — loop it back to the top instead of freezing on its last frame for
-      // whatever's left, exactly like the live stage would keep looping.
-      const onBackingEnded = () => {
-        if (camVideo.ended) return;
-        backingVideo.currentTime = 0;
-        backingVideo.play().catch(() => {});
-      };
       const finish = () => {
         if (done) return;
         done = true;
-        backingVideo.removeEventListener("ended", onBackingEnded);
         clearTimeout(ceiling);
         resolve();
       };
-      backingVideo.addEventListener("ended", onBackingEnded);
       camVideo.addEventListener("ended", finish, { once: true });
       // camVideo is a freshly-recorded MediaRecorder blob, which commonly reports its `duration`
       // as Infinity until something forces a recalculation — and with that, Chromium can fail to
@@ -347,7 +260,6 @@ export async function renderPerformanceVideo(params: {
     });
   } finally {
     cancelAnimationFrame(raf);
-    backingVideo.pause();
     try {
       audioSource.stop();
     } catch {
