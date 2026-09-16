@@ -66,7 +66,7 @@ type VocalChain = {
   reverbDry: Tone.Gain;
   reverbWet: Tone.Gain;
   makeupGain: Tone.Gain;
-  limiter: Tone.Limiter;
+  limiter: Tone.Compressor;
 };
 
 type DraftDTO = Awaited<ReturnType<typeof getDraft>>;
@@ -102,8 +102,20 @@ function buildChain(onEnded?: () => void): VocalChain {
   // reverb send — the limiter's ceiling means gainDb can push a take audibly louder without
   // clipping, instead of every knob above it only ever reshaping the take's dynamics/tone at the
   // same overall loudness it was recorded at.
+  //
+  // Built by hand instead of Tone.Limiter: Tone.Limiter hardcodes its release at 10ms, and
+  // anything under ~50ms makes a limiter start tracking the waveform of the audio itself rather
+  // than its envelope — audible as added distortion/pumping, exactly what AI Mastering was
+  // producing whenever gainDb pushed much gain into it. attack/threshold match Tone.Limiter's own
+  // defaults (fast enough to still catch peaks); release matches the already-correct limiter in
+  // mix-recording.ts's offline chain.
   const makeupGain = new Tone.Gain(1);
-  const limiter = new Tone.Limiter(-0.5).toDestination();
+  const limiter = new Tone.Compressor({
+    ratio: 20,
+    attack: 0.003,
+    release: 0.1,
+    threshold: -1,
+  }).toDestination();
 
   compressor.fan(reverbDry, reverbConvolver);
   reverbConvolver.connect(reverbWet);
@@ -129,12 +141,22 @@ function buildChain(onEnded?: () => void): VocalChain {
 
 function applyParams(chain: VocalChain, p: Params) {
   chain.player.playbackRate = p.speed / 100;
-  chain.filter.frequency.value = 80 + (p.noise / 100) * 300;
-  const eqDb = ((p.eq - 50) / 50) * 12;
-  chain.eq3.low.value = eqDb;
+  // 50-150Hz rumble cut, not 80-380Hz: the old ceiling ran well into a lot of voices' actual
+  // fundamental range, thinning the take out under the guise of "removing noise."
+  chain.filter.frequency.value = 50 + (p.noise / 100) * 100;
+  // A tilt, not a parallel boost: brighter now means lift the top and trim the bottom (roughly
+  // equal-and-opposite, standard mastering "tilt EQ"), instead of pushing low and high by the same
+  // +/-12dB at once, which just made the take louder and boxier rather than actually brighter —
+  // and at the top of the old range was enough gain on its own to push the limiter into distortion.
+  const eqDb = ((p.eq - 50) / 50) * 8;
   chain.eq3.high.value = eqDb;
-  chain.compressor.threshold.value = -6 - (p.compression / 100) * 30;
-  chain.compressor.ratio.value = 1 + (p.compression / 100) * 15;
+  chain.eq3.low.value = -eqDb * 0.5;
+  // Threshold/ratio brought down into the range real mastering compression actually uses (mild
+  // 2-4:1, up to ~6:1 for a heavy setting) instead of maxing out at -36dB/16:1, which was closer to
+  // a second limiter than a compressor and squashed takes hard enough to read as distortion/pumping
+  // once makeup gain and the final limiter (see buildChain) piled on top of it.
+  chain.compressor.threshold.value = -4 - (p.compression / 100) * 16;
+  chain.compressor.ratio.value = 1 + (p.compression / 100) * 5;
   // Capped at 0.45 (was 0.7) so even the slider maxed out reads as a small room/plate, not a
   // hall — combined with the shorter impulse response below, this keeps reverb from crossing into
   // audible discrete echo.
@@ -201,11 +223,11 @@ function StudioPage() {
   // gateAppliedRef whenever a fresh take loads since it hasn't been mastered yet either.
   const [gainDb, setGainDb] = useState(0);
 
-  // 125/85 match record.tsx's initial auto-mix — a touch under the vocal / a touch over the
+  // 115/95 match record.tsx's initial auto-mix — a touch under the vocal / a touch over the
   // backing track so the instrumental doesn't get buried under it, expressed as % so the sliders
   // read naturally.
-  const [vocalVolume, setVocalVolume] = useState(125);
-  const [playbackVolume, setPlaybackVolume] = useState(85);
+  const [vocalVolume, setVocalVolume] = useState(115);
+  const [playbackVolume, setPlaybackVolume] = useState(95);
   const [fixSectionOpen, setFixSectionOpen] = useState(false);
   // Whether the "replace video with a cover image" picker is expanded — see replaceCoverMutation.
   const [replacingCover, setReplacingCover] = useState(false);
@@ -671,11 +693,12 @@ function StudioPage() {
     // already normalized every take to (see processRecording in mix-recording.ts) — without this,
     // AI Mastering was re-deriving a level the take had already arrived at, which is exactly why it
     // could land on barely-perceptible knob movements for an already-decent take. Boost-only
-    // (floored at 0) so a hot take never gets turned down by hitting Master, and capped at 9dB so
-    // the limiter (buildChain, threshold -0.5dB) only ever has a sane amount of gain reduction to
-    // do, not enough to audibly squash the take.
+    // (floored at 0) so a hot take never gets turned down by hitting Master, and capped at 6dB (was
+    // 9) so the limiter (buildChain, threshold -1dB, 100ms release) only ever has a sane amount of
+    // gain reduction to do — 9dB of makeup gain into a limiter is enough on its own to read as
+    // pumping/distortion no matter how the limiter itself is tuned.
     const targetMasterDb = -12;
-    const gainBoostDb = clamp(targetMasterDb - after.vocalLevelDb, 0, 9);
+    const gainBoostDb = clamp(targetMasterDb - after.vocalLevelDb, 0, 6);
 
     // Drives the same Autotune slider/engine a manual adjustment would (see runPitchCorrection
     // above) — Master just decides a sensible strength on the take's behalf instead of leaving it

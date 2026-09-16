@@ -319,6 +319,7 @@ export async function renderPerformanceVideo(params: {
     drawFrame();
 
     await new Promise<void>((resolve) => {
+      let done = false;
       // The karaoke clip can be shorter than the take (a short backing loop under a longer
       // performance) — loop it back to the top instead of freezing on its last frame for
       // whatever's left, exactly like the live stage would keep looping.
@@ -327,15 +328,22 @@ export async function renderPerformanceVideo(params: {
         backingVideo.currentTime = 0;
         backingVideo.play().catch(() => {});
       };
+      const finish = () => {
+        if (done) return;
+        done = true;
+        backingVideo.removeEventListener("ended", onBackingEnded);
+        clearTimeout(ceiling);
+        resolve();
+      };
       backingVideo.addEventListener("ended", onBackingEnded);
-      camVideo.addEventListener(
-        "ended",
-        () => {
-          backingVideo.removeEventListener("ended", onBackingEnded);
-          resolve();
-        },
-        { once: true },
-      );
+      camVideo.addEventListener("ended", finish, { once: true });
+      // camVideo is a freshly-recorded MediaRecorder blob, which commonly reports its `duration`
+      // as Infinity until something forces a recalculation — and with that, Chromium can fail to
+      // ever fire 'ended' even once playback has genuinely reached the end of the data, hanging
+      // this (and the whole publish flow awaiting it) forever. audioBuffer decoded via
+      // decodeAudioData always carries a real, reliable duration and *is* the actual soundtrack
+      // length this export cares about, so use it (plus a little slack) as a hard ceiling.
+      const ceiling = setTimeout(finish, (audioBuffer.duration + 2) * 1000);
     });
   } finally {
     cancelAnimationFrame(raf);

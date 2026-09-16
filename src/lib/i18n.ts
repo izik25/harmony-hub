@@ -45,6 +45,7 @@ const en = {
     linkCopied: "Link copied",
     edit: "Edit",
     delete: "Delete",
+    close: "Close",
   },
   error: {
     notFoundTitle: "Page not found",
@@ -759,6 +760,7 @@ const he = {
     linkCopied: "הקישור הועתק",
     edit: "עריכה",
     delete: "מחיקה",
+    close: "סגור",
   },
   error: {
     notFoundTitle: "העמוד לא נמצא",
@@ -1472,6 +1474,7 @@ const ar = {
     linkCopied: "تم نسخ الرابط",
     edit: "تعديل",
     delete: "حذف",
+    close: "إغلاق",
   },
   error: {
     notFoundTitle: "الصفحة غير موجودة",

@@ -19,11 +19,10 @@ import {
   MapPin,
   MoreVertical,
   Play,
-  Pause,
   Swords,
   ShieldCheck,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -43,6 +42,7 @@ import {
 } from "@/components/ui/dialog";
 import { getProfileByHandle, listUserPosts, updateProfile } from "@/functions/profile";
 import { PostActionsSheet } from "@/components/PostActionsSheet";
+import { PostViewerDialog } from "@/components/PostViewerDialog";
 import {
   updateArtistLinks,
   listArtistSongs,
@@ -72,34 +72,10 @@ export function ProfileView({ handle }: { handle: string }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [duelConfirmOpen, setDuelConfirmOpen] = useState(false);
   const [actionsFor, setActionsFor] = useState<PostRow | null>(null);
-  // Grid tiles have no dedicated player page — tapping one just plays its audio in place, one at
-  // a time, through this single shared <audio> element rather than mounting one per tile.
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
-
-  const togglePlayPost = (p: { id: string; audioUrl: string }) => {
-    const audio = previewAudioRef.current;
-    if (!audio || !p.audioUrl) return;
-    if (playingId === p.id) {
-      audio.pause();
-      setPlayingId(null);
-      return;
-    }
-    audio.src = p.audioUrl;
-    audio.currentTime = 0;
-    audio.play().catch(() => {});
-    setPlayingId(p.id);
-  };
-
-  // Switching tabs (or leaving the page) hides whichever tile shows the pause icon — audio
-  // shouldn't keep playing invisibly once its own tile is off-screen.
-  useEffect(() => {
-    const audio = previewAudioRef.current;
-    return () => {
-      audio?.pause();
-      setPlayingId(null);
-    };
-  }, [tab]);
+  // Tapping a grid tile opens it full-screen through PostViewerDialog — real video playback for
+  // camera takes (the grid tile itself only ever shows a muted, controls-less frame), or cover +
+  // audio otherwise, with the post's own options reachable right on top of it.
+  const [viewingPost, setViewingPost] = useState<PostRow | null>(null);
 
   const { data: profile } = useQuery({
     queryKey: ["profile", handle],
@@ -437,56 +413,58 @@ export function ProfileView({ handle }: { handle: string }) {
                 {t("profile.nothingHereYet")}
               </p>
             )}
-            {shownPosts?.map((p) => {
-              const isPlaying = playingId === p.id;
-              return (
-                <div
-                  key={p.id}
-                  role="button"
-                  onClick={() => togglePlayPost(p)}
-                  className="press-scale relative aspect-[3/4] cursor-pointer overflow-hidden"
-                >
+            {shownPosts?.map((p) => (
+              <div
+                key={p.id}
+                role="button"
+                onClick={() => setViewingPost(p)}
+                className="press-scale relative aspect-[3/4] cursor-pointer overflow-hidden"
+              >
+                {p.videoUrl ? (
+                  <video
+                    src={p.videoUrl}
+                    poster={p.coverUrl || undefined}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                ) : (
                   <PostCoverBg hue={p.hue} seed={p.id} imageUrl={p.coverUrl} />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span
-                      className={`grid place-items-center rounded-full bg-black/50 backdrop-blur-sm transition-all ${
-                        isPlaying ? "h-11 w-11 bg-brand-coral/80" : "h-9 w-9"
-                      }`}
-                    >
-                      {isPlaying ? (
-                        <Pause className="h-4 w-4 fill-white text-white" />
-                      ) : (
-                        <Play className="h-4 w-4 fill-white text-white" />
-                      )}
-                    </span>
-                  </div>
-                  {profile.isMe && (
-                    <button
-                      aria-label={t("profile.postActions.title")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActionsFor(p);
-                      }}
-                      className="absolute right-1.5 top-1.5 rounded-full bg-black/50 p-1"
-                    >
-                      <MoreVertical className="h-3.5 w-3.5 text-white" />
-                    </button>
-                  )}
-                  <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-gradient-to-t from-black/80 to-transparent p-1.5 text-[10px] font-semibold text-white">
-                    {isPlaying ? (
-                      <Pause className="h-3 w-3 fill-white" />
-                    ) : (
-                      <Play className="h-3 w-3 fill-white" />
-                    )}
-                    {formatCount(p.likesCount)}
-                  </div>
+                )}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="grid h-9 w-9 place-items-center rounded-full bg-black/50 backdrop-blur-sm">
+                    <Play className="h-4 w-4 fill-white text-white" />
+                  </span>
                 </div>
-              );
-            })}
+                {profile.isMe && (
+                  <button
+                    aria-label={t("profile.postActions.title")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActionsFor(p);
+                    }}
+                    className="absolute right-1.5 top-1.5 rounded-full bg-black/50 p-1"
+                  >
+                    <MoreVertical className="h-3.5 w-3.5 text-white" />
+                  </button>
+                )}
+                <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-gradient-to-t from-black/80 to-transparent p-1.5 text-[10px] font-semibold text-white">
+                  <Play className="h-3 w-3 fill-white" />
+                  {formatCount(p.likesCount)}
+                </div>
+              </div>
+            ))}
           </div>
         )}
-        <audio ref={previewAudioRef} onEnded={() => setPlayingId(null)} className="hidden" />
       </div>
+
+      <PostViewerDialog
+        post={viewingPost}
+        isMe={profile.isMe}
+        onClose={() => setViewingPost(null)}
+        onOptions={(p) => setActionsFor(p)}
+      />
 
       {profile.isMe && (
         <>

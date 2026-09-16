@@ -167,11 +167,21 @@ function UploadPage() {
             fetch(draft.videoUrl).then((r) => r.blob()),
             fetch(draft.audioUrl).then((r) => r.blob()),
           ]);
-          const performanceBlob = await renderPerformanceVideo({
-            cameraBlob,
-            backingVideoUrl: draft.backingTrackUrl,
-            mixedAudioBlob,
-          });
+          // Belt-and-suspenders: renderPerformanceVideo already bounds its own internal wait, but
+          // this races the whole step (including the video/backing-track loads before it) against
+          // a hard ceiling too, so a stalled fetch or a browser quirk we didn't anticipate can
+          // never leave "Publish" stuck forever — it just falls back to the raw selfie clip below,
+          // same as any other failure here.
+          const performanceBlob = await Promise.race([
+            renderPerformanceVideo({
+              cameraBlob,
+              backingVideoUrl: draft.backingTrackUrl,
+              mixedAudioBlob,
+            }),
+            new Promise<Blob>((_, reject) =>
+              setTimeout(() => reject(new Error("performance compose timed out")), 5 * 60_000),
+            ),
+          ]);
           const uploaded = await smartUploadMedia(
             performanceBlob,
             `performance-${Date.now()}.${performanceBlob.type.includes("mp4") ? "mp4" : "webm"}`,

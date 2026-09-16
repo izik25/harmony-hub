@@ -75,8 +75,11 @@ const BAR_COUNT = 48;
 // touch under the vocal / a touch over the backing track so the take doesn't drown out the
 // instrumental out of the gate. The user re-balances (and hears the result) from Studio, which
 // now owns this entirely; record.tsx's only job is to get a take onto the Studio screen fast.
-const DEFAULT_VOCAL_GAIN = 1.25;
-const DEFAULT_BACKING_GAIN = 0.85;
+// Nudged closer together from 1.25/0.85: the backing track was sitting too far under the vocal
+// by default, and the vocal gain was hot enough to leave the limiter downstream (see
+// mix-recording.ts) doing more work than it needed to.
+const DEFAULT_VOCAL_GAIN = 1.15;
+const DEFAULT_BACKING_GAIN = 0.95;
 // Studio-style cue: how loud the mic is fed back into the monitor tap, relative to the raw
 // signal. Kept under unity so a live "hear yourself" mix doesn't come in hotter than the
 // backing track and isn't right at the edge of feedback if headphones seal imperfectly.
