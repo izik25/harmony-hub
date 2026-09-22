@@ -68,6 +68,7 @@ import {
   routeToHeadphonesIfAvailable,
   routeAudioContextToHeadphonesIfAvailable,
 } from "@/lib/audio-output";
+import { createLiveNoiseGate, type LiveNoiseGate } from "@/lib/mic-noise-gate";
 
 export const Route = createFileRoute("/record")({
   // A song page's "Use this sound" button lands here with the track already picked, so recording
@@ -156,6 +157,12 @@ function useMicLevels(active: boolean, monitor: boolean) {
   const [levels, setLevels] = useState<number[]>(() => Array(BAR_COUNT).fill(6));
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  // The gated version of streamRef's audio — see mic-noise-gate.ts. This is what MediaRecorder
+  // should actually record from once it's ready; it lags streamRef.current by however long the
+  // AudioWorklet takes to register (usually well under the 100ms the recorder-setup effect below
+  // already polls at), so callers fall back to the raw stream until then rather than blocking the
+  // start of recording on it.
+  const gatedStreamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number>(0);
 
   // The stream MediaRecorder actually records from — nothing else ever touches this track.
@@ -163,6 +170,7 @@ function useMicLevels(active: boolean, monitor: boolean) {
     if (!active) return;
     let ctx: AudioContext | undefined;
     let cancelled = false;
+    let gate: LiveNoiseGate | undefined;
 
     navigator.mediaDevices
       .getUserMedia({ audio: MIC_CONSTRAINTS })
@@ -179,6 +187,21 @@ function useMicLevels(active: boolean, monitor: boolean) {
         analyser.fftSize = 128;
         source.connect(analyser);
         analyserRef.current = analyser;
+
+        // Reduces background noise in the actual take being captured, not just the on-screen
+        // meter — see mic-noise-gate.ts for why this can't just lean on the offline gate that
+        // already runs during mixdown. Shares this same `source` node (rather than opening a
+        // second tap on the mic) so the capsule is only ever read once.
+        createLiveNoiseGate(ctx, source).then((liveGate) => {
+          if (cancelled || !ctx) {
+            liveGate.dispose();
+            return;
+          }
+          gate = liveGate;
+          const destination = ctx.createMediaStreamDestination();
+          liveGate.node.connect(destination);
+          gatedStreamRef.current = destination.stream;
+        });
 
         const data = new Uint8Array(analyser.frequencyBinCount);
         const tick = () => {
@@ -198,6 +221,8 @@ function useMicLevels(active: boolean, monitor: boolean) {
     return () => {
       cancelled = true;
       cancelAnimationFrame(rafRef.current);
+      gate?.dispose();
+      gatedStreamRef.current = null;
       streamRef.current?.getTracks().forEach((t) => t.stop());
       ctx?.close();
       setLevels(Array(BAR_COUNT).fill(6));
@@ -299,7 +324,7 @@ function useMicLevels(active: boolean, monitor: boolean) {
     };
   }, [active, monitor]);
 
-  return { levels, stream: streamRef };
+  return { levels, stream: streamRef, gatedStream: gatedStreamRef };
 }
 
 // Opens the raw selfie camera and, whenever a virtual background is chosen, layers a live
@@ -700,7 +725,10 @@ function RecordPage() {
   // real rewind (or answering "no" to the cut prompt) knows whether to resume or stay paused.
   const wasRecordingRef = useRef(false);
   const recording = phase === "recording";
-  const { stream } = useMicLevels(phase === "recording" || phase === "paused", monitorEnabled);
+  const { stream, gatedStream } = useMicLevels(
+    phase === "recording" || phase === "paused",
+    monitorEnabled,
+  );
 
   // Remember the monitor preference across visits, same as any other studio setting — but only
   // once someone's actually made a choice. No stored value yet means "first time here," which
@@ -883,6 +911,7 @@ function RecordPage() {
             vocalGain: DEFAULT_VOCAL_GAIN,
             backingGain: DEFAULT_BACKING_GAIN,
             backingPitchSemitones: pitchSemitones,
+            backingStartOffsetSeconds: segmentStart,
           }),
           new Promise<Blob>((_, reject) =>
             setTimeout(() => reject(new Error("processing timed out")), 30_000),
@@ -913,6 +942,7 @@ function RecordPage() {
           rawVocalUrl: raw.url,
           videoUrl: cameraEnabled ? raw.url : undefined,
           backingTrackUrl: selectedTrack?.videoUrl,
+          backingStartOffsetSeconds: segmentStart,
           karaokeTrackId: selectedTrack?.id,
           title: selectedTrack
             ? [selectedTrack.artist, selectedTrack.title].filter(Boolean).join(" — ")
@@ -957,10 +987,14 @@ function RecordPage() {
         // Explicit bitrate — MediaRecorder's default Opus encoding is conservative enough that
         // the raw capture itself can come out sounding thin/"voice memo"-like before any
         // cleanup even runs. 128kbps is comfortably high quality for a mono voice track.
+        // Prefers the gated stream (background noise already reduced — see mic-noise-gate.ts)
+        // once it's ready; the raw stream is a safe fallback for the rare case where this
+        // recorder starts before the AudioWorklet has finished registering.
+        const recordingStream = gatedStream.current ?? stream.current;
         const usingCamera = cameraEnabled && !!effectiveCamStreamRef.current;
         const recorder = usingCamera
-          ? buildCombinedRecorder(stream.current, effectiveCamStreamRef.current!).recorder
-          : new MediaRecorder(stream.current, { audioBitsPerSecond: 128_000 });
+          ? buildCombinedRecorder(recordingStream, effectiveCamStreamRef.current!).recorder
+          : new MediaRecorder(recordingStream, { audioBitsPerSecond: 128_000 });
         // Which splice implementation folds/cuts this take's checkpoints — audio-splice.ts's
         // in-memory buffer slicing for a normal take, video-splice.ts's canvas re-encode for a
         // camera one (see that file). Captured once per recorder since cameraEnabled can't
@@ -1022,9 +1056,22 @@ function RecordPage() {
   }, [phase, stream, selectedTrack, segmentStart, t]);
 
   const startOrResume = () => {
-    if (phase !== "paused") {
+    const fresh = phase !== "paused";
+    if (fresh) {
       setSeconds(0);
       baseBlobRef.current = null; // a genuinely fresh take, not a continue-after-checkpoint
+    }
+    // Kicked off synchronously, right inside this click handler, rather than left to the
+    // recorder-setup effect below (which only runs once the mic stream is ready, a beat later on
+    // its own polling interval). Playing a <video> WITH sound has to happen inside the actual user
+    // gesture or browsers — iOS Safari in particular — silently drop the audio half of playback
+    // (the video still visibly plays) once it's kicked off from an async callback instead. That's
+    // what read as "I only hear myself, never the backing track": the mic recorded fine, the
+    // karaoke video just never got permission to make sound. The effect's own play() call below
+    // becomes a harmless no-op once this has already started it.
+    if (videoRef.current) {
+      if (fresh) videoRef.current.currentTime = segmentStart;
+      videoRef.current.play().catch(() => {});
     }
     setPhase("recording");
     setOpenPanel(null); // don't leave a background/filter tray crowding the controls mid-take

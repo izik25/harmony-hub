@@ -586,6 +586,7 @@ function StudioPage() {
       const mixed = await processRecording(rawBlob, draft.backingTrackUrl || undefined, {
         vocalGain: vocalVolume / 100,
         backingGain: playbackVolume / 100,
+        backingStartOffsetSeconds: draft.backingStartOffsetSeconds,
       });
       const { url } = await smartUploadMedia(mixed, `studio-remix-${Date.now()}.wav`);
       await updateDraftAudio({ data: { id: draftId, audioUrl: url } });
@@ -926,6 +927,7 @@ function StudioPage() {
                 draftId={draftId!}
                 rawVocalUrl={draft.rawVocalUrl}
                 backingTrackUrl={draft.backingTrackUrl}
+                backingStartOffsetSeconds={draft.backingStartOffsetSeconds}
                 videoUrl={draft.videoUrl || undefined}
                 vocalGain={vocalVolume / 100}
                 backingGain={playbackVolume / 100}

@@ -161,6 +161,12 @@ export type MixLevels = {
    * see the pitch rail control in record.tsx) so the exported mix matches the key the vocal was
    * actually sung against, not the track's original key. 0 (the default) leaves it untouched. */
   backingPitchSemitones?: number;
+  /** Where in the backing track the vocal actually started (KaraokeSegmentPicker's "choose a
+   * part" start, in seconds) — the take was sung against the backing track playing from this
+   * point, not from 0:00, so the backing track mixed in here has to start from the same point or
+   * it lands seconds (sometimes minutes) out of sync with the vocal. 0 (the default) is "whole
+   * song," which needs no offset. */
+  backingStartOffsetSeconds?: number;
 };
 
 export async function processRecording(
@@ -171,6 +177,7 @@ export async function processRecording(
   const vocalGain = levels.vocalGain ?? 1.4;
   const backingGainLevel = levels.backingGain ?? 0.65;
   const backingPitchSemitones = levels.backingPitchSemitones ?? 0;
+  const backingStartOffsetSeconds = Math.max(0, levels.backingStartOffsetSeconds ?? 0);
   const decodeCtx = new AudioContext();
   let micBuffer: AudioBuffer;
   let backingBuffer: AudioBuffer | null = null;
@@ -327,7 +334,13 @@ export async function processRecording(
     const backingGain = offlineCtx.createGain();
     backingGain.gain.value = backingGainLevel; // sits under the vocal instead of drowning it out
     backingSource.connect(backingGain).connect(limiter);
-    backingSource.start(0, 0, Math.min(duration, backingBuffer.duration));
+    // The vocal (micBuffer, starting at t=0 here) was sung against the backing track starting
+    // from backingStartOffsetSeconds, not from the top of the song — so that's where playback of
+    // the buffer has to start too, or the two drift out of sync by exactly that amount (a
+    // segment-picked take used to always mix in the backing track from 0:00 regardless of where
+    // recording actually began, which is what read as "the playback isn't lined up"/"latency").
+    const offset = Math.min(backingStartOffsetSeconds, Math.max(0, backingBuffer.duration - 0.01));
+    backingSource.start(0, offset, Math.min(duration, backingBuffer.duration - offset));
   }
 
   const rendered = await withTimeout(

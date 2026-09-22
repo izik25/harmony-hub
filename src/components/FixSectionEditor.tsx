@@ -40,6 +40,7 @@ export function FixSectionEditor({
   draftId,
   rawVocalUrl,
   backingTrackUrl,
+  backingStartOffsetSeconds,
   vocalGain,
   backingGain,
   // Seeds the start marker from wherever the caller was already listening (the main Studio
@@ -60,6 +61,7 @@ export function FixSectionEditor({
   draftId: string;
   rawVocalUrl: string;
   backingTrackUrl?: string | null;
+  backingStartOffsetSeconds?: number;
   vocalGain: number;
   backingGain: number;
   initialStartFraction?: number;
@@ -285,6 +287,7 @@ export function FixSectionEditor({
       const mixed = await processRecording(raw, backingTrackUrl || undefined, {
         vocalGain,
         backingGain,
+        backingStartOffsetSeconds,
       });
       const videoBlob = pendingVideoBlobRef.current;
       const [rawUp, mixedUp, videoUp] = await Promise.all([

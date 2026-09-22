@@ -208,6 +208,7 @@ export const createDraft = createServerFn({ method: "POST" })
         type?: string;
         rawVocalUrl?: string;
         backingTrackUrl?: string;
+        backingStartOffsetSeconds?: number;
         videoUrl?: string;
         karaokeTrackId?: string;
       },
@@ -223,6 +224,7 @@ export const createDraft = createServerFn({ method: "POST" })
         audioUrl: data.audioUrl,
         rawVocalUrl: data.rawVocalUrl ?? "",
         backingTrackUrl: data.backingTrackUrl ?? "",
+        backingStartOffsetSeconds: Math.max(0, Math.round(data.backingStartOffsetSeconds ?? 0)),
         videoUrl: data.videoUrl ?? "",
         karaokeTrackId: data.karaokeTrackId ?? null,
         hue: Math.floor(Math.random() * 360),

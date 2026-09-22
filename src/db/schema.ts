@@ -56,6 +56,12 @@ export const posts = pgTable("posts", {
   // anything published without going through that flow (plain uploads, older drafts, etc.).
   rawVocalUrl: text("raw_vocal_url").notNull().default(""),
   backingTrackUrl: text("backing_track_url").notNull().default(""),
+  // Where in backingTrackUrl the take actually started singing along (KaraokeSegmentPicker's
+  // "choose a part" start, in seconds — 0 for the whole song). processRecording needs this to
+  // offset the backing track it mixes in so it lines up with the vocal instead of always starting
+  // from the song's own beginning; Studio's re-bake (Mix Balance / AI Mastering) needs it for the
+  // same reason whenever it re-runs that mix later.
+  backingStartOffsetSeconds: integer("backing_start_offset_seconds").notNull().default(0),
   // Which curated karaoke track this take was recorded over, if any — lets the feed link a post
   // back to that track's "sound page" (usage count + every other video recorded over it), the same
   // way TikTok links a post to the sound it used. Null for original songs, plain uploads, and any
