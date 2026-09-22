@@ -376,6 +376,8 @@ export function FixSectionEditor({
             // stays open (so it's instantly ready for the next punch-in) but hidden once actually
             // recording is over, rather than floating a live self-preview bubble over nothing
             // while splicing/reviewing is going on, which read as "did this even stop?".
+            // Mirrored (-scale-x-100), same as record.tsx's own self-preview, so it reads as a
+            // normal selfie-camera mirror instead of the raw, backwards-feeling feed.
             <video
               ref={camVideoRef}
               muted
@@ -383,7 +385,7 @@ export function FixSectionEditor({
               playsInline
               className={
                 phase === "marking" || phase === "cueing" || phase === "recording"
-                  ? "absolute bottom-2 end-2 h-16 w-12 rounded-lg border-2 border-white object-cover shadow-lg"
+                  ? "absolute bottom-2 end-2 h-16 w-12 -scale-x-100 rounded-lg border-2 border-white object-cover shadow-lg"
                   : "hidden"
               }
             />

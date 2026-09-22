@@ -1264,18 +1264,25 @@ function RecordPage() {
               baked into the actual take. */}
           {cameraEnabled && (
             <div className="absolute top-20 end-3 z-20 h-32 w-24 overflow-hidden rounded-2xl border-2 border-white shadow-lg">
-              <video
-                ref={camVideoRef}
-                muted
-                autoPlay
-                playsInline
-                className="h-full w-full object-cover"
-              />
-              <FaceFilterOverlay
-                videoRef={camVideoRef}
-                kind={activeFilter}
-                onDone={() => setActiveFilter(null)}
-              />
+              {/* Mirrored like every selfie camera preview on social apps today (Instagram, TikTok,
+                  Snapchat) so it reads as a mirror rather than the "backwards" feel of the raw,
+                  unflipped feed. The video and its face-filter overlay are flipped together as one
+                  box — FaceFilterOverlay still tracks/anchors against the real, unmirrored video
+                  pixels, so flipping the pair post-render keeps the filter aligned with the face. */}
+              <div className="h-full w-full -scale-x-100">
+                <video
+                  ref={camVideoRef}
+                  muted
+                  autoPlay
+                  playsInline
+                  className="h-full w-full object-cover"
+                />
+                <FaceFilterOverlay
+                  videoRef={camVideoRef}
+                  kind={activeFilter}
+                  onDone={() => setActiveFilter(null)}
+                />
+              </div>
             </div>
           )}
 
