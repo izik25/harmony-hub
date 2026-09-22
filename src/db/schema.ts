@@ -301,17 +301,57 @@ export const liveRooms = pgTable("live_rooms", {
   hostId: uuid("host_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  // Set only for a type === "battle" room started via a direct duet challenge (ProfileView's
-  // "Challenge to Duet" button) — the specific user invited to co-publish audio/video alongside
-  // the host. A "battle" room started from the plain Go Live dialog has no opponent and behaves
-  // like any other room (host publishes, everyone else watches) until someone is challenged.
-  opponentId: uuid("opponent_id").references(() => users.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   type: text("type").notNull().default("set"), // battle | set | acoustic
   status: text("status").notNull().default("live"), // live | ended
   livekitRoomName: text("livekit_room_name").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   endedAt: timestamp("ended_at", { withTimezone: true }),
+});
+
+// Every non-host on-stage participant of a live room — both the single guest a "Challenge to
+// Duet" invite seats (ProfileView's ⚔️ button) and anyone the host invites up on stage mid-stream
+// (up to a handful at once). Single source of truth for the room's roster: the room page renders
+// one tile per "live" row here alongside the host, and joinRoom's role resolution checks this
+// table instead of a fixed opponent column, so any number of guests works the same way whether
+// they were seated at room creation or invited later.
+export const liveRoomGuests = pgTable("live_room_guests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  roomId: uuid("room_id")
+    .notNull()
+    .references(() => liveRooms.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("invited"), // invited | live | removed | left
+  invitedAt: timestamp("invited_at", { withTimezone: true }).notNull().defaultNow(),
+  joinedAt: timestamp("joined_at", { withTimezone: true }),
+  removedAt: timestamp("removed_at", { withTimezone: true }),
+});
+
+// Links two independently-hosted, already-live rooms into a TikTok-style "PK" battle — gifts sent
+// into either room while status is "active" add to that room's side (see sendGift in
+// functions/wallet.ts, and giftEvents.roomId below), and whichever score is ahead when the timer
+// runs out wins. Deliberately not modeled as a special liveRooms.type: either room can be a plain
+// "set"/"acoustic"/"battle" broadcast on its own, running normally, right up until someone links
+// it into a PK — the battle is an relationship *between* two rooms, not a property of one.
+export const livePkBattles = pgTable("live_pk_battles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  roomAId: uuid("room_a_id")
+    .notNull()
+    .references(() => liveRooms.id, { onDelete: "cascade" }),
+  roomBId: uuid("room_b_id")
+    .notNull()
+    .references(() => liveRooms.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("pending"), // pending | active | ended | declined
+  durationSeconds: integer("duration_seconds").notNull().default(180),
+  scoreA: integer("score_a").notNull().default(0),
+  scoreB: integer("score_b").notNull().default(0),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  endsAt: timestamp("ends_at", { withTimezone: true }),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  winnerRoomId: uuid("winner_room_id").references(() => liveRooms.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const karaokeTracks = pgTable("karaoke_tracks", {

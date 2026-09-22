@@ -10,6 +10,7 @@ import {
   Search,
   X,
   Check,
+  Play,
   Pause,
   Loader2,
   Headphones,
@@ -20,16 +21,27 @@ import {
   Sparkles,
   PartyPopper,
   Upload,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  RotateCcw,
+  Wand2,
+  Crown,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import * as Tone from "tone";
 import i18n, { translateServerError } from "@/lib/i18n";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { LogoPulse } from "@/components/LogoPulse";
 import { BackgroundPicker } from "@/components/BackgroundPicker";
+import { LookPicker } from "@/components/LookPicker";
+import { OverlayPicker } from "@/components/OverlayPicker";
 import { FilterShop, type FilterGift } from "@/components/FilterShop";
 import { FaceFilterOverlay } from "@/components/FaceFilterOverlay";
 import type { FilterKind } from "@/lib/face-filters";
+import { type LookId } from "@/lib/video-filters";
+import { startCameraEffects, type CameraEffectsComposer } from "@/lib/camera-effects";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -401,6 +413,92 @@ function useSelfieCameraStream(enabled: boolean, backgroundId: BackgroundId, onD
   return outputStream;
 }
 
+// Second compositing stage, chained after useSelfieCameraStream's own output: bakes a whole-frame
+// "look" grade and/or a persistent face-tracked overlay prop into `baseStream` (see
+// camera-effects.ts). Mirrors useSelfieCameraStream's own structure (hidden source <video>,
+// composer ref torn down on stream change, retarget-in-place when only the look/overlay changes)
+// so the two stages stay easy to reason about side by side. Stays on the zero-overhead passthrough
+// path — baseStream itself, no extra canvas — whenever neither a look nor an overlay is active,
+// same as the background stage skips its own canvas pass for backgroundId "none".
+function useCameraEffectsStream(
+  baseStream: MediaStream | null,
+  lookId: LookId,
+  overlayKind: FilterKind | null,
+) {
+  const [outputStream, setOutputStream] = useState<MediaStream | null>(null);
+  const composerRef = useRef<CameraEffectsComposer | null>(null);
+  const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    if (!baseStream) {
+      sourceVideoRef.current = null;
+      return;
+    }
+    const source = document.createElement("video");
+    source.muted = true;
+    source.playsInline = true;
+    source.srcObject = baseStream;
+    source.play().catch(() => {});
+    sourceVideoRef.current = source;
+    return () => {
+      source.pause();
+      source.srcObject = null;
+      if (sourceVideoRef.current === source) sourceVideoRef.current = null;
+    };
+  }, [baseStream]);
+
+  useEffect(() => {
+    return () => {
+      composerRef.current?.stop();
+      composerRef.current = null;
+    };
+  }, [baseStream]);
+
+  useEffect(() => {
+    if (!baseStream) {
+      setOutputStream(null);
+      return;
+    }
+    if (lookId === "none" && !overlayKind) {
+      composerRef.current?.stop();
+      composerRef.current = null;
+      setOutputStream(baseStream);
+      return;
+    }
+    if (composerRef.current) {
+      composerRef.current.setLook(lookId);
+      composerRef.current.setOverlay(overlayKind);
+      return;
+    }
+    let cancelled = false;
+    const source = sourceVideoRef.current;
+    if (!source) return;
+    const begin = () => {
+      startCameraEffects(source, { lookId, overlayKind })
+        .then((composer) => {
+          if (cancelled) {
+            composer.stop();
+            return;
+          }
+          composerRef.current = composer;
+          setOutputStream(composer.stream);
+        })
+        .catch((err) => {
+          console.error(err);
+          setOutputStream(baseStream);
+        });
+    };
+    if (source.readyState >= 2) begin();
+    else source.addEventListener("loadeddata", begin, { once: true });
+    return () => {
+      cancelled = true;
+      source.removeEventListener("loadeddata", begin);
+    };
+  }, [baseStream, lookId, overlayKind]);
+
+  return outputStream;
+}
+
 function formatTime(s: number) {
   const m = String(Math.floor(s / 60)).padStart(2, "0");
   const ss = String(Math.floor(s % 60)).padStart(2, "0");
@@ -485,6 +583,15 @@ function RecordPage() {
   const [finishing, setFinishing] = useState(false);
   const [karaokeOpen, setKaraokeOpen] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<KaraokeTrack | null>(null);
+  // A track that's been picked (from the browser, or a "Use this sound" deep link) but hasn't
+  // been confirmed into `selectedTrack` yet — while this is set, KaraokeSegmentPicker shows
+  // instead of the full recording stage, so every path into a song stops at "whole song or just a
+  // part?" before the camera/mic ever come up.
+  const [pendingTrack, setPendingTrack] = useState<KaraokeTrack | null>(null);
+  // Where in the song the recording's playback should start, chosen on the segment picker —
+  // 0 for "full song", or wherever the user trimmed the range to for "choose a part". Reset
+  // alongside selectedTrack whenever the user backs out of the recording stage.
+  const [segmentStart, setSegmentStart] = useState(0);
   const search = Route.useSearch();
   // A sound page's "Use this sound" button (see routes/sound_.$id.tsx) sends the user here with
   // ?trackId=... instead of a full track object — fetch it once and drop straight into the
@@ -501,7 +608,7 @@ function RecordPage() {
   useEffect(() => {
     if (deepLinkedTrack && !appliedDeepLinkRef.current) {
       appliedDeepLinkRef.current = true;
-      setSelectedTrack(deepLinkedTrack);
+      setPendingTrack(deepLinkedTrack);
     }
   }, [deepLinkedTrack]);
   // Defaults to on — hearing yourself as you sing is the point, so it should just work the
@@ -529,14 +636,30 @@ function RecordPage() {
   // see FaceFilterOverlay.tsx. Unlike backgroundId this is transient: it's cleared automatically
   // a few seconds after being set, by the overlay's own onDone callback, not by the user.
   const [activeFilter, setActiveFilter] = useState<FilterKind | null>(null);
+  // Whole-frame "look" grade (video-filters.ts) — Photoshop/Instagram-style filters (HD, vivid,
+  // black & white...), as opposed to backgroundId's scene replacement. Persisted the same way.
+  const [lookId, setLookId] = useState<LookId>("none");
+  // A face-tracked overlay prop (hat, mask, crown, mic...) pinned on for the whole take — the
+  // permanent counterpart to activeFilter's few-seconds gift, picked from OverlayPicker instead of
+  // bought from FilterShop. Also persisted, same as backgroundId/lookId.
+  const [stickyOverlay, setStickyOverlay] = useState<FilterKind | null>(null);
   // Which floating tray (if any) is open over the immersive full-screen stage below — the
   // TikTok-style icon rail opens one of these instead of the settings-card rows the idle/no-track
   // page still uses.
-  const [openPanel, setOpenPanel] = useState<"background" | "filters" | null>(null);
+  const [openPanel, setOpenPanel] = useState<
+    "background" | "filters" | "pitch" | "looks" | "overlay" | null
+  >(null);
   // The icon rail's small text labels (see the immersive stage below) are only there so a
   // first-time visitor can tell what each icon does — once you've actually used one, you know,
   // so all of them fade away together rather than permanently crowding the video.
   const [railHintsSeen, setRailHintsSeen] = useState(false);
+  // Manual key change for the backing track (± semitones), set live from the pitch rail control
+  // below. Real pitch shifting, not a playbackRate trick — see pitchGraphRef/applyLivePitch: a
+  // Tone.PitchShift node is spliced into the video's Web Audio graph on demand, and the same
+  // fixed-ratio shift (shiftPitchSemitones in pitch-correct.ts) is re-applied to the backing
+  // track's audio when the take is mixed down in finishMutation, so the exported take matches the
+  // key the vocal was actually sung against.
+  const [pitchSemitones, setPitchSemitones] = useState(0);
   const camVideoRef = useRef<HTMLVideoElement | null>(null);
   // The stream actually shown in camVideoRef and fed to the recorder — the plain camera feed, or
   // the live background-replaced one from useSelfieCameraStream once a background is picked. Kept
@@ -547,6 +670,12 @@ function RecordPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Array<BlobPart>>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // The video element's Web Audio graph, built lazily the first time the pitch control is actually
+  // used — see ensurePitchGraph/applyLivePitch below. Left untouched (native <video> playback,
+  // videoSourceRef/pitchShiftRef stay null) for anyone who never touches pitch, so there's zero
+  // latency or quality cost for the common case.
+  const videoSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const pitchShiftRef = useRef<Tone.PitchShift | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   // Everything committed before the currently-live MediaRecorder segment — every pause, scrub
   // checkpoint, or confirmed cut folds the live segment into this (see audio-splice.ts) and
@@ -597,24 +726,107 @@ function RecordPage() {
   // the mic-level meter is already live before recording starts. Background replacement (if any)
   // is layered on top by the hook itself; the effect below just mirrors whichever stream comes
   // back into the preview element and the ref the recorder reads from.
-  const selfieStream = useSelfieCameraStream(cameraEnabled, backgroundId, () => {
+  const backgroundStream = useSelfieCameraStream(cameraEnabled, backgroundId, () => {
     toast.error(t("record.cameraDenied"));
     setCameraEnabled(false);
   });
+  // Second stage on top of the background composer's own output — bakes the look grade and any
+  // pinned overlay prop in, so the preview and the recorded stream stay identical the same way
+  // backgroundId's replacement already does (see useCameraEffectsStream above).
+  const selfieStream = useCameraEffectsStream(backgroundStream, lookId, stickyOverlay);
   useEffect(() => {
     effectiveCamStreamRef.current = selfieStream;
     if (camVideoRef.current) camVideoRef.current.srcObject = selfieStream;
   }, [selfieStream]);
 
-  // Remembers the last background pick across visits, same pattern as monitorEnabled above.
+  // Remembers the last background/look/overlay pick across visits, same pattern as monitorEnabled
+  // above.
   useEffect(() => {
     const stored = localStorage.getItem("hh:backgroundId");
     if (stored) setBackgroundId(stored as BackgroundId);
+    const storedLook = localStorage.getItem("hh:lookId");
+    if (storedLook) setLookId(storedLook as LookId);
+    const storedOverlay = localStorage.getItem("hh:stickyOverlay");
+    if (storedOverlay) setStickyOverlay(storedOverlay as FilterKind);
   }, []);
   const chooseBackground = (id: BackgroundId) => {
     setBackgroundId(id);
     localStorage.setItem("hh:backgroundId", id);
   };
+  const chooseLook = (id: LookId) => {
+    setLookId(id);
+    localStorage.setItem("hh:lookId", id);
+  };
+  const chooseOverlay = (kind: FilterKind | null) => {
+    setStickyOverlay(kind);
+    if (kind) localStorage.setItem("hh:stickyOverlay", kind);
+    else localStorage.removeItem("hh:stickyOverlay");
+  };
+
+  // Splices the video element into a Web Audio graph the first time it's needed, via a native
+  // MediaElementAudioSourceNode feeding a real Tone.PitchShift node (a granular pitch shifter —
+  // the same "resample + overlap-add" technique pitch-correct.ts already uses for Autotune, not a
+  // playbackRate trick, so the key actually changes without changing tempo). Building this once
+  // and reusing it across pitch changes is required by the Web Audio spec anyway: an
+  // HTMLMediaElement can only ever have one MediaElementAudioSourceNode created from it.
+  const ensurePitchGraph = async () => {
+    if (pitchShiftRef.current || !videoRef.current) return;
+    await Tone.start();
+    const rawContext = Tone.getContext().rawContext as unknown as AudioContext;
+    const source = rawContext.createMediaElementSource(videoRef.current);
+    const pitchShift = new Tone.PitchShift({ pitch: 0, windowSize: 0.1 });
+    videoSourceRef.current = source;
+    pitchShiftRef.current = pitchShift;
+    // Starts bypassed — connected straight to the speakers rather than through pitchShift — so a
+    // take stays at perfectly native quality/sync until the singer actually asks for a key change.
+    Tone.connect(source, Tone.getDestination());
+    // Once a MediaElementAudioSourceNode exists, the element's own setSinkId stops controlling
+    // where its audio renders — the AudioContext's output device does instead (see
+    // routeToHeadphonesIfAvailable's call on this same video element during recording setup).
+    routeAudioContextToHeadphonesIfAvailable(rawContext);
+  };
+
+  // Rewires the graph between "straight to speakers" and "through the pitch shifter" so a shift
+  // back to 0 semitones is bit-for-bit native playback again, not just a pitchShift node parked at
+  // a no-op ratio — that would keep paying its ~100ms grain latency (a visible lip-sync drift
+  // against the lyrics) even when the singer isn't actually changing key.
+  const applyLivePitch = async (semitones: number) => {
+    await ensurePitchGraph();
+    const source = videoSourceRef.current;
+    const pitchShift = pitchShiftRef.current;
+    if (!source || !pitchShift) return;
+    Tone.disconnect(source);
+    pitchShift.disconnect();
+    if (semitones === 0) {
+      Tone.connect(source, Tone.getDestination());
+    } else {
+      pitchShift.pitch = semitones;
+      Tone.connect(source, pitchShift);
+      pitchShift.connect(Tone.getDestination());
+    }
+  };
+
+  const PITCH_LIMIT_SEMITONES = 6;
+  const adjustPitch = (delta: number) => {
+    const next = Math.min(
+      PITCH_LIMIT_SEMITONES,
+      Math.max(-PITCH_LIMIT_SEMITONES, pitchSemitones + delta),
+    );
+    if (next === pitchSemitones) return;
+    setPitchSemitones(next);
+    applyLivePitch(next).catch(() => {});
+  };
+
+  // Belt-and-suspenders cleanup for the pitch graph on a full unmount (navigating away mid-take,
+  // not just backToTrackPicker's "pick a different song") — otherwise the Tone.PitchShift node's
+  // internal delay lines/processing keep running after the component using them is gone.
+  useEffect(() => {
+    return () => {
+      pitchShiftRef.current?.dispose();
+      pitchShiftRef.current = null;
+      videoSourceRef.current = null;
+    };
+  }, []);
 
   // Same catalog the feed's "send a gift" sheet uses (GiftSheet in routes/index.tsx) — filter
   // gifts (filterKind set) show up here as things you can buy for yourself; the exact same rows
@@ -670,6 +882,7 @@ function RecordPage() {
           processRecording(rawBlob, selectedTrack?.videoUrl, {
             vocalGain: DEFAULT_VOCAL_GAIN,
             backingGain: DEFAULT_BACKING_GAIN,
+            backingPitchSemitones: pitchSemitones,
           }),
           new Promise<Blob>((_, reject) =>
             setTimeout(() => reject(new Error("processing timed out")), 30_000),
@@ -731,9 +944,10 @@ function RecordPage() {
         clearInterval(waitForStream);
         chunksRef.current = [];
         if (videoRef.current) {
-          // Only rewind the backing video to the top for a genuinely fresh take — resuming after
-          // a pause/scrub checkpoint should carry on from wherever it already is.
-          if (!baseBlobRef.current) videoRef.current.currentTime = 0;
+          // Only rewind the backing video to the top of the chosen segment for a genuinely fresh
+          // take — resuming after a pause/scrub checkpoint should carry on from wherever it
+          // already is.
+          if (!baseBlobRef.current) videoRef.current.currentTime = segmentStart;
           videoRef.current.play().catch(() => {});
           // The mic stream just became ready, meaning getUserMedia (with echoCancellation) just
           // granted permission — Android may have switched to voice-call routing as a result, so
@@ -805,7 +1019,7 @@ function RecordPage() {
     // onstop always reads the latest mutate function from the closure — including it here would
     // restart the whole recorder setup whenever unrelated state it depends on changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, stream, selectedTrack, t]);
+  }, [phase, stream, selectedTrack, segmentStart, t]);
 
   const startOrResume = () => {
     if (phase !== "paused") {
@@ -871,8 +1085,10 @@ function RecordPage() {
   const handleScrubMove = (value: number) => {
     setPreviewSeconds(value);
     // Scrubs the karaoke video/lyrics along with the drag — seeing exactly what was on screen at
-    // the point you're dragging to is a much clearer reference than a bare number.
-    if (videoRef.current) videoRef.current.currentTime = value;
+    // the point you're dragging to is a much clearer reference than a bare number. Elapsed
+    // recording seconds are 0-based from when the take started, which is segmentStart on the
+    // song's own timeline, not 0:00 — so every absolute video position here is offset by it.
+    if (videoRef.current) videoRef.current.currentTime = segmentStart + value;
   };
 
   const handleScrubEnd = async (value: number) => {
@@ -881,7 +1097,7 @@ function RecordPage() {
     if (value >= seconds) {
       // No real rewind — a tap, or released right back where it started. Snap the video back to
       // "now" in case the drag scrubbed it away from that.
-      if (videoRef.current) videoRef.current.currentTime = seconds;
+      if (videoRef.current) videoRef.current.currentTime = segmentStart + seconds;
       resumeIfWasRecording();
       return;
     }
@@ -890,7 +1106,7 @@ function RecordPage() {
 
   const cancelCut = () => {
     setCutConfirm(null);
-    if (videoRef.current) videoRef.current.currentTime = seconds;
+    if (videoRef.current) videoRef.current.currentTime = segmentStart + seconds;
     resumeIfWasRecording();
   };
 
@@ -908,7 +1124,7 @@ function RecordPage() {
       );
       baseBlobRef.current = blob;
       setSeconds(Math.round(exact));
-      if (videoRef.current) videoRef.current.currentTime = target;
+      if (videoRef.current) videoRef.current.currentTime = segmentStart + target;
     } catch (err) {
       console.error(err);
       toast.error(t("record.cutFailed"));
@@ -922,22 +1138,41 @@ function RecordPage() {
 
   const backToTrackPicker = () => {
     setSelectedTrack(null);
+    setSegmentStart(0);
     setCameraEnabled(false);
     setOpenPanel(null);
+    // The <video> element itself gets torn down and recreated for the next track (a fresh
+    // MediaElementAudioSourceNode would be needed anyway — the spec only allows one per element),
+    // so the old pitch graph is just dead weight; dispose it and reset the key change.
+    pitchShiftRef.current?.dispose();
+    pitchShiftRef.current = null;
+    videoSourceRef.current = null;
+    setPitchSemitones(0);
   };
 
   // Tapping the background/filters rail icon while the camera's still off turns it on for you
   // instead of doing nothing — one tap to "add yourself, then pick a look" instead of forcing a
   // trip to a separate camera toggle first.
-  const openTray = (panel: "background" | "filters") => {
+  const openTray = (panel: "background" | "filters" | "looks" | "overlay") => {
     if (!cameraEnabled) setCameraEnabled(true);
     setOpenPanel((p) => (p === panel ? null : panel));
   };
 
   return (
-    <AppShell hideNav={!!selectedTrack || karaokeOpen}>
-      {!selectedTrack && <TopBar />}
-      {selectedTrack ? (
+    <AppShell hideNav={!!selectedTrack || !!pendingTrack || karaokeOpen}>
+      {!selectedTrack && !pendingTrack && <TopBar />}
+      {pendingTrack ? (
+        <KaraokeSegmentPicker
+          track={pendingTrack}
+          onBack={() => setPendingTrack(null)}
+          onConfirm={(startSeconds) => {
+            setSegmentStart(startSeconds);
+            setSelectedTrack(pendingTrack);
+            setPendingTrack(null);
+            toast.info(t("record.headphonesHint"));
+          }}
+        />
+      ) : selectedTrack ? (
         // Full-screen, TikTok-style capture stage: the karaoke video (lyrics baked in) fills the
         // entire viewport, and every control is a small floating icon over it rather than a
         // scrolling settings page — chosen once here (backgroundId/monitorEnabled/etc. all still
@@ -1034,6 +1269,28 @@ function RecordPage() {
               disabled={recording || phase === "paused"}
               active={openPanel === "background" || backgroundId !== "none"}
             />
+            <RailControl
+              icon={<Wand2 className="h-5 w-5" />}
+              label={t("record.looksLabel")}
+              showLabel={!railHintsSeen}
+              onClick={() => {
+                setRailHintsSeen(true);
+                openTray("looks");
+              }}
+              disabled={recording || phase === "paused"}
+              active={openPanel === "looks" || lookId !== "none"}
+            />
+            <RailControl
+              icon={<Crown className="h-5 w-5" />}
+              label={t("record.overlayLabel")}
+              showLabel={!railHintsSeen}
+              onClick={() => {
+                setRailHintsSeen(true);
+                openTray("overlay");
+              }}
+              disabled={recording || phase === "paused"}
+              active={openPanel === "overlay" || !!stickyOverlay}
+            />
             {filterGifts.length > 0 && (
               <RailControl
                 icon={<PartyPopper className="h-5 w-5" />}
@@ -1057,6 +1314,17 @@ function RecordPage() {
               }}
               active={monitorEnabled}
             />
+            <RailControl
+              icon={<ChevronsUpDown className="h-5 w-5" />}
+              label={t("record.pitchLabel")}
+              showLabel={!railHintsSeen}
+              onClick={() => {
+                setRailHintsSeen(true);
+                setOpenPanel((p) => (p === "pitch" ? null : "pitch"));
+              }}
+              disabled={recording || phase === "paused"}
+              active={openPanel === "pitch" || pitchSemitones !== 0}
+            />
           </div>
 
           {/* Slide-up tray for whichever rail icon above was tapped — floats just above the
@@ -1075,6 +1343,32 @@ function RecordPage() {
                     value={backgroundId}
                     onChange={(id) => {
                       chooseBackground(id);
+                      setOpenPanel(null);
+                    }}
+                    disabled={recording || phase === "paused"}
+                  />
+                ) : openPanel === "pitch" ? (
+                  <PitchTray
+                    value={pitchSemitones}
+                    limit={PITCH_LIMIT_SEMITONES}
+                    onAdjust={adjustPitch}
+                    onReset={() => adjustPitch(-pitchSemitones)}
+                    disabled={recording || phase === "paused"}
+                  />
+                ) : openPanel === "looks" ? (
+                  <LookPicker
+                    value={lookId}
+                    onChange={(id) => {
+                      chooseLook(id);
+                      setOpenPanel(null);
+                    }}
+                    disabled={recording || phase === "paused"}
+                  />
+                ) : openPanel === "overlay" ? (
+                  <OverlayPicker
+                    value={stickyOverlay}
+                    onChange={(kind) => {
+                      chooseOverlay(kind);
                       setOpenPanel(null);
                     }}
                     disabled={recording || phase === "paused"}
@@ -1254,9 +1548,8 @@ function RecordPage() {
         open={karaokeOpen}
         onClose={() => setKaraokeOpen(false)}
         onSelect={(track) => {
-          setSelectedTrack(track);
+          setPendingTrack(track);
           setKaraokeOpen(false);
-          toast.info(t("record.headphonesHint"));
         }}
       />
 
@@ -1626,6 +1919,283 @@ function KaraokeTrackList({
   );
 }
 
+// Shown after a track is picked — from the artist/track browser above, or a "Use this sound"
+// deep link from the sound page — and before the full-screen recording stage. Mirrors Instagram's
+// "use this audio" picker: whole song, or drag a trimmed range and hear exactly that window loop
+// while you decide. Confirming hands the chosen start back to RecordPage as `segmentStart`, which
+// is where the recording stage's playback (and the actual take) begins instead of 0:00.
+function KaraokeSegmentPicker({
+  track,
+  onBack,
+  onConfirm,
+}: {
+  track: KaraokeTrack;
+  onBack: () => void;
+  onConfirm: (startSeconds: number) => void;
+}) {
+  const { t } = useTranslation();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [mode, setMode] = useState<"full" | "part">("full");
+  const [duration, setDuration] = useState(track.durationSeconds || 0);
+  const [rangeStart, setRangeStart] = useState(0);
+  const [rangeEnd, setRangeEnd] = useState(() => Math.min(30, track.durationSeconds || 30));
+  const [playing, setPlaying] = useState(false);
+
+  // The track row's own durationSeconds can be missing or stale — once the element itself loads
+  // metadata, that's the real number, and the default trim window resizes to fit it.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onLoaded = () => {
+      const d = v.duration;
+      if (Number.isFinite(d) && d > 0) {
+        setDuration(d);
+        setRangeEnd((prev) => Math.min(prev || 30, d));
+      }
+    };
+    v.addEventListener("loadedmetadata", onLoaded);
+    return () => v.removeEventListener("loadedmetadata", onLoaded);
+  }, []);
+
+  const windowStart = mode === "full" ? 0 : rangeStart;
+  const windowEnd = mode === "full" ? duration : rangeEnd;
+
+  // Loops playback across exactly the selected window while previewing, so "whole song" vs. a
+  // trimmed range is something the user hears change, not just a number on a bar.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !playing || duration <= 0) return;
+    if (v.currentTime < windowStart || v.currentTime >= windowEnd) v.currentTime = windowStart;
+    v.play().catch(() => {});
+    const onTime = () => {
+      if (v.currentTime >= windowEnd - 0.05) {
+        v.currentTime = windowStart;
+        v.play().catch(() => {});
+      }
+    };
+    v.addEventListener("timeupdate", onTime);
+    return () => v.removeEventListener("timeupdate", onTime);
+  }, [playing, windowStart, windowEnd, duration]);
+
+  useEffect(() => {
+    if (!playing) videoRef.current?.pause();
+  }, [playing]);
+
+  // Switching modes always restarts the preview from the new window's start rather than leaving
+  // playback wherever it happened to land in the old one.
+  const selectMode = (next: "full" | "part") => {
+    setMode(next);
+    if (videoRef.current) videoRef.current.currentTime = next === "full" ? 0 : rangeStart;
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 mx-auto flex max-w-[520px] flex-col bg-background">
+      <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {t("common.cancel")}
+        </button>
+      </div>
+
+      <div className="flex flex-1 flex-col overflow-hidden px-4 pb-4 pt-3">
+        <p className="line-clamp-1 text-lg font-semibold">{track.title}</p>
+        {track.artist && (
+          <p className="line-clamp-1 text-sm text-muted-foreground">{track.artist}</p>
+        )}
+
+        <div className="relative mt-4 aspect-video w-full shrink-0 overflow-hidden rounded-2xl bg-black">
+          <video
+            ref={videoRef}
+            src={track.videoUrl}
+            className="h-full w-full object-contain"
+            playsInline
+            muted={false}
+          />
+          <button
+            onClick={() => setPlaying((p) => !p)}
+            aria-label={playing ? t("common.pause") : t("record.previewPlay")}
+            className="absolute inset-0 grid place-items-center bg-black/10"
+          >
+            <span className="grid h-14 w-14 place-items-center rounded-full bg-black/50 text-white backdrop-blur-sm">
+              {playing ? (
+                <Pause className="h-6 w-6 fill-white" />
+              ) : (
+                <Play className="h-6 w-6 fill-white" />
+              )}
+            </span>
+          </button>
+        </div>
+
+        <div className="mt-4 grid shrink-0 grid-cols-2 gap-1 rounded-full bg-muted/60 p-1">
+          <button
+            onClick={() => selectMode("full")}
+            className={`rounded-full py-2 text-sm font-semibold transition-colors ${
+              mode === "full" ? "bg-card text-foreground shadow-pop" : "text-muted-foreground"
+            }`}
+          >
+            {t("record.fullSong")}
+          </button>
+          <button
+            onClick={() => selectMode("part")}
+            className={`rounded-full py-2 text-sm font-semibold transition-colors ${
+              mode === "part" ? "bg-card text-foreground shadow-pop" : "text-muted-foreground"
+            }`}
+          >
+            {t("record.selectPart")}
+          </button>
+        </div>
+
+        {mode === "part" && duration > 0 && (
+          <div className="mt-5 shrink-0">
+            <RangeScrubber
+              duration={duration}
+              start={rangeStart}
+              end={rangeEnd}
+              onChange={(nextStart, nextEnd) => {
+                setRangeStart(nextStart);
+                setRangeEnd(nextEnd);
+                if (videoRef.current) videoRef.current.currentTime = nextStart;
+              }}
+            />
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              {t("record.dragToSelect")}
+            </p>
+          </div>
+        )}
+
+        <button
+          onClick={() => onConfirm(mode === "part" ? rangeStart : 0)}
+          className="mt-auto flex w-full shrink-0 items-center justify-center gap-2 rounded-full bg-brand-coral py-3 text-sm font-bold text-white shadow-pop-coral press-scale"
+        >
+          <Mic className="h-4 w-4" />
+          {t("record.continueToRecord")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Dual-handle trim bar for picking a start/end window out of the full song — the "choose a part"
+// counterpart to ScrubBar above, but bounded by the song's total length instead of how much has
+// been recorded so far, and both ends move independently instead of only rewinding from "now".
+function RangeScrubber({
+  duration,
+  start,
+  end,
+  onChange,
+}: {
+  duration: number;
+  start: number;
+  end: number;
+  onChange: (start: number, end: number) => void;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef<"start" | "end" | null>(null);
+  // Never let the two handles collapse into a zero-length (or near-zero) window.
+  const minGap = Math.min(3, duration);
+
+  const clamp = (v: number) => Math.min(duration, Math.max(0, v));
+  const valueFromClientX = (clientX: number) => {
+    const el = trackRef.current;
+    if (!el || duration <= 0) return 0;
+    const rect = el.getBoundingClientRect();
+    const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return fraction * duration;
+  };
+
+  const startDrag = (handle: "start" | "end") => (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    draggingRef.current = handle;
+  };
+  const move = (e: React.PointerEvent) => {
+    const handle = draggingRef.current;
+    if (!handle) return;
+    const value = valueFromClientX(e.clientX);
+    if (handle === "start") onChange(clamp(Math.min(value, end - minGap)), end);
+    else onChange(start, clamp(Math.max(value, start + minGap)));
+  };
+  const endDrag = () => {
+    draggingRef.current = null;
+  };
+
+  const startFraction = duration > 0 ? start / duration : 0;
+  const endFraction = duration > 0 ? end / duration : 1;
+
+  const tickInterval = pickTickInterval(duration);
+  const ticks: number[] = [];
+  for (let s = 0; s <= duration; s += tickInterval) ticks.push(s);
+  if (ticks[ticks.length - 1] !== duration) ticks.push(duration);
+
+  return (
+    <div dir="ltr" className="select-none">
+      <div
+        ref={trackRef}
+        onPointerMove={move}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        className="relative h-8 w-full touch-none"
+      >
+        {ticks.map((s) => (
+          <div
+            key={s}
+            className="absolute top-0 h-1.5 w-px bg-muted-foreground/40"
+            style={{ left: `${(s / duration) * 100}%` }}
+          />
+        ))}
+        <div className="absolute inset-x-0 top-3 h-1.5 rounded-full bg-muted/50" />
+        <div
+          className="absolute top-3 h-1.5 rounded-full bg-brand-coral"
+          style={{
+            left: `${startFraction * 100}%`,
+            width: `${(endFraction - startFraction) * 100}%`,
+          }}
+        />
+        <div
+          onPointerDown={startDrag("start")}
+          className="absolute top-3 h-5 w-5 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-2 border-white bg-brand-coral shadow"
+          style={{ left: `${startFraction * 100}%` }}
+        />
+        <div
+          onPointerDown={startDrag("end")}
+          className="absolute top-3 h-5 w-5 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-2 border-white bg-brand-coral shadow"
+          style={{ left: `${endFraction * 100}%` }}
+        />
+      </div>
+      <div className="relative h-3.5 text-[9px] text-muted-foreground">
+        {ticks.map((s, i) => {
+          if (i === 0)
+            return (
+              <span key={s} className="absolute left-0">
+                {formatTime(s)}
+              </span>
+            );
+          if (i === ticks.length - 1)
+            return (
+              <span key={s} className="absolute right-0">
+                {formatTime(s)}
+              </span>
+            );
+          return (
+            <span
+              key={s}
+              className="absolute -translate-x-1/2"
+              style={{ left: `${(s / duration) * 100}%` }}
+            >
+              {formatTime(s)}
+            </span>
+          );
+        })}
+      </div>
+      <p className="mt-1 text-center text-xs font-semibold text-foreground">
+        {formatTime(start)} – {formatTime(end)}
+      </p>
+    </div>
+  );
+}
+
 // Fills the letterboxing around an object-contain karaoke video with a softened, scaled-up copy
 // of the same live frame instead of leaving it flat black — samples directly from the real
 // `<video>` element every tick (via drawImage), so unlike a second video element it can never
@@ -1676,6 +2246,72 @@ function BlurredVideoBackdrop({
 
   return (
     <canvas ref={canvasRef} aria-hidden className="absolute inset-0 h-full w-full opacity-70" />
+  );
+}
+
+// The pitch rail's tray content: a real key change (± semitones, tap twice for a whole tone), not
+// just a display — every tap drives ensurePitchGraph/applyLivePitch in RecordPage, which actually
+// re-pitches the backing track's live audio via a Tone.PitchShift node.
+function PitchTray({
+  value,
+  limit,
+  onAdjust,
+  onReset,
+  disabled,
+}: {
+  value: number;
+  limit: number;
+  onAdjust: (delta: number) => void;
+  onReset: () => void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col items-center gap-2 px-2 py-1">
+      <p className="text-center text-[11px] text-white/70">{t("record.pitchHint")}</p>
+      <div className="flex items-center gap-5">
+        <motion.button
+          type="button"
+          onClick={() => onAdjust(-1)}
+          disabled={disabled || value <= -limit}
+          whileTap={disabled ? undefined : { scale: 0.9 }}
+          aria-label="-1"
+          className="grid h-11 w-11 place-items-center rounded-full bg-white/15 text-white disabled:opacity-30"
+        >
+          <ChevronDown className="h-5 w-5" />
+        </motion.button>
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={disabled || value === 0}
+          className="flex w-16 flex-col items-center disabled:opacity-60"
+        >
+          <span className="text-xl font-bold tabular-nums text-white">
+            {value > 0 ? `+${value}` : value}
+          </span>
+          <span className="flex items-center gap-0.5 text-[10px] text-white/60">
+            {value === 0 ? (
+              t("record.pitchInKey")
+            ) : (
+              <>
+                <RotateCcw className="h-2.5 w-2.5" />
+                {t("record.pitchReset")}
+              </>
+            )}
+          </span>
+        </button>
+        <motion.button
+          type="button"
+          onClick={() => onAdjust(1)}
+          disabled={disabled || value >= limit}
+          whileTap={disabled ? undefined : { scale: 0.9 }}
+          aria-label="+1"
+          className="grid h-11 w-11 place-items-center rounded-full bg-white/15 text-white disabled:opacity-30"
+        >
+          <ChevronUp className="h-5 w-5" />
+        </motion.button>
+      </div>
+    </div>
   );
 }
 

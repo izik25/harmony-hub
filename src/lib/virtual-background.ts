@@ -24,6 +24,10 @@ export type BackgroundId =
   | "studio"
   | "stage"
   | "arena"
+  | "crowd"
+  | "caesarea"
+  | "bar"
+  | "fireplace"
   | "green"
   | "blue"
   | "coral"
@@ -37,6 +41,10 @@ export const BACKGROUND_OPTIONS: { id: BackgroundId; labelKey: string }[] = [
   { id: "studio", labelKey: "record.bg.studio" },
   { id: "stage", labelKey: "record.bg.stage" },
   { id: "arena", labelKey: "record.bg.arena" },
+  { id: "crowd", labelKey: "record.bg.crowd" },
+  { id: "caesarea", labelKey: "record.bg.caesarea" },
+  { id: "bar", labelKey: "record.bg.bar" },
+  { id: "fireplace", labelKey: "record.bg.fireplace" },
   { id: "green", labelKey: "record.bg.green" },
   { id: "blue", labelKey: "record.bg.blue" },
   { id: "coral", labelKey: "record.bg.coral" },
@@ -171,6 +179,136 @@ function paintArena(ctx: CanvasRenderingContext2D, w: number, h: number) {
   }
 }
 
+/** A selfie held up in the middle of a packed crowd — hands and phone lights filling the frame,
+ *  close and warm, rather than arena's distanced view of a crowd from the stage. */
+function paintCrowd(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, "#140b1c");
+  bg.addColorStop(0.5, "#251531");
+  bg.addColorStop(1, "#08060c");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+  glow(ctx, w * 0.5, h * 0.05, w * 0.95, "#ffdca8", 0.32);
+  glow(ctx, w * 0.14, h * 0.22, w * 0.5, brandColor("coral"), 0.18);
+  glow(ctx, w * 0.88, h * 0.24, w * 0.5, brandColor("indigo"), 0.18);
+
+  // Rows of heads packed close, getting bigger toward the bottom (closer to camera); every third
+  // person has a raised arm topped with a small phone-light glow.
+  const rows = 7;
+  for (let r = 0; r < rows; r++) {
+    const t = r / (rows - 1);
+    const rowY = h * (0.4 + t * 0.62);
+    const radius = w * (0.022 + t * 0.05);
+    const count = Math.ceil(w / (radius * 2)) + 1;
+    for (let i = 0; i < count; i++) {
+      const jitter = ((i * 53 + r * 29) % 10) / 10 - 0.5;
+      const x = i * radius * 2 + (r % 2 === 0 ? radius : 0) + jitter * radius * 0.6;
+      const shade = `rgba(10,7,16,${0.5 + t * 0.42})`;
+      ctx.fillStyle = shade;
+      ctx.beginPath();
+      ctx.ellipse(x, rowY, radius * 0.72, radius * 0.85, 0, 0, Math.PI * 2);
+      ctx.fill();
+      if ((i + r) % 3 === 0) {
+        const armX = x + radius * 0.2;
+        const armTopY = rowY - radius * 2.4;
+        ctx.strokeStyle = shade;
+        ctx.lineWidth = Math.max(1, radius * 0.3);
+        ctx.beginPath();
+        ctx.moveTo(x, rowY - radius * 0.5);
+        ctx.lineTo(armX, armTopY);
+        ctx.stroke();
+        glow(ctx, armX, armTopY, radius * 3.2, "#fff4d6", 0.45 * (0.5 + t * 0.5));
+      }
+    }
+  }
+}
+
+/** The Caesarea amphitheater: ancient stone tiers by the sea at dusk, flanked by tall light towers. */
+function paintCaesarea(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const sky = ctx.createLinearGradient(0, 0, 0, h * 0.58);
+  sky.addColorStop(0, "#251534");
+  sky.addColorStop(0.55, "#7a3b52");
+  sky.addColorStop(1, "#d9814f");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, w, h * 0.58);
+
+  const sea = ctx.createLinearGradient(0, h * 0.5, 0, h * 0.62);
+  sea.addColorStop(0, "#d9814f");
+  sea.addColorStop(1, "#11202c");
+  ctx.fillStyle = sea;
+  ctx.fillRect(0, h * 0.5, w, h * 0.13);
+
+  // Curved stone tiers rising toward the back, narrowing in from the stage at the bottom.
+  const tierRows = 6;
+  for (let r = 0; r < tierRows; r++) {
+    const t = r / (tierRows - 1);
+    const y = h * (0.6 + t * 0.375);
+    const rowH = h * 0.075;
+    const inset = w * 0.16 * (1 - t);
+    ctx.fillStyle = `rgb(${28 + r * 4}, ${21 + r * 3}, ${16 + r * 2})`;
+    ctx.fillRect(inset, y, w - inset * 2, rowH);
+  }
+
+  // Two tall light towers flanking the stage, each throwing a warm lamp glow down over the crowd.
+  for (const tx of [w * 0.09, w * 0.91]) {
+    ctx.fillStyle = "#0b0908";
+    ctx.fillRect(tx - w * 0.008, h * 0.14, w * 0.016, h * 0.48);
+    glow(ctx, tx, h * 0.14, w * 0.3, "#ffe3ac", 0.5);
+  }
+  glow(ctx, w * 0.5, h * 0.58, w * 0.65, "#ffd9a0", 0.28);
+}
+
+/** An intimate bar: a warm pendant lamp over a back-bar shelf of bottles, everything else dim. */
+function paintBar(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, "#1c130e");
+  bg.addColorStop(1, "#090504");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+  glow(ctx, w * 0.5, h * 0.1, w * 0.6, "#ffb35c", 0.4);
+
+  const shelfY = h * 0.32;
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillRect(0, shelfY, w, h * 0.014);
+  const bottleCount = 9;
+  for (let i = 0; i < bottleCount; i++) {
+    const bx = (i + 0.5) * (w / bottleCount);
+    const bh = h * (0.07 + ((i * 37) % 5) * 0.012);
+    const bw = w * 0.018;
+    ctx.fillStyle = "rgba(18,12,9,0.92)";
+    ctx.fillRect(bx - bw / 2, shelfY - bh, bw, bh);
+    glow(ctx, bx, shelfY - bh, bw * 3.5, brandColor(i % 2 === 0 ? "gold" : "coral"), 0.1);
+  }
+
+  const barTop = ctx.createLinearGradient(0, h * 0.78, 0, h);
+  barTop.addColorStop(0, "transparent");
+  barTop.addColorStop(1, "#2b160c");
+  ctx.fillStyle = barTop;
+  ctx.fillRect(0, h * 0.78, w, h * 0.22);
+}
+
+/** A cozy living room with a lit fireplace: a stone hearth glowing warm against a dim room. */
+function paintFireplace(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, "#2b1f16");
+  bg.addColorStop(1, "#110b07");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  const hearthW = w * 0.58;
+  const hearthX = (w - hearthW) / 2;
+  const hearthY = h * 0.62;
+  const hearthH = h * 0.38;
+  ctx.fillStyle = "#3c2d20";
+  ctx.fillRect(hearthX - w * 0.03, hearthY - h * 0.02, hearthW + w * 0.06, hearthH + h * 0.02);
+  ctx.fillStyle = "#0c0502";
+  ctx.fillRect(hearthX, hearthY, hearthW, hearthH);
+
+  glow(ctx, w * 0.5, hearthY + hearthH * 0.6, w * 0.5, "#ff8a3d", 0.55);
+  glow(ctx, w * 0.5, hearthY + hearthH * 0.75, w * 0.28, "#ffd166", 0.5);
+  glow(ctx, w * 0.5, h * 0.88, w * 0.9, "#ff7a3d", 0.18);
+}
+
 function paintScene(ctx: CanvasRenderingContext2D, id: BackgroundId, w: number, h: number) {
   const flat = FLAT_COLORS[id];
   if (flat) {
@@ -186,6 +324,10 @@ function paintScene(ctx: CanvasRenderingContext2D, id: BackgroundId, w: number, 
   if (id === "studio") return paintStudio(ctx, w, h);
   if (id === "stage") return paintStage(ctx, w, h);
   if (id === "arena") return paintArena(ctx, w, h);
+  if (id === "crowd") return paintCrowd(ctx, w, h);
+  if (id === "caesarea") return paintCaesarea(ctx, w, h);
+  if (id === "bar") return paintBar(ctx, w, h);
+  if (id === "fireplace") return paintFireplace(ctx, w, h);
 }
 
 // Static scenes never change frame-to-frame, so each one is painted once per output size and

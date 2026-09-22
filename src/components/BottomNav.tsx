@@ -1,12 +1,16 @@
-import { Link, useRouterState } from "@tanstack/react-router";
-import { Home, Search, Trophy, User, Plus } from "lucide-react";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Home, Search, Trophy, User, Plus, Mic, Radio, Upload } from "lucide-react";
 // Non-`to` typed as string because Link is used with mixed routes.
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
+import { useState } from "react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 export function BottomNav({ overlay = false }: { overlay?: boolean }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [createOpen, setCreateOpen] = useState(false);
 
   const items: Array<{ to: string; icon: typeof Home; label: string; center?: boolean }> = [
     { to: "/", icon: Home, label: t("nav.home") },
@@ -14,6 +18,27 @@ export function BottomNav({ overlay = false }: { overlay?: boolean }) {
     { to: "/record", icon: Plus, label: t("nav.record"), center: true },
     { to: "/competitions", icon: Trophy, label: t("nav.competitions") },
     { to: "/profile", icon: User, label: t("nav.profile") },
+  ];
+
+  const createOptions = [
+    {
+      icon: Mic,
+      label: t("createMenu.record"),
+      hint: t("createMenu.recordHint"),
+      to: "/record" as const,
+    },
+    {
+      icon: Radio,
+      label: t("createMenu.goLive"),
+      hint: t("createMenu.goLiveHint"),
+      to: "/live" as const,
+    },
+    {
+      icon: Upload,
+      label: t("createMenu.upload"),
+      hint: t("createMenu.uploadHint"),
+      to: "/upload" as const,
+    },
   ];
 
   return (
@@ -31,7 +56,12 @@ export function BottomNav({ overlay = false }: { overlay?: boolean }) {
           if (it.center) {
             return (
               <li key={it.to} className="flex justify-center">
-                <Link to={it.to as "/"} aria-label={it.label} className="group -mt-6 block">
+                <button
+                  type="button"
+                  onClick={() => setCreateOpen(true)}
+                  aria-label={t("createMenu.title")}
+                  className="group -mt-6 block"
+                >
                   <motion.div
                     whileTap={{ scale: 0.88, rotate: -4 }}
                     whileHover={{ scale: 1.05, y: -2 }}
@@ -42,7 +72,7 @@ export function BottomNav({ overlay = false }: { overlay?: boolean }) {
                   >
                     <Icon className="h-7 w-7 text-white" strokeWidth={2.5} />
                   </motion.div>
-                </Link>
+                </button>
               </li>
             );
           }
@@ -72,6 +102,33 @@ export function BottomNav({ overlay = false }: { overlay?: boolean }) {
           );
         })}
       </ul>
+      <Sheet open={createOpen} onOpenChange={setCreateOpen}>
+        <SheetContent side="bottom" className="rounded-t-3xl">
+          <SheetHeader>
+            <SheetTitle>{t("createMenu.title")}</SheetTitle>
+          </SheetHeader>
+          <div className="mt-2 space-y-1">
+            {createOptions.map((opt) => (
+              <button
+                key={opt.to}
+                onClick={() => {
+                  setCreateOpen(false);
+                  navigate({ to: opt.to });
+                }}
+                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-start press-scale hover:bg-muted"
+              >
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand-coral/10 text-brand-coral">
+                  <opt.icon className="h-5 w-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">{opt.label}</span>
+                  <span className="block text-xs text-muted-foreground">{opt.hint}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </SheetContent>
+      </Sheet>
     </nav>
   );
 }

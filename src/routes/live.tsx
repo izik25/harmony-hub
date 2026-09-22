@@ -17,7 +17,14 @@ export const Route = createFileRoute("/live")({
 });
 
 const roomTypes = ["set", "battle", "acoustic"] as const;
-const staggerClasses = ["stagger-1", "stagger-2", "stagger-3", "stagger-4", "stagger-5", "stagger-6"];
+const staggerClasses = [
+  "stagger-1",
+  "stagger-2",
+  "stagger-3",
+  "stagger-4",
+  "stagger-5",
+  "stagger-6",
+];
 
 function LivePage() {
   const { t } = useTranslation();
@@ -46,7 +53,6 @@ function LivePage() {
           livekitUrl: res.livekitUrl,
           type: res.room.type,
           host: null,
-          opponent: null,
         }),
       );
       setGoLiveOpen(false);

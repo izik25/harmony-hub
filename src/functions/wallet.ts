@@ -1,9 +1,18 @@
 import { createServerFn } from "@tanstack/react-start";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { users, walletTransactions, giftsCatalog, giftEvents, posts } from "@/db/schema";
+import {
+  users,
+  walletTransactions,
+  giftsCatalog,
+  giftEvents,
+  posts,
+  liveRooms,
+  livePkBattles,
+} from "@/db/schema";
 import { requireUserId } from "./auth";
 import { insertNotification } from "./notifications";
+import { pushLiveData } from "@/lib/livekit-server";
 
 export const COIN_PACKAGES = [
   { id: "p1", coins: 1000 },
@@ -138,7 +147,10 @@ export const buyFilterForSelf = createServerFn({ method: "POST" })
   });
 
 export const sendGift = createServerFn({ method: "POST" })
-  .validator((input: unknown) => input as { toUserId: string; giftId: string; postId?: string })
+  .validator(
+    (input: unknown) =>
+      input as { toUserId: string; giftId: string; postId?: string; roomId?: string },
+  )
   .handler(async ({ data }) => {
     const fromUserId = await requireUserId();
     if (fromUserId === data.toUserId) throw new Error("cantGiftSelf");
@@ -151,6 +163,26 @@ export const sendGift = createServerFn({ method: "POST" })
       .from(users)
       .where(eq(users.id, fromUserId));
     if (!sender || sender.coinsBalance < gift.coins) throw new Error("notEnoughCoins");
+
+    // A gift sent while watching a live room can also be scoring a PK battle that room is
+    // currently in — resolved up front (outside the transaction, it's a read) so the update below
+    // can go in the same transaction as the gift itself rather than as a separate best-effort
+    // write after the fact.
+    let pkUpdate: { battleId: string; side: "A" | "B" } | null = null;
+    if (data.roomId) {
+      const [battle] = await db
+        .select()
+        .from(livePkBattles)
+        .where(
+          and(
+            or(eq(livePkBattles.roomAId, data.roomId), eq(livePkBattles.roomBId, data.roomId)),
+            eq(livePkBattles.status, "active"),
+          ),
+        );
+      if (battle) {
+        pkUpdate = { battleId: battle.id, side: battle.roomAId === data.roomId ? "A" : "B" };
+      }
+    }
 
     await db.transaction(async (tx) => {
       await tx
@@ -177,6 +209,7 @@ export const sendGift = createServerFn({ method: "POST" })
         fromUserId,
         toUserId: data.toUserId,
         postId: data.postId,
+        roomId: data.roomId,
         giftId: gift.id,
         coins: gift.coins,
       });
@@ -186,6 +219,16 @@ export const sendGift = createServerFn({ method: "POST" })
           .set({ giftsCount: sql`${posts.giftsCount} + 1` })
           .where(eq(posts.id, data.postId));
       }
+      if (pkUpdate) {
+        await tx
+          .update(livePkBattles)
+          .set(
+            pkUpdate.side === "A"
+              ? { scoreA: sql`${livePkBattles.scoreA} + ${gift.coins}` }
+              : { scoreB: sql`${livePkBattles.scoreB} + ${gift.coins}` },
+          )
+          .where(eq(livePkBattles.id, pkUpdate.battleId));
+      }
     });
     await insertNotification({
       userId: data.toUserId,
@@ -194,5 +237,24 @@ export const sendGift = createServerFn({ method: "POST" })
       postId: data.postId,
       extra: { giftKey: gift.key, giftEmoji: gift.emoji, coins: gift.coins },
     });
+
+    if (pkUpdate) {
+      const [updated] = await db
+        .select()
+        .from(livePkBattles)
+        .where(eq(livePkBattles.id, pkUpdate.battleId));
+      if (updated) {
+        const [roomA] = await db.select().from(liveRooms).where(eq(liveRooms.id, updated.roomAId));
+        const [roomB] = await db.select().from(liveRooms).where(eq(liveRooms.id, updated.roomBId));
+        const payload = {
+          kind: "pk_score",
+          battleId: updated.id,
+          scoreA: updated.scoreA,
+          scoreB: updated.scoreB,
+        };
+        if (roomA) await pushLiveData(roomA.livekitRoomName, payload);
+        if (roomB) await pushLiveData(roomB.livekitRoomName, payload);
+      }
+    }
     return { ok: true };
   });

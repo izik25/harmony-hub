@@ -1,6 +1,18 @@
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
-import { Aperture, CloudFog, Lightbulb, Drama, Users, Check, type LucideIcon } from "lucide-react";
+import {
+  Aperture,
+  CloudFog,
+  Lightbulb,
+  Drama,
+  Users,
+  PartyPopper,
+  Landmark,
+  Martini,
+  Flame,
+  Check,
+  type LucideIcon,
+} from "lucide-react";
 import { BACKGROUND_OPTIONS, type BackgroundId } from "@/lib/virtual-background";
 
 // Approximates each real, canvas-rendered scene from virtual-background.ts using plain CSS
@@ -17,6 +29,13 @@ const TILE_BACKGROUND: Record<BackgroundId, string> = {
     "radial-gradient(circle at 50% 10%, rgba(255,243,214,0.6), transparent 45%), linear-gradient(180deg, #0c0d12 0%, #15161d 65%, #2b1d14 100%)",
   arena:
     "radial-gradient(circle at 50% 4%, rgba(255,255,255,0.35), transparent 40%), linear-gradient(200deg, color-mix(in oklab, var(--brand-teal) 55%, transparent) 0%, transparent 45%), linear-gradient(150deg, color-mix(in oklab, var(--brand-coral) 55%, transparent) 0%, transparent 45%), linear-gradient(180deg, #08080d, #141018)",
+  crowd:
+    "radial-gradient(circle at 50% 2%, rgba(255,220,168,0.4), transparent 42%), radial-gradient(circle at 14% 20%, color-mix(in oklab, var(--brand-coral) 45%, transparent), transparent 50%), radial-gradient(circle at 88% 22%, color-mix(in oklab, var(--brand-indigo) 45%, transparent), transparent 50%), linear-gradient(180deg, #140b1c 0%, #251531 45%, #08060c 100%)",
+  caesarea:
+    "linear-gradient(180deg, #251534 0%, #7a3b52 42%, #d9814f 58%, #1a1310 60%, #1a1310 100%)",
+  bar: "radial-gradient(circle at 50% 12%, rgba(255,179,92,0.5), transparent 45%), linear-gradient(180deg, #1c130e 0%, #090504 100%)",
+  fireplace:
+    "radial-gradient(circle at 50% 78%, rgba(255,138,61,0.55), transparent 45%), radial-gradient(circle at 50% 82%, rgba(255,209,102,0.5), transparent 30%), linear-gradient(180deg, #2b1f16, #110b07)",
   green: "linear-gradient(165deg, #22d16f, #0e9c4f)",
   blue: "linear-gradient(165deg, #3b8aef, #0f56c4)",
   coral:
@@ -33,6 +52,10 @@ const TILE_ICON: Partial<Record<BackgroundId, LucideIcon>> = {
   studio: Lightbulb,
   stage: Drama,
   arena: Users,
+  crowd: PartyPopper,
+  caesarea: Landmark,
+  bar: Martini,
+  fireplace: Flame,
 };
 
 /**

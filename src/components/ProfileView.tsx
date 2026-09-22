@@ -158,7 +158,6 @@ export function ProfileView({ handle }: { handle: string }) {
           livekitUrl: res.livekitUrl,
           type: res.room.type,
           host: null,
-          opponent: res.opponent,
         }),
       );
       toast.success(t("profile.duetChallengeSent", { name: profile!.name }));

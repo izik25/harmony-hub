@@ -14,7 +14,8 @@
  */
 import type { FaceLandmarker, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
-export type FilterKind = "partyhat" | "sunglasses" | "mask" | "catears" | "bunnyears";
+export type FilterKind =
+  "partyhat" | "sunglasses" | "mask" | "catears" | "bunnyears" | "mic" | "crown";
 
 // How long a triggered filter stays on screen, pop-in + hold + fade-out included — a "gift
 // moment," not something you'd want to sit through a whole take wearing.
@@ -23,14 +24,16 @@ const POP_IN_MS = 350;
 const FADE_OUT_MS = 500;
 
 // Standard MediaPipe face-mesh landmark indices (the same 468/478-point topology across every
-// MediaPipe face model) used to anchor each graphic:
-const FOREHEAD_TOP = 10;
-const EYE_OUTER_RIGHT = 33; // subject's right eye, outer corner
-const EYE_OUTER_LEFT = 263; // subject's left eye, outer corner
-const CHEEK_RIGHT = 234;
-const CHEEK_LEFT = 454;
+// MediaPipe face model) used to anchor each graphic. Exported so camera-effects.ts's persistent
+// (recorded, non-gift) overlay pass can reuse the exact same anchoring math below.
+export const FOREHEAD_TOP = 10;
+export const CHIN_BOTTOM = 152;
+export const EYE_OUTER_RIGHT = 33; // subject's right eye, outer corner
+export const EYE_OUTER_LEFT = 263; // subject's left eye, outer corner
+export const CHEEK_RIGHT = 234;
+export const CHEEK_LEFT = 454;
 
-function dist(a: NormalizedLandmark, b: NormalizedLandmark, w: number, h: number) {
+export function dist(a: NormalizedLandmark, b: NormalizedLandmark, w: number, h: number) {
   return Math.hypot((a.x - b.x) * w, (a.y - b.y) * h);
 }
 
@@ -39,15 +42,51 @@ function dist(a: NormalizedLandmark, b: NormalizedLandmark, w: number, h: number
 // measured/reference) works for all of them regardless of shape.
 const UNIT = 300;
 
-type FilterSpec = {
-  /** Where on the face this filter anchors — forehead (hats/ears) or the eye line (glasses/mask). */
-  anchor: "forehead" | "eyes";
+export type FilterSpec = {
+  /** Where on the face this filter anchors — forehead (hats/ears/crown), chin (mic) or the eye line (glasses/mask). */
+  anchor: "forehead" | "chin" | "eyes";
   /** Point within the UNIT x UNIT bitmap that lands exactly on the anchor after transform. */
   bitmapAnchor: { x: number; y: number };
   /** Width (in bitmap units) that should map to the measured reference (face or eye) width. */
   referenceWidth: number;
   paint: (ctx: CanvasRenderingContext2D) => void;
 };
+
+/**
+ * Shared per-frame transform math: where a filter's bitmap anchor should land, how much it should
+ * rotate, and how much it should scale, given one frame's face landmarks. Used both by the
+ * transient gift player below (which maps into a CSS-scaled preview box via coverScale/offset) and
+ * by camera-effects.ts's persistent overlay pass (which draws 1:1 onto a canvas sized exactly to
+ * the video's native resolution, so it just passes coverScale 1 and offset 0).
+ */
+export function computeFaceAnchor(
+  spec: FilterSpec,
+  face: NormalizedLandmark[],
+  vw: number,
+  vh: number,
+  coverScale: number,
+  offsetX: number,
+  offsetY: number,
+): { point: { x: number; y: number }; angle: number; scale: number } {
+  const toBox = (p: NormalizedLandmark) => ({
+    x: p.x * vw * coverScale - offsetX,
+    y: p.y * vh * coverScale - offsetY,
+  });
+  const eyeR = face[EYE_OUTER_RIGHT];
+  const eyeL = face[EYE_OUTER_LEFT];
+  const angle = Math.atan2((eyeL.y - eyeR.y) * vh, (eyeL.x - eyeR.x) * vw);
+  const measured =
+    spec.anchor === "eyes"
+      ? dist(eyeR, eyeL, vw, vh) * coverScale
+      : dist(face[CHEEK_RIGHT], face[CHEEK_LEFT], vw, vh) * coverScale;
+  const anchorLandmark =
+    spec.anchor === "eyes"
+      ? ({ x: (eyeR.x + eyeL.x) / 2, y: (eyeR.y + eyeL.y) / 2 } as NormalizedLandmark)
+      : spec.anchor === "chin"
+        ? face[CHIN_BOTTOM]
+        : face[FOREHEAD_TOP];
+  return { point: toBox(anchorLandmark), angle, scale: measured / spec.referenceWidth };
+}
 
 function paintPartyHat(ctx: CanvasRenderingContext2D) {
   // A conical party hat sitting on the forehead, base centered at (150,300), tip near the top.
@@ -178,7 +217,76 @@ function paintBunnyEars(ctx: CanvasRenderingContext2D) {
   });
 }
 
-const FILTER_SPECS: Record<FilterKind, FilterSpec> = {
+function paintMic(ctx: CanvasRenderingContext2D) {
+  // A handheld mic held up near the chin/mouth — head at the top (anchored just under the chin),
+  // handle running down and slightly off-center like it's tilted in a hand just out of frame.
+  ctx.save();
+  ctx.translate(150, 60);
+  ctx.rotate(-0.18);
+  // Handle.
+  ctx.fillStyle = "#20222a";
+  ctx.fillRect(-14, 40, 28, 220);
+  // Mic head (capsule).
+  ctx.fillStyle = "#3a3d47";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 34, 46, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // A basket-mesh ring plus a few grille lines sell "microphone" rather than a plain lightbulb.
+  ctx.strokeStyle = "#0e0f13";
+  ctx.lineWidth = 3;
+  for (let i = -20; i <= 20; i += 10) {
+    ctx.beginPath();
+    ctx.moveTo(-30, i);
+    ctx.lineTo(30, i);
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 34, 46, 0, 0, Math.PI * 2);
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "#14161a";
+  ctx.stroke();
+  // Silver collar between head and handle.
+  ctx.fillStyle = "#cfd3da";
+  ctx.fillRect(-16, 34, 32, 12);
+  ctx.restore();
+}
+
+function paintCrown(ctx: CanvasRenderingContext2D) {
+  // A jeweled pop-star/diva crown sitting on the forehead — gold points + a gem on each tip.
+  ctx.save();
+  ctx.fillStyle = "#f2c94c";
+  ctx.beginPath();
+  ctx.moveTo(60, 300);
+  ctx.lineTo(60, 190);
+  ctx.lineTo(105, 245);
+  ctx.lineTo(150, 160);
+  ctx.lineTo(195, 245);
+  ctx.lineTo(240, 190);
+  ctx.lineTo(240, 300);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#b8860b";
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  // Base band.
+  ctx.fillStyle = "#e8b84f";
+  ctx.fillRect(58, 290, 184, 26);
+  // Gems: a large one centered on the tallest point, smaller ones on the side points.
+  const gems: [number, number, number, string][] = [
+    [150, 175, 12, "#ff5b7a"],
+    [60, 205, 8, "#5bc8ff"],
+    [240, 205, 8, "#5bc8ff"],
+  ];
+  for (const [x, y, r, color] of gems) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+export const FILTER_SPECS: Record<FilterKind, FilterSpec> = {
   partyhat: {
     anchor: "forehead",
     bitmapAnchor: { x: 150, y: 300 },
@@ -209,10 +317,22 @@ const FILTER_SPECS: Record<FilterKind, FilterSpec> = {
     referenceWidth: 220,
     paint: paintMask,
   },
+  mic: {
+    anchor: "chin",
+    bitmapAnchor: { x: 150, y: 20 },
+    referenceWidth: 130,
+    paint: paintMic,
+  },
+  crown: {
+    anchor: "forehead",
+    bitmapAnchor: { x: 150, y: 300 },
+    referenceWidth: 200,
+    paint: paintCrown,
+  },
 };
 
 const bitmapCache = new Map<FilterKind, ImageBitmap>();
-async function getFilterBitmap(kind: FilterKind): Promise<ImageBitmap> {
+export async function getFilterBitmap(kind: FilterKind): Promise<ImageBitmap> {
   const cached = bitmapCache.get(kind);
   if (cached) return cached;
   const canvas = document.createElement("canvas");
@@ -226,7 +346,7 @@ async function getFilterBitmap(kind: FilterKind): Promise<ImageBitmap> {
 }
 
 let landmarkerPromise: Promise<FaceLandmarker> | null = null;
-function loadFaceLandmarker(): Promise<FaceLandmarker> {
+export function loadFaceLandmarker(): Promise<FaceLandmarker> {
   if (!landmarkerPromise) {
     landmarkerPromise = import("@mediapipe/tasks-vision").then(
       async ({ FilesetResolver, FaceLandmarker }) => {
@@ -325,24 +445,12 @@ export async function playFaceFilter(
     const coverScale = Math.max(boxW / vw, boxH / vh);
     const offsetX = (vw * coverScale - boxW) / 2;
     const offsetY = (vh * coverScale - boxH) / 2;
-    const toBox = (p: NormalizedLandmark) => ({
-      x: p.x * vw * coverScale - offsetX,
-      y: p.y * vh * coverScale - offsetY,
-    });
 
-    const eyeR = face[EYE_OUTER_RIGHT];
-    const eyeL = face[EYE_OUTER_LEFT];
-    const angle = Math.atan2((eyeL.y - eyeR.y) * vh, (eyeL.x - eyeR.x) * vw);
-    const measured =
-      spec.anchor === "eyes"
-        ? dist(eyeR, eyeL, vw, vh) * coverScale
-        : dist(face[CHEEK_RIGHT], face[CHEEK_LEFT], vw, vh) * coverScale;
-    const anchorPoint =
-      spec.anchor === "eyes"
-        ? toBox({ x: (eyeR.x + eyeL.x) / 2, y: (eyeR.y + eyeL.y) / 2 } as NormalizedLandmark)
-        : toBox(face[FOREHEAD_TOP]);
-
-    const scale = measured / spec.referenceWidth;
+    const {
+      point: anchorPoint,
+      angle,
+      scale,
+    } = computeFaceAnchor(spec, face, vw, vh, coverScale, offsetX, offsetY);
     const { scale: envScale, alpha } = envelope(elapsed, FILTER_DURATION_MS);
 
     ctx.save();

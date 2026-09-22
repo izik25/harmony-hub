@@ -294,3 +294,34 @@ export function applyPitchCorrection(
     input.set(output);
   }
 }
+
+/**
+ * Fixed-ratio, duration-preserving pitch shift — the same grain-resample + overlap-add engine as
+ * applyPitchCorrection above, but with one constant ratio for the whole buffer instead of a
+ * per-frame ratio chasing a detected note. No pitch detection needed, so it's cheap and exact:
+ * used to transpose a whole backing track by a fixed number of semitones (a manual key change)
+ * rather than correct a vocal toward the nearest chromatic note.
+ */
+export function shiftPitchSemitones(buffer: AudioBuffer, semitones: number): void {
+  if (semitones === 0) return;
+  const ratio = 2 ** (semitones / 12);
+  const frameSize = frameSizeFor(buffer.sampleRate);
+  const hop = Math.floor(frameSize / 2);
+  const window = hannWindow(frameSize);
+
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const input = buffer.getChannelData(ch);
+    const n = input.length;
+    const output = new Float32Array(n);
+    for (let pos = 0; pos < n; pos += hop) {
+      const center = pos + frameSize / 2;
+      for (let k = 0; k < frameSize; k++) {
+        const outIdx = pos + k;
+        if (outIdx >= n) break;
+        const srcPos = center + (k - frameSize / 2) * ratio;
+        output[outIdx] += sampleAt(input, srcPos) * window[k];
+      }
+    }
+    input.set(output);
+  }
+}

@@ -1,4 +1,5 @@
 import { audioBufferToWavBlob } from "./wav-encoder";
+import { shiftPitchSemitones } from "./pitch-correct";
 
 const FETCH_TIMEOUT_MS = 10_000;
 const RENDER_TIMEOUT_MS = 20_000;
@@ -156,6 +157,10 @@ export type MixLevels = {
   vocalGain?: number;
   /** Multiplier on the backing track's level under the vocal. 0.65 is the default balance. */
   backingGain?: number;
+  /** Semitones to transpose the backing track by (a manual key change made live while recording —
+   * see the pitch rail control in record.tsx) so the exported mix matches the key the vocal was
+   * actually sung against, not the track's original key. 0 (the default) leaves it untouched. */
+  backingPitchSemitones?: number;
 };
 
 export async function processRecording(
@@ -165,6 +170,7 @@ export async function processRecording(
 ): Promise<Blob> {
   const vocalGain = levels.vocalGain ?? 1.4;
   const backingGainLevel = levels.backingGain ?? 0.65;
+  const backingPitchSemitones = levels.backingPitchSemitones ?? 0;
   const decodeCtx = new AudioContext();
   let micBuffer: AudioBuffer;
   let backingBuffer: AudioBuffer | null = null;
@@ -178,6 +184,9 @@ export async function processRecording(
           clearTimeout(timer),
         );
         backingBuffer = await decodeCtx.decodeAudioData(await res.arrayBuffer());
+        if (backingBuffer && backingPitchSemitones !== 0) {
+          shiftPitchSemitones(backingBuffer, backingPitchSemitones);
+        }
       } catch {
         backingBuffer = null; // proceed vocal-only rather than failing the whole recording
       }
