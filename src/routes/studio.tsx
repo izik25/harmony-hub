@@ -8,6 +8,7 @@ import {
   Play,
   Pause,
   Loader2,
+  Sparkles,
   ChevronDown,
   ChevronUp,
   Image as ImageIcon,
@@ -21,9 +22,10 @@ import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { getDraft, updateDraftAudio } from "@/functions/posts";
+import { getVocalCleanupStatus, startVocalCleanup } from "@/functions/vocal-cleanup";
 import { smartUploadMedia } from "@/lib/blob-upload";
 import {
-  processRecording,
+  prepareStems,
   analyzeSignal,
   applyNoiseGate,
   noiseGateThresholdFor,
@@ -61,6 +63,28 @@ function peakDbOf(buffer: AudioBuffer): number {
   return peak > 0 ? 20 * Math.log10(peak) : -100;
 }
 
+// peakDbOf for what actually reaches the limiter once the vocal and backing stems are summed at
+// their current levels — the vocal's own peak alone says nothing about the headroom left after
+// the backing track lands on top of it. The backing is downmixed (L+R)/2, matching the mono export.
+function peakDbOfMix(
+  vocal: AudioBuffer,
+  vocalLevel: number,
+  backing: AudioBuffer | null,
+  backingLevel: number,
+): number {
+  if (!backing) return peakDbOf(vocal) + 20 * Math.log10(vocalLevel || 1e-6);
+  const v = vocal.getChannelData(0);
+  const left = backing.getChannelData(0);
+  const right = backing.numberOfChannels > 1 ? backing.getChannelData(1) : left;
+  const n = Math.min(v.length, left.length);
+  let peak = 0;
+  for (let i = 0; i < n; i++) {
+    const abs = Math.abs(v[i] * vocalLevel + ((left[i] + right[i]) / 2) * backingLevel);
+    if (abs > peak) peak = abs;
+  }
+  return peak > 0 ? 20 * Math.log10(peak) : -100;
+}
+
 function formatTime(s: number) {
   const m = String(Math.floor(s / 60)).padStart(2, "0");
   const ss = String(Math.floor(s % 60)).padStart(2, "0");
@@ -75,18 +99,31 @@ export const Route = createFileRoute("/studio")({
 });
 
 type VocalChain = {
+  /** The vocal stem — every DSP knob, AI Mastering's gate, and pitch correction act on this alone. */
   player: Tone.Player;
+  /** The aligned backing stem (see prepareStems), mixed in after the vocal's processing, never
+   * through it. Left unloaded for drafts with no separate stems. */
+  backingPlayer: Tone.Player;
   filter: Tone.Filter;
   eq3: Tone.EQ3;
   compressor: Tone.Compressor;
+  reverbSendHighpass: Tone.Filter;
+  reverbSendLowpass: Tone.Filter;
   reverbConvolver: Tone.Convolver;
   reverbDry: Tone.Gain;
   reverbWet: Tone.Gain;
+  reverbOut: Tone.Gain;
+  vocalLevel: Tone.Gain;
+  backingLevel: Tone.Gain;
   makeupGain: Tone.Gain;
   limiter: Tone.Compressor;
 };
 
 type DraftDTO = Awaited<ReturnType<typeof getDraft>>;
+
+/** What the chain plays: separate vocal/backing stems when the draft has its raw take, or just the
+ * already-mixed audioUrl (uploaded files, drafts from before stems existed) as the "vocal". */
+type Sources = { vocalUrl: string; backingUrl: string | null; stems: boolean };
 
 type Params = {
   speed: number;
@@ -99,33 +136,47 @@ type Params = {
   // compression, and gating alone can tighten a take up, but none of them make it louder, and
   // "louder" is most of what actually reads as "mastered" versus "the same raw recording."
   gainDb: number;
+  /** Linear stem levels from the Mix Balance sliders — live, no re-render needed. */
+  vocalLevel: number;
+  backingLevel: number;
 };
 
 // A hand-generated decaying-noise impulse response (see src/lib/impulse-response.ts) keeps the
 // convolution reverb fully synchronous — no async IR generation, which is unsafe to nest inside
 // Tone.Offline (used for export/publish) since it swaps the global audio context internally.
-function buildChain(onEnded?: () => void): VocalChain {
+//
+// Signal flow: vocal → highpass → EQ → compressor → (dry + filtered reverb send) → vocal level ─┐
+//              backing → backing level ──────────────────────────────────────────────────────────┴→ makeup gain → limiter
+// The backing used to be baked into the one file this whole chain processed, so the reverb, gate,
+// compressor and even pitch correction were all running over the drums and the instrumental too —
+// reverb on a full mix is a wash of echo no matter how short the tail, which is a big part of
+// what read as "too much echo".
+function buildChain(): VocalChain {
   const filter = new Tone.Filter({ type: "highpass" });
   const eq3 = new Tone.EQ3();
   const compressor = new Tone.Compressor();
 
   const rawContext = Tone.getContext().rawContext as unknown as BaseAudioContext;
   const impulse = generateImpulseResponse(rawContext);
+  // The send is band-limited before it reaches the convolver — the standard vocal-reverb move.
+  // Reverberated lows are what make a tail boomy/muddy and read as a second, distant copy of the
+  // voice; reverberated top end turns every "s" into a hissy splash. 400Hz-7kHz keeps the sheen
+  // and drops both.
+  const reverbSendHighpass = new Tone.Filter({ type: "highpass", frequency: 400 });
+  const reverbSendLowpass = new Tone.Filter({ type: "lowpass", frequency: 7000 });
   const reverbConvolver = new Tone.Convolver(impulse);
   const reverbDry = new Tone.Gain(1);
   const reverbWet = new Tone.Gain(0);
   const reverbOut = new Tone.Gain(1);
+  const vocalLevel = new Tone.Gain(1);
+  const backingLevel = new Tone.Gain(1);
   // Makeup gain + a brickwall limiter as the final stage, after everything else including the
-  // reverb send — the limiter's ceiling means gainDb can push a take audibly louder without
-  // clipping, instead of every knob above it only ever reshaping the take's dynamics/tone at the
-  // same overall loudness it was recorded at.
+  // backing — the limiter's ceiling means gainDb can push a take audibly louder without clipping.
   //
   // Built by hand instead of Tone.Limiter: Tone.Limiter hardcodes its release at 10ms, and
   // anything under ~50ms makes a limiter start tracking the waveform of the audio itself rather
   // than its envelope — audible as added distortion/pumping, exactly what AI Mastering was
-  // producing whenever gainDb pushed much gain into it. attack/threshold match Tone.Limiter's own
-  // defaults (fast enough to still catch peaks); release matches the already-correct limiter in
-  // mix-recording.ts's offline chain.
+  // producing whenever gainDb pushed much gain into it. Release matches mix-recording.ts's limiter.
   const makeupGain = new Tone.Gain(1);
   const limiter = new Tone.Compressor({
     ratio: 20,
@@ -134,23 +185,32 @@ function buildChain(onEnded?: () => void): VocalChain {
     threshold: -1,
   }).toDestination();
 
-  compressor.fan(reverbDry, reverbConvolver);
-  reverbConvolver.connect(reverbWet);
+  compressor.fan(reverbDry, reverbSendHighpass);
+  reverbSendHighpass.chain(reverbSendLowpass, reverbConvolver, reverbWet);
   reverbDry.connect(reverbOut);
   reverbWet.connect(reverbOut);
-  reverbOut.chain(makeupGain, limiter);
+  reverbOut.chain(vocalLevel, makeupGain);
+  makeupGain.connect(limiter);
 
-  const player = onEnded ? new Tone.Player({ onstop: onEnded }) : new Tone.Player();
+  const player = new Tone.Player();
   player.chain(filter, eq3, compressor);
+  const backingPlayer = new Tone.Player();
+  backingPlayer.chain(backingLevel, makeupGain);
 
   return {
     player,
+    backingPlayer,
     filter,
     eq3,
     compressor,
+    reverbSendHighpass,
+    reverbSendLowpass,
     reverbConvolver,
     reverbDry,
     reverbWet,
+    reverbOut,
+    vocalLevel,
+    backingLevel,
     makeupGain,
     limiter,
   };
@@ -158,6 +218,7 @@ function buildChain(onEnded?: () => void): VocalChain {
 
 function applyParams(chain: VocalChain, p: Params) {
   chain.player.playbackRate = p.speed / 100;
+  chain.backingPlayer.playbackRate = p.speed / 100;
   // 50-150Hz rumble cut, not 80-380Hz: the old ceiling ran well into a lot of voices' actual
   // fundamental range, thinning the take out under the guise of "removing noise."
   chain.filter.frequency.value = 50 + (p.noise / 100) * 100;
@@ -174,25 +235,37 @@ function applyParams(chain: VocalChain, p: Params) {
   // once makeup gain and the final limiter (see buildChain) piled on top of it.
   chain.compressor.threshold.value = -4 - (p.compression / 100) * 16;
   chain.compressor.ratio.value = 1 + (p.compression / 100) * 5;
-  // Capped at 0.45 (was 0.7) so even the slider maxed out reads as a small room/plate, not a
-  // hall — combined with the shorter impulse response below, this keeps reverb from crossing into
-  // audible discrete echo.
-  const wetAmt = (p.reverb / 100) * 0.45;
+  // Capped at 0.35 so even the slider maxed out reads as a short plate behind the voice, never a
+  // hall — the dry level barely dips, so the voice itself always stays up front.
+  const wetAmt = (p.reverb / 100) * 0.35;
   chain.reverbWet.gain.value = wetAmt;
-  chain.reverbDry.gain.value = 1 - wetAmt * 0.5;
+  chain.reverbDry.gain.value = 1 - wetAmt * 0.3;
+  chain.vocalLevel.gain.value = p.vocalLevel;
+  chain.backingLevel.gain.value = p.backingLevel;
   chain.makeupGain.gain.value = Tone.dbToGain(p.gainDb);
 }
 
+// Both stems always start/stop/seek together on one shared timestamp — they're the same length
+// and already aligned (prepareStems), so a single position drives both.
+function startChain(chain: VocalChain, offset: number) {
+  const at = Tone.now() + 0.02;
+  chain.player.start(at, offset);
+  if (chain.backingPlayer.loaded) chain.backingPlayer.start(at, offset);
+}
+
+function stopChain(chain: VocalChain) {
+  chain.player.stop();
+  if (chain.backingPlayer.loaded) chain.backingPlayer.stop();
+}
+
+function seekChain(chain: VocalChain, offset: number) {
+  const at = Tone.now() + 0.02;
+  chain.player.seek(offset, at);
+  if (chain.backingPlayer.loaded) chain.backingPlayer.seek(offset, at);
+}
+
 function disposeChain(chain: VocalChain) {
-  chain.player.dispose();
-  chain.filter.dispose();
-  chain.eq3.dispose();
-  chain.compressor.dispose();
-  chain.reverbConvolver.dispose();
-  chain.reverbDry.dispose();
-  chain.reverbWet.dispose();
-  chain.makeupGain.dispose();
-  chain.limiter.dispose();
+  for (const node of Object.values(chain)) node.dispose();
 }
 
 function StudioPage() {
@@ -273,27 +346,28 @@ function StudioPage() {
   // Debounce handle for committing the Autotune slider's drag into the buffer — see
   // runPitchCorrection and the comment by the autotune state above.
   const autotuneCommitTimer = useRef<number | null>(null);
-  // Mirrors the DSP slider state without being a dependency of the chain-(re)build effect below —
-  // a remix swaps draft.audioUrl and rebuilds the chain from scratch, and it should pick up
-  // whatever the sliders are currently set to rather than resetting to Tone's raw defaults.
-  const paramsRef = useRef<Params>({
+  // What the chain is playing — see the stems effect below. null while stems are being prepared.
+  const [sources, setSources] = useState<Sources | null>(null);
+  const stems = sources?.stems ?? false;
+  const currentParams: Params = {
     speed,
     noise,
     reverb: reverbAmt,
     eq,
     compression: comp,
     gainDb,
-  });
+    // On an already-mixed file (no stems) there's nothing separate to balance — the volume
+    // sliders aren't shown, and the mix passes through at unity.
+    vocalLevel: stems ? vocalVolume / 100 : 1,
+    backingLevel: playbackVolume / 100,
+  };
+  // Mirrors the DSP slider state without being a dependency of the chain-(re)build effect below —
+  // a Fix a Section save swaps the stems and rebuilds the chain from scratch, and it should pick
+  // up whatever the sliders are currently set to rather than resetting to Tone's raw defaults.
+  const paramsRef = useRef<Params>(currentParams);
   useEffect(() => {
-    paramsRef.current = {
-      speed,
-      noise,
-      reverb: reverbAmt,
-      eq,
-      compression: comp,
-      gainDb,
-    };
-  }, [noise, reverbAmt, eq, comp, speed, gainDb]);
+    paramsRef.current = currentParams;
+  });
 
   // Restores the currently-loaded buffer to the untouched take before (re-)applying destructive
   // correction — see originalChannelsRef above.
@@ -366,7 +440,7 @@ function StudioPage() {
       video.currentTime = positionRef.current;
     }
     if (positionRef.current >= durationRef.current) {
-      chainRef.current?.player.stop();
+      if (chainRef.current) stopChain(chainRef.current);
       video?.pause();
       setPlaying(false);
       stopTicking();
@@ -375,8 +449,80 @@ function StudioPage() {
     rafIdRef.current = requestAnimationFrame(tick);
   };
 
+  // Re-derives the vocal and backing stems from the raw take (prepareStems) instead of loading the
+  // pre-mixed audioUrl, so every knob below processes the voice alone and the backing comes back
+  // in clean underneath it — and drafts recorded before the bleed-delay alignment existed get it
+  // retroactively, since it's measured fresh from the raw take every time. The vocal stem is
+  // rendered at unity gain; the Mix Balance sliders apply the actual levels live. Drafts with no
+  // raw take (uploads) — or a raw take that fails to process — fall back to the mixed file.
+  //
+  // AI Vocal Cleanup (functions/vocal-cleanup.ts) swaps in the model-cleaned take as the vocal
+  // source once it exists — on by default, with the toggle there for an honest before/after.
+  const cleanupStatus = useQuery({
+    queryKey: ["vocalCleanup", draftId],
+    queryFn: () => getVocalCleanupStatus({ data: { draftId: draftId! } }),
+    enabled: !!draftId && !!draft?.rawVocalUrl,
+    refetchInterval: (query) => (query.state.data?.status === "processing" ? 4000 : false),
+  });
+  const cleanupMutation = useMutation({
+    mutationFn: () => startVocalCleanup({ data: { draftId: draftId! } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["vocalCleanup", draftId] }),
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
+  });
+  const cleanVocalUrl =
+    cleanupStatus.data?.status === "succeeded"
+      ? cleanupStatus.data.cleanVocalUrl
+      : (draft?.cleanVocalUrl ?? "");
+  const [useCleanVocal, setUseCleanVocal] = useState(true);
+  const activeCleanVocalUrl = useCleanVocal ? cleanVocalUrl : "";
+  const stemSourceKey = draft
+    ? draft.rawVocalUrl
+      ? `stems|${draft.rawVocalUrl}|${activeCleanVocalUrl}|${draft.backingTrackUrl ?? ""}|${draft.backingStartOffsetSeconds ?? 0}`
+      : `mix|${draft.audioUrl ?? ""}`
+    : null;
   useEffect(() => {
-    if (!draft?.audioUrl) return;
+    if (!draft || !stemSourceKey) return;
+    let cancelled = false;
+    const objectUrls: string[] = [];
+    const fallback = (): Sources | null =>
+      draft.audioUrl ? { vocalUrl: draft.audioUrl, backingUrl: null, stems: false } : null;
+    setSources(null);
+    setReady(false);
+    if (!draft.rawVocalUrl) {
+      setSources(fallback());
+      return;
+    }
+    (async () => {
+      const [raw, clean] = await Promise.all([
+        fetch(draft.rawVocalUrl!).then((r) => r.blob()),
+        activeCleanVocalUrl ? fetch(activeCleanVocalUrl).then((r) => r.blob()) : undefined,
+      ]);
+      const { vocal, backing } = await prepareStems(
+        raw,
+        draft.backingTrackUrl || undefined,
+        { vocalGain: 1, backingStartOffsetSeconds: draft.backingStartOffsetSeconds },
+        clean,
+      );
+      const toUrl = (buffer: AudioBuffer) => {
+        const url = URL.createObjectURL(audioBufferToWavBlob(buffer));
+        objectUrls.push(url);
+        return url;
+      };
+      const next = { vocalUrl: toUrl(vocal), backingUrl: backing ? toUrl(backing) : null };
+      if (!cancelled) setSources({ ...next, stems: true });
+    })().catch((err) => {
+      console.error(err);
+      if (!cancelled) setSources(fallback());
+    });
+    return () => {
+      cancelled = true;
+      for (const url of objectUrls) URL.revokeObjectURL(url);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stemSourceKey]);
+
+  useEffect(() => {
+    if (!sources) return;
     let disposed = false;
     stopTicking();
     setPlaying(false);
@@ -394,10 +540,10 @@ function StudioPage() {
     setGainDb(0);
     setA(0);
     setReady(false);
-    const loadWithRetry = async (url: string, attempts = 4): Promise<void> => {
+    const loadWithRetry = async (player: Tone.Player, url: string, attempts = 4): Promise<void> => {
       for (let i = 0; i < attempts; i++) {
         try {
-          await chain.player.load(url);
+          await player.load(url);
           return;
         } catch (err) {
           if (i === attempts - 1) throw err;
@@ -405,7 +551,10 @@ function StudioPage() {
         }
       }
     };
-    loadWithRetry(draft.audioUrl)
+    Promise.all([
+      loadWithRetry(chain.player, sources.vocalUrl),
+      sources.backingUrl ? loadWithRetry(chain.backingPlayer, sources.backingUrl) : null,
+    ])
       .then(() => {
         if (disposed) return;
         const buf = chain.player.buffer.get();
@@ -431,23 +580,20 @@ function StudioPage() {
         window.clearTimeout(autotuneCommitTimer.current);
         autotuneCommitTimer.current = null;
       }
+      // The next chain only exists once the next stems are ready — until then, nothing (slider
+      // effects, AI Mastering, play) should touch this disposed one.
+      if (chainRef.current === chain) chainRef.current = null;
       disposeChain(chain);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft?.audioUrl]);
+  }, [sources]);
 
   useEffect(() => {
     if (!chainRef.current) return;
-    applyParams(chainRef.current, {
-      speed,
-      noise,
-      reverb: reverbAmt,
-      eq,
-      compression: comp,
-      gainDb,
-    });
+    applyParams(chainRef.current, currentParams);
     if (draftVideoRef.current) draftVideoRef.current.playbackRate = speed / 100;
-  }, [noise, reverbAmt, eq, comp, speed, gainDb]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noise, reverbAmt, eq, comp, speed, gainDb, vocalVolume, playbackVolume, stems]);
 
   const togglePlay = async () => {
     const chain = chainRef.current;
@@ -455,7 +601,7 @@ function StudioPage() {
     await Tone.start();
     const video = draftVideoRef.current;
     if (playing) {
-      chain.player.stop();
+      stopChain(chain);
       video?.pause();
       setPlaying(false);
       stopTicking();
@@ -464,7 +610,7 @@ function StudioPage() {
         positionRef.current = 0;
         setCurrentTime(0);
       }
-      chain.player.start(0, positionRef.current);
+      startChain(chain, positionRef.current);
       if (video) {
         video.currentTime = positionRef.current;
         video.play().catch(() => {});
@@ -486,7 +632,7 @@ function StudioPage() {
     positionRef.current = clamped;
     setCurrentTime(clamped);
     lastFrameRef.current = null;
-    chain.player.seek(clamped);
+    seekChain(chain, clamped);
     if (draftVideoRef.current) draftVideoRef.current.currentTime = clamped;
   };
 
@@ -497,7 +643,7 @@ function StudioPage() {
   const openFixSection = () => {
     const chain = chainRef.current;
     if (chain && playing) {
-      chain.player.stop();
+      stopChain(chain);
       draftVideoRef.current?.pause();
       setPlaying(false);
       stopTicking();
@@ -507,18 +653,11 @@ function StudioPage() {
 
   const renderProcessed = async (): Promise<Blob> => {
     const chain = chainRef.current;
-    if (!chain || !ready || !draft?.audioUrl) throw new Error(t("studio.loadTrackFirst"));
+    if (!chain || !ready || !sources) throw new Error(t("studio.loadTrackFirst"));
     const sourceDuration = chain.player.buffer.duration;
     const duration = sourceDuration / (speed / 100) + 0.3;
-    const params: Params = {
-      speed,
-      noise,
-      reverb: reverbAmt,
-      eq,
-      compression: comp,
-      gainDb,
-    };
-    const audioUrl = draft.audioUrl;
+    const params = currentParams;
+    const { vocalUrl, backingUrl } = sources;
     const gateApplied = gateAppliedRef.current;
     const pitchStrength = pitchAppliedRef.current;
 
@@ -528,7 +667,10 @@ function StudioPage() {
         // Re-decode fresh in the offline context rather than reusing the live AudioContext's
         // buffer — Chromium can silently stall OfflineAudioContext rendering when a source node
         // references an AudioBuffer decoded by a different context.
-        await offlineChain.player.load(audioUrl);
+        await Promise.all([
+          offlineChain.player.load(vocalUrl),
+          backingUrl ? offlineChain.backingPlayer.load(backingUrl) : null,
+        ]);
         // This decode is independent of the live buffer AI Mastering gated/retuned in place —
         // reapply the same gate and pitch correction here so export/publish actually carries them,
         // not just the slider values. Deterministic: same source audio in both places always
@@ -546,6 +688,7 @@ function StudioPage() {
         }
         applyParams(offlineChain, params);
         offlineChain.player.start(0);
+        if (backingUrl) offlineChain.backingPlayer.start(0);
       },
       duration,
       // Mono — the source is a solo vocal take, so rendering to stereo would just double the
@@ -572,32 +715,6 @@ function StudioPage() {
         to: "/upload",
         search: forCompetition ? { draftId: id, forCompetition: 1 } : { draftId: id },
       }),
-    onError: (e: Error) => toast.error(translateServerError(e.message)),
-  });
-
-  // Re-bakes the vocal/backing balance from the original stems (kept around from record.tsx as
-  // rawVocalUrl/backingTrackUrl) at a new gain balance, without re-recording. Same offline
-  // pipeline record.tsx used to run itself — just relocated here so it lives alongside every
-  // other knob instead of being a separate step before Studio even opens.
-  const remixMutation = useMutation({
-    mutationFn: async () => {
-      if (!draftId || !draft?.rawVocalUrl) throw new Error(t("studio.nothingToPublish"));
-      const rawBlob = await fetch(draft.rawVocalUrl).then((r) => r.blob());
-      const mixed = await processRecording(rawBlob, draft.backingTrackUrl || undefined, {
-        vocalGain: vocalVolume / 100,
-        backingGain: playbackVolume / 100,
-        backingStartOffsetSeconds: draft.backingStartOffsetSeconds,
-      });
-      const { url } = await smartUploadMedia(mixed, `studio-remix-${Date.now()}.wav`);
-      await updateDraftAudio({ data: { id: draftId, audioUrl: url } });
-      return url;
-    },
-    onSuccess: (url) => {
-      queryClient.setQueryData<DraftDTO>(["draft", draftId], (old) =>
-        old ? { ...old, audioUrl: url } : old,
-      );
-      toast.success(t("studio.remixedToast"));
-    },
     onError: (e: Error) => toast.error(translateServerError(e.message)),
   });
 
@@ -698,12 +815,12 @@ function StudioPage() {
     // reference point) lands at 50 (flat, matching the "left closer to flat" intent above), only
     // pinning to the 40 floor for genuinely harsh/bright outliers past ~0.83.
     const eqAmt = clamp(65 - after.brightness * 30, 40, 68);
-    // A produced, "finished record" vocal reads as sitting in a real space, not bone dry — a
-    // noticeable send by default rather than the barely-there touch this used to cap out at. A
-    // noisy/live room still gets pulled down toward the low end of the range since it already
-    // carries its own room ambience and doesn't need more piled on top; a clean, dry capture gets
-    // the full send since it has no ambience of its own to clash with.
-    const reverbAmt = clamp(55 - (after.noiseFloorDb + 55) * 0.86, 25, 55);
+    // Just a sheen, never a space: a phone take was sung in a real room and already carries it, so
+    // a polished "finished record" vocal comes from keeping that dry and up front, not from adding
+    // a second room on top. The 25-55 this used to set (on what was then the whole mix, drums
+    // included) is what read as "too much echo / too studio-y". A noisier take — more of its own
+    // room baked in — gets even less; a clean, close capture gets a touch more.
+    const reverbAmt = clamp(14 - (after.noiseFloorDb + 55) * 0.33, 4, 14);
 
     // The piece that actually makes mastering audible: push the take up toward a real "finished
     // record" loudness rather than just reshaping its dynamics/tone at the level it happened to be
@@ -724,7 +841,14 @@ function StudioPage() {
     // measured peak actually leaves (minus a safety margin for the EQ tilt and reverb send still
     // ahead of the limiter) means the limiter is only ever asked to trim a small, catchable amount
     // — which is what makes the loudness increase audible without the crunch.
-    const peakDb = peakDbOf(buffer);
+    // Headroom is measured on vocal + backing at their current levels, since that sum is what
+    // actually hits the limiter — not on the vocal stem alone.
+    const peakDb = peakDbOfMix(
+      buffer,
+      currentParams.vocalLevel,
+      chain.backingPlayer.loaded ? (chain.backingPlayer.buffer.get() ?? null) : null,
+      currentParams.backingLevel,
+    );
     const limiterThresholdDb = -1;
     const headroomMarginDb = 3; // slack for the EQ high-shelf and reverb send between here and the limiter
     const availableHeadroomDb = limiterThresholdDb - peakDb - headroomMarginDb;
@@ -942,7 +1066,9 @@ function StudioPage() {
               />
             )}
 
-            {draft?.rawVocalUrl && (
+            {/* Live levels on the separate stems — what you hear is what publish renders, so
+                there's no separate "re-mix" step to apply them. */}
+            {stems && (
               <section className="mt-5 rounded-3xl border border-border bg-card p-4 shadow-pop">
                 <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
                   <Sliders className="h-4 w-4 text-accent" /> {t("record.mixBalance")}
@@ -954,7 +1080,7 @@ function StudioPage() {
                   min={50}
                   max={200}
                 />
-                {draft.backingTrackUrl && (
+                {sources?.backingUrl && (
                   <Slider
                     label={t("record.playbackVolume")}
                     v={playbackVolume}
@@ -963,18 +1089,53 @@ function StudioPage() {
                     max={150}
                   />
                 )}
-                <button
-                  onClick={() => remixMutation.mutate()}
-                  disabled={remixMutation.isPending}
-                  className="press-scale mt-1 flex w-full items-center justify-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-accent disabled:opacity-40"
-                >
-                  {remixMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Wand2 className="h-4 w-4" />
-                  )}
-                  {t("record.remix")}
-                </button>
+              </section>
+            )}
+
+            {draft?.rawVocalUrl && (
+              <section className="mt-5 rounded-3xl border border-border bg-card p-4 shadow-pop">
+                <h2 className="flex items-center gap-2 text-sm font-semibold">
+                  <Sparkles className="h-4 w-4 text-accent" /> {t("studio.cleanupTitle")}
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground">{t("studio.cleanupDesc")}</p>
+                {cleanVocalUrl ? (
+                  // Before/after, not just "on": the only honest way to judge a model's result
+                  // on a given take is to flip between the two at the same spot.
+                  <div className="mt-3 grid grid-cols-2 gap-1 rounded-full bg-muted p-1 text-xs font-semibold">
+                    {[
+                      { on: true, label: t("studio.cleanupUseClean") },
+                      { on: false, label: t("studio.cleanupUseOriginal") },
+                    ].map((opt) => (
+                      <button
+                        key={String(opt.on)}
+                        onClick={() => setUseCleanVocal(opt.on)}
+                        className={`rounded-full px-3 py-2 transition-colors ${
+                          useCleanVocal === opt.on
+                            ? "bg-brand-coral text-white shadow-pop-coral"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : cleanupStatus.data?.status === "processing" || cleanupMutation.isPending ? (
+                  <div className="mt-3 flex items-center justify-center gap-2 rounded-full border border-border px-4 py-2.5 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> {t("studio.cleanupProcessing")}
+                  </div>
+                ) : (
+                  <>
+                    {cleanupStatus.data?.status === "failed" && (
+                      <p className="mt-2 text-xs text-destructive">{t("studio.cleanupFailed")}</p>
+                    )}
+                    <button
+                      onClick={() => cleanupMutation.mutate()}
+                      className="press-scale mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-accent"
+                    >
+                      <Sparkles className="h-4 w-4" /> {t("studio.cleanupStart")}
+                    </button>
+                  </>
+                )}
               </section>
             )}
 

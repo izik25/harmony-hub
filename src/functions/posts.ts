@@ -267,7 +267,10 @@ export const updateDraftAudio = createServerFn({ method: "POST" })
       .update(posts)
       .set({
         audioUrl: data.audioUrl,
-        ...(data.rawVocalUrl ? { rawVocalUrl: data.rawVocalUrl } : {}),
+        // A new raw take invalidates any AI-cleaned version of the old one (see vocal-cleanup.ts).
+        ...(data.rawVocalUrl
+          ? { rawVocalUrl: data.rawVocalUrl, cleanVocalUrl: "", vocalCleanupJob: "" }
+          : {}),
         ...(data.videoUrl !== undefined ? { videoUrl: data.videoUrl } : {}),
         ...(data.coverUrl !== undefined ? { coverUrl: data.coverUrl } : {}),
       })

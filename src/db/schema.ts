@@ -56,6 +56,13 @@ export const posts = pgTable("posts", {
   // anything published without going through that flow (plain uploads, older drafts, etc.).
   rawVocalUrl: text("raw_vocal_url").notNull().default(""),
   backingTrackUrl: text("backing_track_url").notNull().default(""),
+  // AI Vocal Cleanup (src/functions/vocal-cleanup.ts): rawVocalUrl run through the vocal-isolation
+  // + de-reverb model on Replicate — same timeline as the raw take, just with the room, bleed and
+  // noise taken out. Empty until a cleanup finishes; cleared whenever rawVocalUrl changes (Fix a
+  // Section) since it no longer matches the take. vocalCleanupJob is the in-flight Replicate
+  // prediction id, empty when nothing's running.
+  cleanVocalUrl: text("clean_vocal_url").notNull().default(""),
+  vocalCleanupJob: text("vocal_cleanup_job").notNull().default(""),
   // Where in backingTrackUrl the take actually started singing along (KaraokeSegmentPicker's
   // "choose a part" start, in seconds — 0 for the whole song). processRecording needs this to
   // offset the backing track it mixes in so it lines up with the vocal instead of always starting

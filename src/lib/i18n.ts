@@ -14,6 +14,8 @@ const en = {
     messages: "Messages",
     notifications: "Notifications",
     logout: "Log out",
+    more: "More",
+    language: "Language",
   },
   createMenu: {
     title: "Create",
@@ -247,6 +249,14 @@ const en = {
     masterAppliedClean: "Already sounds studio-clean — applied a light polish.",
     masterAppliedCleaned: "Cleaned up background noise and tightened the reverb.",
     masterAppliedPitchSuffix: "Pitch was gently corrected where it drifted off-note.",
+    cleanupTitle: "AI Vocal Cleanup",
+    cleanupDesc:
+      "Removes the room echo, background noise and any music that leaked into your mic — leaves just your dry voice, like it was recorded in a studio booth.",
+    cleanupStart: "Clean up my vocal",
+    cleanupProcessing: "Cleaning up… usually takes a minute or two",
+    cleanupFailed: "Cleanup didn't work this time — try again.",
+    cleanupUseClean: "AI clean",
+    cleanupUseOriginal: "Original",
     fixSection: "Fix a Section",
     fixSectionDesc:
       "Sang a line wrong somewhere in the middle? Mark where it starts and ends, re-record just that part, and it gets stitched back into the rest of your take — nothing else changes.",
@@ -626,6 +636,10 @@ const en = {
     emptyFile: "Empty file.",
     fileTooLarge: "File too large (max 100MB).",
     imageGenNotConfigured: "AI cover images aren't configured yet.",
+    vocalCleanupNotConfigured: "AI vocal cleanup isn't configured yet.",
+    vocalCleanupNoCredits: "The AI cleanup account is out of credits — add billing at replicate.com.",
+    vocalCleanupFailed: "AI vocal cleanup failed. Please try again.",
+    vocalCleanupNoRawTake: "This track has no original recording to clean up.",
     imageGenNoCredits:
       "The AI image account is out of credits — add billing credits at platform.openai.com.",
     imageGenFailed: "Couldn't generate a cover image. Please try again.",
@@ -797,6 +811,8 @@ const he = {
     messages: "הודעות",
     notifications: "התראות",
     logout: "התנתק",
+    more: "עוד",
+    language: "שפה",
   },
   createMenu: {
     title: "יצירה",
@@ -1029,6 +1045,14 @@ const he = {
     masterAppliedClean: "ההקלטה כבר נשמעת נקייה ברמת אולפן — הוחל ליטוש קליל.",
     masterAppliedCleaned: "נוקה רעש רקע והוקטן הריוורב לצליל ברור יותר.",
     masterAppliedPitchSuffix: "הגובה כוון בעדינות במקומות שסטה מהתו.",
+    cleanupTitle: "ניקוי קול AI",
+    cleanupDesc:
+      "מסיר את ההד של החדר, רעשי רקע ומוזיקה שזלגה למיקרופון, ומשאיר רק את הקול היבש שלך, כאילו הוקלט בתא של אולפן.",
+    cleanupStart: "נקה את הקול שלי",
+    cleanupProcessing: "מנקה… בדרך כלל לוקח דקה–שתיים",
+    cleanupFailed: "הניקוי לא הצליח הפעם, נסה שוב.",
+    cleanupUseClean: "נקי AI",
+    cleanupUseOriginal: "מקור",
     fixSection: "תקן קטע",
     fixSectionDesc:
       "שרת לא נכון איפשהו באמצע? סמן איפה זה מתחיל ואיפה זה נגמר, הקלט מחדש רק את הקטע הזה, והוא יתחבר בחזרה לשאר ההקלטה — כלום אחר לא משתנה.",
@@ -1406,6 +1430,10 @@ const he = {
     emptyFile: "הקובץ ריק.",
     fileTooLarge: "הקובץ גדול מדי (מקסימום 100MB).",
     imageGenNotConfigured: "יצירת תמונות קאבר בעזרת AI עדיין לא הוגדרה.",
+    vocalCleanupNotConfigured: "ניקוי קול AI עדיין לא הוגדר.",
+    vocalCleanupNoCredits: "אין יתרת קרדיט בחשבון ניקוי ה-AI. צריך להוסיף אמצעי תשלום ב-replicate.com.",
+    vocalCleanupFailed: "ניקוי הקול נכשל. נסה שוב.",
+    vocalCleanupNoRawTake: "לטראק הזה אין הקלטה מקורית לנקות.",
     imageGenNoCredits:
       "אין יתרת קרדיט בחשבון ה-AI ליצירת תמונות — צריך להוסיף אמצעי תשלום ב-platform.openai.com.",
     imageGenFailed: "לא הצלחנו לייצר תמונת קאבר. נסה שוב.",
@@ -1575,6 +1603,8 @@ const ar = {
     messages: "الرسائل",
     notifications: "الإشعارات",
     logout: "تسجيل خروج",
+    more: "المزيد",
+    language: "اللغة",
   },
   createMenu: {
     title: "إنشاء",

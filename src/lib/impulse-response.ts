@@ -11,12 +11,17 @@
  * low-pass filtered as it decays, since in any real room high frequencies lose energy to air/
  * surfaces faster than lows — a tail that stays full-bandwidth all the way to silence is what
  * makes synthesized reverb sound papery/artificial next to a real room.
+ *
+ * Tuned as a short vocal plate (~1s, 30ms pre-delay) rather than a room: a phone take already
+ * carries the real room it was sung in, so any synthetic space longer than this stacks a second
+ * room on top of the first and reads as echo. The 30ms pre-delay keeps the consonants dry and in
+ * front, so the tail reads as sheen behind the voice rather than a smear over it.
  */
 export function generateImpulseResponse(
   context: BaseAudioContext,
-  duration = 1.3,
-  decay = 3.2,
-  preDelaySeconds = 0.015,
+  duration = 1.0,
+  decay = 3.6,
+  preDelaySeconds = 0.03,
 ): AudioBuffer {
   const rate = context.sampleRate;
   const length = Math.max(1, Math.floor(rate * duration));

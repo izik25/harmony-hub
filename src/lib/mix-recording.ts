@@ -1,5 +1,6 @@
 import { audioBufferToWavBlob } from "./wav-encoder";
 import { shiftPitchSemitones } from "./pitch-correct";
+import { estimateBleedDelaySeconds } from "./bleed-align";
 
 const FETCH_TIMEOUT_MS = 10_000;
 const RENDER_TIMEOUT_MS = 20_000;
@@ -132,25 +133,6 @@ export function applyNoiseGate(
   }
 }
 
-/**
- * Turns a raw mic recording into a clean, studio-style take instead of the thin, boxy, dead-dry
- * sound of a phone voice memo: analyzes the actual take first (analyzeSignal) so the noise gate's
- * threshold and the auto-leveling gain both reflect what's really in this specific recording
- * rather than one fixed setting applied to everything, then runs noise gate, rumble cut, warmth +
- * presence EQ, a de-harshing high-shelf, compression + makeup gain, and a final limiter — then, if
- * a karaoke backing track was used, blends it in underneath. Deliberately no reverb/room send —
- * even a light one reads as an audible echo on a dry phone recording; Studio has a manual reverb
- * slider for anyone who wants to add some on purpose. This runs entirely offline
- * (OfflineAudioContext), rendering sample-accurately from decoded buffers rather than mixing two
- * live streams in real time. Live mixing of independently-clocked sources (mic + a playing
- * <video>) is exactly what produces audible clicks/glitches at buffer boundaries; rendering
- * offline from fixed buffers has none of that — the result is deterministic and glitch-free.
- *
- * The backing-track fetch and the render itself are both time-boxed: a stalled network request
- * or a stuck render would otherwise leave the caller waiting forever with nothing to fall back
- * to (Save staying disabled indefinitely looks, to the user, exactly like "it won't let me
- * save").
- */
 export type MixLevels = {
   /** Multiplier on the vocal's post-compression makeup gain. 1.4 (the default) is the baseline
    * "studio" loudness the chain was tuned around; callers can scale it up/down from a UI slider. */
@@ -169,20 +151,102 @@ export type MixLevels = {
   backingStartOffsetSeconds?: number;
 };
 
-export async function processRecording(
+export type Stems = {
+  /** The finished vocal on its own — gated, EQ'd, de-essed, compressed and limited, mono, the
+   * same length as the raw take. */
+  vocal: AudioBuffer;
+  /** The backing track already lined up sample-for-sample with `vocal` (index 0 = the moment the
+   * take started, bleed delay compensated — see alignBacking), the same length, unity gain. null
+   * for an a-cappella take or when the backing track couldn't be fetched. */
+  backing: AudioBuffer | null;
+};
+
+/**
+ * Cuts the backing track down to exactly the stretch the take was sung over: starting at
+ * backingStartOffsetSeconds, shifted later by the bleed delay estimateBleedDelaySeconds measured
+ * (or not at all when it found none), and padded/cut to the take's own length. Doing this once
+ * here means every consumer — the offline mix below, and Studio's separate vocal/backing players —
+ * can just play both from 0 together and be in sync, instead of each re-deriving offsets.
+ */
+function alignBacking(
+  backing: AudioBuffer,
+  length: number,
+  offsetSeconds: number,
+  delaySeconds: number,
+): AudioBuffer {
+  const out = new AudioBuffer({
+    length,
+    numberOfChannels: backing.numberOfChannels,
+    sampleRate: backing.sampleRate,
+  });
+  const shift = Math.round((offsetSeconds - delaySeconds) * backing.sampleRate);
+  for (let ch = 0; ch < backing.numberOfChannels; ch++) {
+    const src = backing.getChannelData(ch);
+    const dst = out.getChannelData(ch);
+    const from = Math.max(0, -shift);
+    const to = Math.min(length, src.length - shift);
+    if (to > from) dst.set(src.subarray(from + shift, to + shift), from);
+  }
+  return out;
+}
+
+/** Catches anything the makeup gain pushes over 0dB so loudness never turns into hard digital
+ * clipping. Release stays at 100ms — anything under ~50ms tracks the waveform itself rather than
+ * its envelope and reads as distortion. */
+function createLimiter(ctx: BaseAudioContext): DynamicsCompressorNode {
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -1;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.001;
+  limiter.release.value = 0.1;
+  return limiter;
+}
+
+/**
+ * Turns a raw mic recording into a clean, studio-style vocal instead of the thin, boxy, dead-dry
+ * sound of a phone voice memo: analyzes the actual take first (analyzeSignal) so the noise gate's
+ * threshold and the auto-leveling gain both reflect what's really in this specific recording
+ * rather than one fixed setting applied to everything, then runs noise gate, rumble cut, warmth +
+ * presence EQ, a de-harshing high-shelf, a de-esser, compression + makeup gain, and a limiter.
+ * Deliberately no reverb/room send — a phone take already carries the room it was sung in, and
+ * anything added on top here reads as echo; Studio has a manual (filtered, short) reverb for
+ * anyone who wants some on purpose.
+ *
+ * Returns the vocal and the (aligned) backing track as separate stems rather than one mix, so
+ * Studio can keep processing the voice on its own — every effect there used to land on the whole
+ * mixed song, drums and all. processRecording below sums them for anything that needs one file.
+ *
+ * Everything renders offline (OfflineAudioContext) from decoded buffers rather than mixing live
+ * streams in real time — live mixing of independently-clocked sources (mic + a playing <video>) is
+ * exactly what produces clicks at buffer boundaries; offline it's deterministic and glitch-free.
+ * The backing-track fetch and the render are both time-boxed so a stall can't leave the caller
+ * waiting forever (Save staying disabled indefinitely looks, to the user, like "it won't let me
+ * save").
+ */
+export async function prepareStems(
   micBlob: Blob,
   backingTrackUrl?: string | null,
-  levels: MixLevels = {},
-): Promise<Blob> {
+  levels: Omit<MixLevels, "backingGain"> = {},
+  /** The AI-cleaned version of micBlob (functions/vocal-cleanup.ts) — same timeline, room and
+   * bleed already removed. When given, it's what gets processed into the vocal stem; micBlob is
+   * still decoded, but only to measure the bleed delay, since the bleed lives in the raw take. */
+  cleanVocalBlob?: Blob,
+): Promise<Stems> {
   const vocalGain = levels.vocalGain ?? 1.4;
-  const backingGainLevel = levels.backingGain ?? 0.65;
   const backingPitchSemitones = levels.backingPitchSemitones ?? 0;
   const backingStartOffsetSeconds = Math.max(0, levels.backingStartOffsetSeconds ?? 0);
   const decodeCtx = new AudioContext();
   let micBuffer: AudioBuffer;
   let backingBuffer: AudioBuffer | null = null;
+  let cleanBuffer: AudioBuffer | null = null;
   try {
     micBuffer = await decodeCtx.decodeAudioData(await micBlob.arrayBuffer());
+    if (cleanVocalBlob) {
+      cleanBuffer = await decodeCtx
+        .decodeAudioData(await cleanVocalBlob.arrayBuffer())
+        .catch(() => null); // fall back to the raw take rather than failing the session
+    }
     if (backingTrackUrl) {
       try {
         const controller = new AbortController();
@@ -202,6 +266,18 @@ export async function processRecording(
     await decodeCtx.close();
   }
 
+  // Measured on the raw take, before the gate below thins out the bleed it's looking for.
+  const bleedDelaySeconds = backingBuffer
+    ? (estimateBleedDelaySeconds(
+        micBuffer.getChannelData(0),
+        micBuffer.sampleRate,
+        backingBuffer.getChannelData(0),
+        backingBuffer.sampleRate,
+        backingStartOffsetSeconds,
+      ) ?? 0)
+    : 0;
+  if (cleanBuffer) micBuffer = cleanBuffer;
+
   // Analyze this take before touching it — the gate threshold and the auto-leveling gain below
   // both come from what's actually in the recording, not a fixed guess.
   const profile = analyzeSignal(micBuffer);
@@ -214,19 +290,10 @@ export async function processRecording(
   const autoGainDb = Math.min(12, Math.max(-6, targetVocalDb - profile.vocalLevelDb));
   const autoGainLinear = 10 ** (autoGainDb / 20);
 
-  const sampleRate = micBuffer.sampleRate;
-  const duration = micBuffer.duration;
-  const reverbTailSeconds = 1.2; // room for the reverb send to decay naturally instead of being
-  // cut off exactly at the end of the take
   // Mono output — the source is a solo voice take (getUserMedia requests channelCount: 1), so
   // rendering to stereo would just duplicate identical samples into a second channel, doubling
-  // the WAV's byte size for zero audible benefit (and making it that much likelier to trip a
-  // request-body size limit on the way to the server).
-  const offlineCtx = new OfflineAudioContext(
-    1,
-    Math.max(1, Math.ceil((duration + reverbTailSeconds) * sampleRate)),
-    sampleRate,
-  );
+  // the WAV's byte size for zero audible benefit.
+  const offlineCtx = new OfflineAudioContext(1, micBuffer.length, micBuffer.sampleRate);
 
   const micSource = offlineCtx.createBufferSource();
   micSource.buffer = micBuffer;
@@ -241,22 +308,19 @@ export async function processRecording(
   const autoGain = offlineCtx.createGain();
   autoGain.gain.value = autoGainLinear;
 
-  // A phone mic recording on its own is thin and boxy — no low end, no space — which is exactly
-  // what makes it read as "a voice message" instead of a vocal take. warmth adds a little body
-  // back in; presence lifts clarity; the reverb send further down adds a touch of room instead
-  // of the completely dry, right-on-the-capsule sound phone mics produce. Kept deliberately
-  // light — warmth's low-mid boost and airRolloff's high cut both read as "muffled" if pushed too
-  // far, and stack with whatever the browser's own noise suppression already darkened.
+  // A phone mic recording on its own is thin and boxy, which is exactly what makes it read as "a
+  // voice message" instead of a vocal take: warmth adds a little body back in, presence lifts
+  // clarity. Kept deliberately light — warmth's low-mid boost and airRolloff's high cut both read
+  // as "muffled" if pushed too far, and stack with whatever the browser's own noise suppression
+  // already darkened.
   const warmth = offlineCtx.createBiquadFilter();
   warmth.type = "lowshelf";
   warmth.frequency.value = 200;
   warmth.gain.value = 1.3;
 
-  // Presence/air used to be one fixed amount applied to every take alike. A dull/muffled
-  // recording and an already-bright one need different treatment — pushing a bright take by the
-  // same amount that helps a dull one just turns it harsh/sibilant. profile.brightness (0 = dull,
-  // 0.5+ = airy, from analyzeSignal above) scales both: duller takes get more presence lift and a
-  // gentler high cut, brighter takes get less lift and more high cut.
+  // Duller takes get more presence lift and a gentler high cut, brighter takes get less lift and
+  // more high cut — pushing a bright take by the same amount that helps a dull one just turns it
+  // harsh/sibilant. profile.brightness: 0 = dull, 0.5+ = airy (see analyzeSignal).
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
   const presenceDb = clamp(4.5 - profile.brightness * 6, 1.5, 4.5);
   const airRolloffDb = clamp(-1 - profile.brightness * 4, -5, -1);
@@ -303,19 +367,6 @@ export async function processRecording(
   const makeupGain = offlineCtx.createGain();
   makeupGain.gain.value = vocalGain;
 
-  // Final limiter on the whole bus (vocal + reverb + backing track together) — catches anything
-  // the makeup gain pushes over 0dB so loudness never turns into hard digital clipping.
-  const limiter = offlineCtx.createDynamicsCompressor();
-  limiter.threshold.value = -1;
-  limiter.knee.value = 0;
-  limiter.ratio.value = 20;
-  limiter.attack.value = 0.001;
-  limiter.release.value = 0.1;
-  limiter.connect(offlineCtx.destination);
-
-  // No reverb/room send on the automatic pass — even a light one reads as an audible echo on a
-  // dry, close-mic'd phone take, which is exactly what repeated feedback on this flagged. Studio
-  // still has a manual reverb slider for anyone who wants to add some deliberately.
   micSource
     .connect(highpass)
     .connect(autoGain)
@@ -325,23 +376,38 @@ export async function processRecording(
   airRolloff.connect(deEssLow).connect(deEssSum);
   airRolloff.connect(deEssHigh).connect(deEsser).connect(deEssSum);
   deEssSum.connect(compressor).connect(makeupGain);
-  makeupGain.connect(limiter);
+  makeupGain.connect(createLimiter(offlineCtx)).connect(offlineCtx.destination);
   micSource.start(0);
 
-  if (backingBuffer) {
-    const backingSource = offlineCtx.createBufferSource();
-    backingSource.buffer = backingBuffer;
-    const backingGain = offlineCtx.createGain();
-    backingGain.gain.value = backingGainLevel; // sits under the vocal instead of drowning it out
-    backingSource.connect(backingGain).connect(limiter);
-    // The vocal (micBuffer, starting at t=0 here) was sung against the backing track starting
-    // from backingStartOffsetSeconds, not from the top of the song — so that's where playback of
-    // the buffer has to start too, or the two drift out of sync by exactly that amount (a
-    // segment-picked take used to always mix in the backing track from 0:00 regardless of where
-    // recording actually began, which is what read as "the playback isn't lined up"/"latency").
-    const offset = Math.min(backingStartOffsetSeconds, Math.max(0, backingBuffer.duration - 0.01));
-    backingSource.start(0, offset, Math.min(duration, backingBuffer.duration - offset));
-  }
+  const vocal = await withTimeout(offlineCtx.startRendering(), RENDER_TIMEOUT_MS, "Offline render");
+  const backing = backingBuffer
+    ? alignBacking(backingBuffer, vocal.length, backingStartOffsetSeconds, bleedDelaySeconds)
+    : null;
+  return { vocal, backing };
+}
+
+/** prepareStems, summed into the one finished file record.tsx and Fix a Section upload. */
+export async function processRecording(
+  micBlob: Blob,
+  backingTrackUrl?: string | null,
+  levels: MixLevels = {},
+): Promise<Blob> {
+  const { vocal, backing } = await prepareStems(micBlob, backingTrackUrl, levels);
+  if (!backing) return audioBufferToWavBlob(vocal);
+
+  const offlineCtx = new OfflineAudioContext(1, vocal.length, vocal.sampleRate);
+  const limiter = createLimiter(offlineCtx);
+  limiter.connect(offlineCtx.destination);
+  const vocalSource = offlineCtx.createBufferSource();
+  vocalSource.buffer = vocal;
+  vocalSource.connect(limiter);
+  const backingSource = offlineCtx.createBufferSource();
+  backingSource.buffer = backing;
+  const backingGain = offlineCtx.createGain();
+  backingGain.gain.value = levels.backingGain ?? 0.65; // sits under the vocal, not over it
+  backingSource.connect(backingGain).connect(limiter);
+  vocalSource.start(0);
+  backingSource.start(0);
 
   const rendered = await withTimeout(
     offlineCtx.startRendering(),

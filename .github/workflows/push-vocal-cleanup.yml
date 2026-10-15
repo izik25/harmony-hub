@@ -1,0 +1,40 @@
+# Builds ml/vocal-cleanup (the AI Vocal Cleanup model) and pushes it to Replicate — no local
+# Docker/Cog/WSL needed. One-time setup:
+#   1. replicate.com/create → model name "vocal-cleanup", hardware: a GPU (e.g. L40S).
+#   2. GitHub → Settings → Secrets and variables → Actions → new secret
+#      REPLICATE_CLI_AUTH_TOKEN = a token from replicate.com/account/api-tokens
+# Then: Actions → "Push vocal-cleanup model" → Run workflow, entering r8.im/<username>/vocal-cleanup.
+# The version id to put in REPLICATE_VOCAL_CLEANUP_VERSION is on the model's Versions tab.
+name: Push vocal-cleanup model
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Replicate destination, e.g. r8.im/your-username/vocal-cleanup"
+        required: true
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      # The image (CUDA + PyTorch + ~1GB of baked-in model weights) doesn't fit in the runner's
+      # default free disk; the preinstalled Android/.NET/Haskell toolchains are ~30GB we don't use.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - uses: replicate/setup-cog@v2
+        with:
+          token: ${{ secrets.REPLICATE_CLI_AUTH_TOKEN }}
+
+      - name: Push to Replicate
+        working-directory: ml/vocal-cleanup
+        env:
+          MODEL: ${{ inputs.model }} # via env, not inlined into the script
+        run: cog push "$MODEL"

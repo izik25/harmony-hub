@@ -1,0 +1,24 @@
+# Replicate model that turns a raw phone take into a dry studio vocal — see predict.py.
+# Build & push (needs Docker + the Cog CLI, https://cog.run):
+#   cog login
+#   cog push r8.im/<your-replicate-username>/vocal-cleanup
+# Then set REPLICATE_VOCAL_CLEANUP_VERSION in the app to the version id Replicate shows.
+build:
+  gpu: true
+  cuda: "12.1"
+  python_version: "3.11"
+  system_packages:
+    - "ffmpeg"
+  python_packages:
+    - "torch==2.4.1"
+    - "audio-separator[gpu]>=0.28"
+  # Bakes both model checkpoints into the image (load_model downloads whatever's missing), so a
+  # cold boot doesn't spend a minute re-downloading ~1GB of weights before the first take.
+  run:
+    - >-
+      python -c "from audio_separator.separator import Separator as S;
+      s = S(model_file_dir='/models');
+      s.load_model(model_filename='model_bs_roformer_ep_317_sdr_12.9755.ckpt');
+      s.load_model(model_filename='dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt');
+      s.load_model(model_filename='dereverb_mel_band_roformer_less_aggressive_anvuew_sdr_18.8050.ckpt')"
+predict: "predict.py:Predictor"
