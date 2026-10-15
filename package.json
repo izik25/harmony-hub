@@ -51,7 +51,7 @@
     "@tailwindcss/vite": "^4.2.1",
     "@tanstack/react-query": "^5.101.1",
     "@tanstack/react-router": "^1.170.16",
-    "@tanstack/react-start": "^1.168.26",
+    "@tanstack/react-start": "~1.168.61",
     "@tanstack/router-plugin": "^1.168.18",
     "@vercel/blob": "^2.8.0",
     "bcryptjs": "^3.0.3",
