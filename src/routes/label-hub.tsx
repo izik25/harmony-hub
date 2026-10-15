@@ -142,15 +142,15 @@ function LabelPage() {
               key={a.id}
               className={`rounded-2xl border border-border bg-card p-3 shadow-pop animate-fade-up stagger-${(i % 6) + 1}`}
             >
-              <p className="text-sm font-semibold">{a.title}</p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
+              <p className="bidi-auto text-sm font-semibold">{a.title}</p>
+              <p className="bidi-auto mt-0.5 text-[11px] text-muted-foreground">
                 {a.label.name} · {a.description}
               </p>
               <div className="mt-2 flex gap-2">
                 <button
                   onClick={() => applyMutation.mutate(a.id)}
                   disabled={a.applied || applyMutation.isPending}
-                  className="rounded-full border border-primary/50 px-3 py-1 text-xs font-semibold text-primary press-scale disabled:opacity-50"
+                  className="rounded-full border border-primary/50 px-3 py-1 text-xs font-semibold text-brand-coral press-scale disabled:opacity-50"
                 >
                   {a.applied ? t("label.applied") : t("label.apply")}
                 </button>

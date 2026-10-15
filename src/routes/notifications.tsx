@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { formatDistanceToNow } from "date-fns";
+import { useTimeAgo } from "@/hooks/use-locale-format";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
@@ -64,6 +64,7 @@ const textKeyMap: Record<string, string> = {
 
 function NotifPage() {
   const { t } = useTranslation();
+  const timeAgo = useTimeAgo();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: notifications } = useQuery({
@@ -116,9 +117,7 @@ function NotifPage() {
                     <span className="text-accent">{String(n.extra.giftEmoji)}</span>
                   )}
                 </p>
-                <p className="text-[11px] text-muted-foreground">
-                  {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
-                </p>
+                <p className="text-[11px] text-muted-foreground">{timeAgo(n.createdAt)}</p>
               </div>
               {n.type === "follow" && (
                 <motion.button

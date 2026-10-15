@@ -67,7 +67,7 @@ function LivePage() {
       <div className="px-4 pt-3 pb-6">
         <div className="flex items-center justify-between">
           <h1 className="font-display text-2xl font-bold flex items-center gap-2">
-            <Radio className="h-6 w-6 text-primary" />
+            <Radio className="h-6 w-6 text-brand-coral" />
             {t("live.title")}
           </h1>
           <motion.button

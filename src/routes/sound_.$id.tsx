@@ -47,7 +47,7 @@ function SoundPage() {
       <TopBar />
       <div className="px-4 pb-6 pt-3">
         <Link to="/" className="mb-3 inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <ArrowLeft className="h-3.5 w-3.5" /> {t("nav.home")}
+          <ArrowLeft className="h-3.5 w-3.5 rtl:rotate-180" /> {t("nav.home")}
         </Link>
 
         <div className="flex items-center gap-4 rounded-3xl border border-border bg-card p-4 shadow-pop">

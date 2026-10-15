@@ -34,43 +34,52 @@
   --color-brand-indigo: var(--brand-indigo);
   --color-brand-gold: var(--brand-gold);
   --color-brand-teal: var(--brand-teal);
-  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  /* Latin faces first; the browser falls through per glyph to the Hebrew/Arabic faces (neither
+     Space Grotesk nor Inter has those scripts, so without them RTL text dropped to the OS font). */
+  --font-display: "Space Grotesk", "Rubik", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", "Heebo", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
   --radius: 1.125rem;
+  color-scheme: dark;
 
-  /* Sunrise Studio palette — bright, flat, no gradients */
-  --background: oklch(0.975 0.007 85);
-  --foreground: oklch(0.17 0.02 268);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.17 0.02 268);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.17 0.02 268);
-  --primary: oklch(0.6 0.19 27);            /* flat flame coral */
+  /* Night Studio palette — dark-first, matching the neon/chrome logo. Every text/fill pair below
+     is checked against WCAG AA (4.5:1). Coral, red and indigo need two shades each: a deep one to
+     sit under white labels, and a lighter one to read as text on the near-black surfaces. */
+  --background: oklch(0.155 0.014 280);
+  --foreground: oklch(0.965 0.006 85);
+  --card: oklch(0.205 0.016 280);
+  --card-foreground: oklch(0.965 0.006 85);
+  --popover: oklch(0.225 0.016 280);
+  --popover-foreground: oklch(0.965 0.006 85);
+  --primary: oklch(0.57 0.2 25);            /* coral fill — white label 4.8:1 */
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.3 0.1 273);          /* flat deep indigo */
+  --secondary: oklch(0.38 0.13 275);        /* indigo fill — white label 10:1 */
   --secondary-foreground: oklch(0.98 0.004 273);
-  --muted: oklch(0.955 0.008 85);
-  --muted-foreground: oklch(0.47 0.02 265);
-  --accent: oklch(0.77 0.15 93);            /* flat marigold */
-  --accent-foreground: oklch(0.22 0.04 93);
-  --destructive: oklch(0.56 0.22 25);
+  --muted: oklch(0.25 0.016 280);
+  --muted-foreground: oklch(0.74 0.016 275);
+  --accent: oklch(0.82 0.15 88);            /* marigold — 11:1 as text, dark label on fill */
+  --accent-foreground: oklch(0.22 0.04 90);
+  --destructive: oklch(0.55 0.21 25);
   --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(0.9 0.01 85);
-  --input: oklch(0.93 0.012 85);
-  --ring: oklch(0.6 0.19 27);
+  --border: oklch(1 0 0 / 0.09);
+  --input: oklch(0.25 0.016 280);
+  --ring: oklch(0.7 0.17 27);
 
-  /* Flat brand accents — solid colors only, never combined into gradients */
-  --brand-coral: oklch(0.6 0.19 27);
-  --brand-indigo: oklch(0.3 0.1 273);
-  --brand-gold: oklch(0.77 0.15 93);
-  --brand-teal: oklch(0.56 0.11 195);
+  --brand-coral: oklch(0.57 0.2 25);
+  --brand-indigo: oklch(0.38 0.13 275);
+  --brand-gold: oklch(0.82 0.15 88);
+  --brand-teal: oklch(0.52 0.1 195);
+  /* Text-on-dark shades of the same hues. */
+  --coral-text: oklch(0.7 0.17 27);         /* 6.8:1 on background */
+  --indigo-text: oklch(0.74 0.11 275);
+  --teal-text: oklch(0.74 0.11 195);
+  --danger-text: oklch(0.7 0.18 22);
 
-  --shadow-pop: 0 1px 2px oklch(0.17 0.02 268 / 0.04), 0 10px 28px -8px oklch(0.17 0.02 268 / 0.16);
-  --shadow-pop-lg: 0 24px 60px -16px oklch(0.17 0.02 268 / 0.26);
-  --shadow-pop-coral: 0 10px 24px -6px oklch(0.6 0.19 27 / 0.45);
+  --shadow-pop: 0 1px 2px oklch(0 0 0 / 0.3), 0 10px 28px -8px oklch(0 0 0 / 0.55);
+  --shadow-pop-lg: 0 24px 60px -16px oklch(0 0 0 / 0.7);
+  --shadow-pop-coral: 0 10px 28px -6px oklch(0.57 0.2 25 / 0.55);
 
   --ease-snappy: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -82,17 +91,22 @@
   html { scroll-behavior: smooth; }
   body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
   h1, h2, h3, h4, .font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
+  /* Any letter-spacing breaks the joining of connected Arabic script. */
+  :lang(ar) * { letter-spacing: 0 !important; }
 }
 
-/* Flat solid brand fills — deliberately not gradients */
+/* Brand fills (deep shades, for white labels) and brand text (light shades, for dark surfaces) */
 @utility bg-brand-coral { background-color: var(--brand-coral); }
 @utility bg-brand-indigo { background-color: var(--brand-indigo); }
 @utility bg-brand-gold { background-color: var(--brand-gold); }
 @utility bg-brand-teal { background-color: var(--brand-teal); }
-@utility text-brand-coral { color: var(--brand-coral); }
-@utility text-brand-indigo { color: var(--brand-indigo); }
+@utility text-brand-coral { color: var(--coral-text); }
+@utility text-brand-indigo { color: var(--indigo-text); }
 @utility text-brand-gold { color: var(--brand-gold); }
-@utility text-brand-teal { color: var(--brand-teal); }
+@utility text-brand-teal { color: var(--teal-text); }
+/* The core text-primary / text-destructive utilities use the fill shade, which is too dark to read
+   on the dark surfaces — use these for text instead. */
+@utility text-danger { color: var(--danger-text); }
 
 @utility shadow-pop { box-shadow: var(--shadow-pop); }
 @utility shadow-pop-lg { box-shadow: var(--shadow-pop-lg); }
@@ -102,6 +116,15 @@
   background: color-mix(in oklab, var(--card) 82%, transparent);
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
+}
+/* For user-written text (titles, bios, comments, messages, handles, tags): direction comes from the
+   content itself — like <bdi> — so "@nova" or an English title never gets its punctuation flipped
+   inside an RTL page, while text-align still follows the page's side. */
+@utility bidi-auto {
+  unicode-bidi: plaintext;
+  /* Chromium only understands the prefixed keyword and drops the standard one as invalid. */
+  text-align: -webkit-match-parent;
+  text-align: match-parent;
 }
 @utility no-scrollbar {
   scrollbar-width: none;

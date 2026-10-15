@@ -54,7 +54,7 @@ export function BecomeProModal({
           transition={{ type: "spring", stiffness: 400, damping: 26 }}
           onClick={() => purchaseMutation.mutate()}
           disabled={purchaseMutation.isPending}
-          className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-brand-gold py-3 text-sm font-bold text-white shadow-pop disabled:opacity-50"
+          className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-brand-gold py-3 text-sm font-bold text-accent-foreground shadow-pop disabled:opacity-50"
         >
           {purchaseMutation.isPending
             ? t("pro.purchasing")

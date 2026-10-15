@@ -52,7 +52,7 @@ function ConversationPage() {
       <div className="flex h-[calc(100dvh-136px)] flex-col px-4 pt-3">
         <div className="flex items-center gap-2 pb-3">
           <Link to="/messages" className="text-muted-foreground">
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-4 w-4 rtl:rotate-180" />
           </Link>
           {conversation && (
             <>
@@ -73,7 +73,7 @@ function ConversationPage() {
                 className={`flex ${m.senderId === me?.id ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                  className={`bidi-auto max-w-[75%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${
                     m.senderId === me?.id
                       ? "bg-brand-coral text-white shadow-pop"
                       : "border border-border bg-card"

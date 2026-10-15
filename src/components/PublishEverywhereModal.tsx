@@ -249,7 +249,7 @@ export function PublishEverywhereModal({
             className="relative mx-auto flex h-14 w-14 items-center justify-center"
           >
             <motion.span
-              className="absolute -end-1 -top-1 grid h-7 w-7 place-items-center rounded-full bg-brand-gold text-white shadow-pop"
+              className="absolute -end-1 -top-1 grid h-7 w-7 place-items-center rounded-full bg-brand-gold text-accent-foreground shadow-pop"
               initial={{ scale: 0, rotate: -25 }}
               animate={{ scale: 1, rotate: -10 }}
               transition={{ type: "spring", stiffness: 420, damping: 14, delay: 0.15 }}
@@ -315,7 +315,7 @@ export function PublishEverywhereModal({
                     </a>
                   )}
                   {pubStatus?.status === "failed" && (
-                    <p className="mt-0.5 text-[11px] text-destructive">
+                    <p className="mt-0.5 text-[11px] text-danger">
                       {translateServerError(pubStatus.error)}
                     </p>
                   )}
@@ -334,7 +334,7 @@ export function PublishEverywhereModal({
                     onClick={() => toggle(s.platform)}
                     className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 ${
                       selected.has(s.platform)
-                        ? "border-accent bg-accent text-white"
+                        ? "border-accent bg-accent text-accent-foreground"
                         : "border-border"
                     }`}
                   >
@@ -387,7 +387,7 @@ export function PublishEverywhereModal({
                   onClick={() => toggle(s.platform)}
                   className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 ${
                     selected.has(s.platform)
-                      ? "border-accent bg-accent text-white"
+                      ? "border-accent bg-accent text-accent-foreground"
                       : "border-border"
                   }`}
                 >

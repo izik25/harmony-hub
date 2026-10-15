@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { Music2, Sparkles, Music4, Waves } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { GoogleAuthButton } from "@/components/GoogleAuthButton";
@@ -25,7 +25,9 @@ function AmbientNotes({ count = 5 }: { count?: number }) {
     delay: i * 0.55,
   }));
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+    // Hidden via CSS rather than useReducedMotion(): that hook is false during SSR and true on the
+    // client for reduced-motion users, which made the page fail hydration.
+    <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden motion-reduce:hidden">
       {notes.map((n, i) => (
         <motion.span
           key={i}
@@ -45,7 +47,6 @@ function SignupPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const reduceMotion = useReducedMotion();
   const [handle, setHandle] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -70,16 +71,18 @@ function SignupPage() {
   return (
     <AppShell hideNav>
       <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-10">
-        {!reduceMotion && <AmbientNotes />}
+        <AmbientNotes />
 
         <div className="relative z-10 flex w-full flex-col items-center">
           <h1 className="sr-only">Studio26</h1>
           <img
-            src="/brand/logo-wordmark.png"
+            src="/brand/logo-wordmark-alpha.png"
             alt="Studio26"
-            className="animate-fade-up w-full max-w-[260px] rounded-2xl bg-black p-4 shadow-pop-lg"
+            width={699}
+            height={213}
+            className="animate-fade-up h-auto w-full max-w-[280px]"
           />
-          <p className="mt-1 text-sm text-muted-foreground">{t("auth.welcome")}</p>
+          <p className="mt-3 text-sm text-muted-foreground">{t("auth.welcome")}</p>
 
           <div className="mt-8 w-full max-w-sm space-y-3">
             <h2 className="animate-fade-up stagger-1 text-center font-display text-xl font-bold">
@@ -166,7 +169,7 @@ function SignupPage() {
                 />
 
                 {mutation.isError && (
-                  <p className="text-sm text-primary">
+                  <p className="text-sm text-brand-coral">
                     {translateServerError((mutation.error as Error).message)}
                   </p>
                 )}

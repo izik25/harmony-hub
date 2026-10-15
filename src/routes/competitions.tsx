@@ -31,7 +31,7 @@ function CompetitionsPage() {
       <div className="px-4 pt-3 pb-6">
         <div className="flex items-center justify-between">
           <h1 className="font-display text-2xl font-bold">{t("comp.title")}</h1>
-          <Trophy className="h-6 w-6 text-primary" />
+          <Trophy className="h-6 w-6 text-brand-coral" />
         </div>
 
         <div className="mt-4 grid grid-cols-3 gap-2">
@@ -97,12 +97,12 @@ function CompetitionsPage() {
                 <PostCoverBg hue={c.hue} seed={c.coverSeed} />
               </div>
               <div className="flex-1">
-                <p className="font-semibold text-foreground">{c.title}</p>
+                <p className="bidi-auto font-semibold text-foreground">{c.title}</p>
                 <p className="text-[11px] text-muted-foreground">
                   {t(`comp.${c.stage}`)} · {c.participants} · {c.prize}
                 </p>
               </div>
-              <span className="rounded-full border border-primary/60 px-3 py-1.5 text-xs font-semibold text-primary">
+              <span className="rounded-full border border-primary/60 px-3 py-1.5 text-xs font-semibold text-brand-coral">
                 {t("common.vote")}
               </span>
             </Link>

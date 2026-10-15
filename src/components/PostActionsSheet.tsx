@@ -230,7 +230,7 @@ function MenuButton({
     <button
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-start text-sm font-semibold press-scale ${
-        destructive ? "text-destructive hover:bg-destructive/10" : "hover:bg-muted"
+        destructive ? "text-danger hover:bg-destructive/10" : "hover:bg-muted"
       }`}
     >
       <Icon className={`h-4.5 w-4.5 ${spin ? "animate-spin" : ""}`} />
@@ -343,13 +343,13 @@ function EditPostDialog({
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => setVisibility("public")}
-              className={`press-scale flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold transition-colors ${visibility === "public" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/60"}`}
+              className={`press-scale flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold transition-colors ${visibility === "public" ? "border-primary bg-primary/10 text-brand-coral" : "border-border bg-card/60"}`}
             >
               <Globe className="h-4 w-4" /> {t("upload.public")}
             </button>
             <button
               onClick={() => setVisibility("private")}
-              className={`press-scale flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold transition-colors ${visibility === "private" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/60"}`}
+              className={`press-scale flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold transition-colors ${visibility === "private" ? "border-primary bg-primary/10 text-brand-coral" : "border-border bg-card/60"}`}
             >
               <Lock className="h-4 w-4" /> {t("upload.private")}
             </button>
@@ -412,12 +412,12 @@ function CommentsManageDialog({
               <img src={c.user.avatar} className="h-8 w-8 shrink-0 rounded-full" alt="" />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold">{c.user.name}</p>
-                <p className="break-words text-sm">{c.body}</p>
+                <p className="bidi-auto break-words text-sm">{c.body}</p>
               </div>
               <button
                 onClick={() => deleteMutation.mutate(c.id)}
                 disabled={deleteMutation.isPending}
-                className="shrink-0 p-1 text-muted-foreground hover:text-destructive disabled:opacity-40"
+                className="shrink-0 p-1 text-muted-foreground hover:text-danger disabled:opacity-40"
                 aria-label={t("profile.postActions.delete")}
               >
                 <Trash2 className="h-4 w-4" />
@@ -479,7 +479,7 @@ function CompetitionPickerDialog({
               <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg">
                 <PostCoverBg hue={c.hue} seed={c.coverSeed} />
               </div>
-              <span className="flex-1 text-sm font-semibold">{c.title}</span>
+              <span className="bidi-auto flex-1 text-sm font-semibold">{c.title}</span>
             </button>
           ))}
         </div>

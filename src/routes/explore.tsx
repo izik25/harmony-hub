@@ -15,7 +15,13 @@ export const Route = createFileRoute("/explore")({
 
 const tabs = ["artists", "songs", "djs", "producers", "genres"] as const;
 
-const BRAND_TILE_CLASSES = ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold", "bg-brand-teal"];
+// Each fill carries its own label color: white fails contrast on the marigold tile (2:1).
+const BRAND_TILE_CLASSES = [
+  "bg-brand-coral text-white",
+  "bg-brand-indigo text-white",
+  "bg-brand-gold text-accent-foreground",
+  "bg-brand-teal text-white",
+];
 
 function ExplorePage() {
   const { t } = useTranslation();
@@ -73,14 +79,14 @@ function ExplorePage() {
         {!hasQuery && (
           <>
             <div className="mt-5 flex items-center gap-2 text-xs uppercase tracking-widest text-muted-foreground">
-              <Flame className="h-3.5 w-3.5 text-primary" /> {t("common.trending")}
+              <Flame className="h-3.5 w-3.5 text-brand-coral" /> {t("common.trending")}
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               {tags?.map((tag) => (
                 <button
                   key={tag}
                   onClick={() => setQuery(tag.replace("#", ""))}
-                  className="rounded-full border border-border bg-card/60 px-3 py-1 text-xs text-foreground/80"
+                  className="bidi-auto rounded-full border border-border bg-card/60 px-3 py-1 text-xs text-foreground/80"
                 >
                   {tag}
                 </button>
@@ -102,7 +108,7 @@ function ExplorePage() {
                   <PostCoverBg hue={p.hue} seed={p.id} imageUrl={p.coverUrl} />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent" />
                   <div className="absolute inset-x-0 bottom-0 p-3">
-                    <p className="line-clamp-1 text-sm font-semibold text-white">{p.title}</p>
+                    <p className="bidi-auto line-clamp-1 text-sm font-semibold text-white">{p.title}</p>
                     <p className="text-[11px] text-white/70">{formatCount(p.likesCount)} ❤</p>
                   </div>
                 </article>
@@ -115,7 +121,7 @@ function ExplorePage() {
                 {genres.map((g, i) => (
                   <div
                     key={g}
-                    className={`rounded-xl p-3 text-sm font-semibold text-white press-scale hover-lift ${BRAND_TILE_CLASSES[i % 4]}`}
+                    className={`rounded-xl p-3 text-sm font-semibold press-scale hover-lift ${BRAND_TILE_CLASSES[i % 4]}`}
                   >
                     {g}
                   </div>
@@ -143,7 +149,7 @@ function ExplorePage() {
                       <span className="flex items-center gap-1 text-sm font-semibold">
                         {u.name} {u.verified && <BadgeCheck className="h-4 w-4 text-accent" />}
                       </span>
-                      <span className="text-xs text-muted-foreground">@{u.handle}</span>
+                      <span className="bidi-auto text-xs text-muted-foreground">@{u.handle}</span>
                     </Link>
                   </li>
                 ))}
@@ -161,7 +167,7 @@ function ExplorePage() {
                     <PostCoverBg hue={p.hue} seed={p.id} imageUrl={p.coverUrl} />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent" />
                     <div className="absolute inset-x-0 bottom-0 p-3">
-                      <p className="line-clamp-1 text-sm font-semibold text-white">{p.title}</p>
+                      <p className="bidi-auto line-clamp-1 text-sm font-semibold text-white">{p.title}</p>
                     </div>
                   </article>
                 ))}
@@ -174,7 +180,7 @@ function ExplorePage() {
                   .map((g, i) => (
                     <div
                       key={g}
-                      className={`rounded-xl p-3 text-sm font-semibold text-white press-scale hover-lift ${BRAND_TILE_CLASSES[i % 4]}`}
+                      className={`rounded-xl p-3 text-sm font-semibold press-scale hover-lift ${BRAND_TILE_CLASSES[i % 4]}`}
                     >
                       {g}
                     </div>

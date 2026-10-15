@@ -536,7 +536,7 @@ export function FixSectionEditor({
             exit={{ opacity: 0 }}
             className="mt-3 flex flex-col items-center gap-3"
           >
-            <span className="flex items-center gap-1.5 rounded-full bg-destructive/10 px-3 py-1 text-xs font-bold text-destructive">
+            <span className="flex items-center gap-1.5 rounded-full bg-destructive/10 px-3 py-1 text-xs font-bold text-danger">
               <span className="relative flex h-1.5 w-1.5">
                 <span className="absolute inline-flex h-full w-full animate-ring-pulse rounded-full bg-destructive" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-destructive" />

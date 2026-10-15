@@ -4,7 +4,7 @@ import { Coins, ArrowUpRight, ArrowDownRight, Plus, Crown } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { formatDistanceToNow } from "date-fns";
+import { useFormatNumber, useTimeAgo } from "@/hooks/use-locale-format";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
@@ -41,6 +41,8 @@ function describeTransaction(h: WalletHistoryRow, t: ReturnType<typeof useTransl
 
 function WalletPage() {
   const { t } = useTranslation();
+  const timeAgo = useTimeAgo();
+  const formatNumber = useFormatNumber();
   const queryClient = useQueryClient();
   const [buyOpen, setBuyOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -93,7 +95,7 @@ function WalletPage() {
           <div className="mt-2 flex items-end gap-2">
             <Coins className="h-7 w-7" />
             <span className="font-display text-4xl font-bold">
-              {(wallet?.balance ?? 0).toLocaleString()}
+              {formatNumber(wallet?.balance ?? 0)}
             </span>
             <span className="mb-1 text-sm opacity-90">{t("wallet.coins")}</span>
           </div>
@@ -113,7 +115,7 @@ function WalletPage() {
               whileHover={{ scale: 1.02 }}
               transition={{ type: "spring", stiffness: 420, damping: 24 }}
               onClick={() => setBuyOpen(true)}
-              className="flex-1 rounded-full bg-white text-primary px-3 py-2 text-xs font-bold"
+              className="flex-1 rounded-full bg-white text-brand-coral px-3 py-2 text-xs font-bold"
             >
               {t("common.buy")}
             </motion.button>
@@ -124,7 +126,7 @@ function WalletPage() {
               whileHover={{ scale: 1.02 }}
               transition={{ type: "spring", stiffness: 420, damping: 24 }}
               onClick={() => setProOpen(true)}
-              className="mt-2 flex w-full items-center justify-center gap-2 rounded-full bg-brand-gold px-3 py-2 text-xs font-bold text-white"
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-full bg-brand-gold px-3 py-2 text-xs font-bold text-accent-foreground"
             >
               <Crown className="h-4 w-4" /> {t("pro.title")}
             </motion.button>
@@ -159,7 +161,7 @@ function WalletPage() {
           {wallet?.history.map((h) => (
             <li key={h.id} className="flex items-center gap-3 p-3">
               <div
-                className={`grid h-9 w-9 place-items-center rounded-full ${h.coins >= 0 ? "bg-accent/20 text-accent" : "bg-primary/20 text-primary"}`}
+                className={`grid h-9 w-9 place-items-center rounded-full ${h.coins >= 0 ? "bg-accent/20 text-accent" : "bg-primary/20 text-brand-coral"}`}
               >
                 {h.coins >= 0 ? (
                   <ArrowDownRight className="h-4 w-4" />
@@ -169,12 +171,11 @@ function WalletPage() {
               </div>
               <div className="flex-1">
                 <p className="text-sm">{describeTransaction(h, t)}</p>
-                <p className="text-[11px] text-muted-foreground">
-                  {formatDistanceToNow(new Date(h.createdAt), { addSuffix: true })}
-                </p>
+                <p className="text-[11px] text-muted-foreground">{timeAgo(h.createdAt)}</p>
               </div>
               <span
-                className={`font-mono text-sm ${h.coins >= 0 ? "text-accent" : "text-primary"}`}
+                dir="ltr"
+                className={`text-sm font-semibold tabular-nums ${h.coins >= 0 ? "text-accent" : "text-brand-coral"}`}
               >
                 {h.coins >= 0 ? "+" : ""}
                 {h.coins}
@@ -201,7 +202,7 @@ function WalletPage() {
                 className="flex items-center justify-between rounded-2xl border border-border bg-card p-4 text-sm font-semibold shadow-pop hover:border-primary/50"
               >
                 <span className="flex items-center gap-2">
-                  <Plus className="h-4 w-4 text-accent" /> {pkg.coins.toLocaleString()}{" "}
+                  <Plus className="h-4 w-4 text-accent" /> {formatNumber(pkg.coins)}{" "}
                   {t("wallet.coins")}
                 </span>
                 <span className="text-muted-foreground">{t("wallet.addToBalance")}</span>

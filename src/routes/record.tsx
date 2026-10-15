@@ -1571,7 +1571,7 @@ function RecordPage() {
                   {t("record.karaokeDesc")}
                 </p>
               </div>
-              <ChevronRight className="relative h-5 w-5 shrink-0 text-muted-foreground" />
+              <ChevronRight className="relative h-5 w-5 shrink-0 text-muted-foreground rtl:rotate-180" />
             </motion.button>
 
             <Link
@@ -1592,7 +1592,7 @@ function RecordPage() {
                   {t("record.uploadDesc")}
                 </p>
               </div>
-              <ChevronRight className="relative h-5 w-5 shrink-0 text-muted-foreground" />
+              <ChevronRight className="relative h-5 w-5 shrink-0 text-muted-foreground rtl:rotate-180" />
             </Link>
           </div>
         </div>
@@ -1813,7 +1813,7 @@ function KaraokePickerFullScreen({
                 onClick={() => setArtist(null)}
                 className="flex items-center gap-1.5 text-sm text-muted-foreground"
               >
-                <ArrowLeft className="h-4 w-4" />
+                <ArrowLeft className="h-4 w-4 rtl:rotate-180" />
                 {t("record.backToArtists")}
               </button>
             ) : (
@@ -2049,7 +2049,7 @@ function KaraokeSegmentPicker({
           onClick={onBack}
           className="flex items-center gap-1.5 text-sm text-muted-foreground"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="h-4 w-4 rtl:rotate-180" />
           {t("common.cancel")}
         </button>
       </div>

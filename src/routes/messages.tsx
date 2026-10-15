@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { formatDistanceToNow } from "date-fns";
+import { useTimeAgo } from "@/hooks/use-locale-format";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
@@ -21,6 +21,7 @@ const staggerClasses = [
 
 function MessagesPage() {
   const { t } = useTranslation();
+  const timeAgo = useTimeAgo();
   const { data: conversations } = useQuery({
     queryKey: ["conversations"],
     queryFn: () => listConversations(),
@@ -51,7 +52,7 @@ function MessagesPage() {
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   <span className="text-[10px] text-muted-foreground">
-                    {formatDistanceToNow(new Date(c.lastMessageAt), { addSuffix: true })}
+                    {timeAgo(c.lastMessageAt)}
                   </span>
                   {c.unreadCount > 0 && (
                     <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1 text-[10px] font-bold text-white">

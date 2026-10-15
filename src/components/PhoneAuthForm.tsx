@@ -40,7 +40,7 @@ export function PhoneAuthForm({ onSuccess }: { onSuccess: (user: SessionUser) =>
           required
         />
         {sendCode.isError && (
-          <p className="text-sm text-primary">
+          <p className="text-sm text-brand-coral">
             {translateServerError((sendCode.error as Error).message)}
           </p>
         )}
@@ -80,7 +80,7 @@ export function PhoneAuthForm({ onSuccess }: { onSuccess: (user: SessionUser) =>
         required
       />
       {verify.isError && (
-        <p className="text-sm text-primary">{translateServerError((verify.error as Error).message)}</p>
+        <p className="text-sm text-brand-coral">{translateServerError((verify.error as Error).message)}</p>
       )}
       <motion.button
         type="submit"

@@ -1,5 +1,15 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Bell, Wallet, Radio, LogOut, Mail } from "lucide-react";
+import { Bell, Wallet, Radio, LogOut, Mail, Menu, Languages } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { setLanguage } from "@/lib/i18n";
@@ -28,19 +38,25 @@ export function TopBar({ transparent = false }: { transparent?: boolean }) {
       navigate({ to: "/login" });
     },
   });
+  // Each language is named in its own script, so a user stuck in the wrong one can still find theirs.
   const langs = [
-    { code: "en", label: "EN" },
-    { code: "he", label: "עב" },
-    { code: "ar", label: "عر" },
+    { code: "en", name: "English" },
+    { code: "he", name: "עברית" },
+    { code: "ar", name: "العربية" },
   ];
 
-  const iconBtn = transparent
-    ? "rounded-full p-2 text-white drop-shadow-md hover:text-brand-gold"
-    : "rounded-full p-2 text-foreground/80 hover:text-primary";
+  // 44px hit area (Apple HIG minimum). The bar keeps only the high-frequency destinations inline —
+  // everything else lives in the "more" menu so the row fits a 360px phone without overflowing.
+  const iconBtn = `grid h-11 w-11 place-items-center rounded-full transition-colors ${
+    transparent
+      ? "text-white drop-shadow-md hover:text-brand-gold"
+      : "text-foreground/80 hover:bg-muted hover:text-brand-coral"
+  }`;
+  const currentLang = langs.find((l) => i18n.language?.startsWith(l.code))?.code ?? "en";
 
   return (
     <div
-      className={`sticky top-0 z-30 flex items-center justify-between px-4 py-3 ${
+      className={`sticky top-0 z-30 flex h-14 items-center justify-between gap-2 ps-4 pe-2 ${
         transparent
           ? "bg-gradient-to-b from-black/55 via-black/15 to-transparent"
           : "glass border-b border-border"
@@ -48,46 +64,21 @@ export function TopBar({ transparent = false }: { transparent?: boolean }) {
     >
       <Link
         to="/"
-        className="flex items-center gap-2 transition-transform duration-200 ease-out hover:-translate-y-0.5"
+        className="flex min-w-0 items-center gap-2 transition-transform duration-200 ease-out hover:-translate-y-0.5"
       >
-        <img src="/brand/logo-mark.png" alt="" className="h-8 w-8 rounded-lg" />
-        <span
-          className={`font-display text-xl font-bold ${
-            transparent ? "text-white drop-shadow-md" : "text-brand-coral"
-          }`}
-        >
-          Studio26
-        </span>
+        <img
+          src="/brand/logo-wordmark-alpha.png"
+          alt="Studio26"
+          width={699}
+          height={213}
+          className={`h-8 w-auto ${transparent ? "drop-shadow-md" : ""}`}
+        />
       </Link>
-      <div className="flex items-center gap-1">
-        {langs.map((l) => (
-          <button
-            key={l.code}
-            onClick={() => setLanguage(l.code)}
-            className={`rounded-md px-2 py-1 text-[11px] font-semibold transition-colors ${
-              i18n.language?.startsWith(l.code)
-                ? transparent
-                  ? "bg-white/25 text-white"
-                  : "bg-primary/20 text-primary"
-                : transparent
-                  ? "text-white/70 drop-shadow-md hover:text-white"
-                  : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {l.label}
-          </button>
-        ))}
-        <div className={`mx-1 h-5 w-px ${transparent ? "bg-white/30" : "bg-border"}`} />
-        <Link to="/live" aria-label={t("nav.live")} className={iconBtn}>
-          <Radio className="h-5 w-5" />
-        </Link>
-        <Link to="/wallet" aria-label={t("nav.wallet")} className={iconBtn}>
-          <Wallet className="h-5 w-5" />
-        </Link>
+      <div className="flex shrink-0 items-center">
         <Link to="/messages" aria-label={t("nav.messages")} className={`relative ${iconBtn}`}>
           <Mail className="h-5 w-5" />
           {!!unreadMessages && (
-            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary" />
+            <span className="absolute end-2 top-2 h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
           )}
         </Link>
         <Link
@@ -97,16 +88,48 @@ export function TopBar({ transparent = false }: { transparent?: boolean }) {
         >
           <Bell className="h-5 w-5" />
           {!!unreadCount && (
-            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary" />
+            <span className="absolute end-2 top-2 h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
           )}
         </Link>
-        <button
-          aria-label={t("nav.logout")}
-          onClick={() => logoutMutation.mutate()}
-          className={iconBtn}
-        >
-          <LogOut className="h-5 w-5" />
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger aria-label={t("nav.more")} className={iconBtn}>
+            <Menu className="h-5 w-5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52 rounded-2xl p-1.5">
+            <DropdownMenuItem asChild className="rounded-xl py-2.5">
+              <Link to="/wallet">
+                <Wallet className="h-4 w-4" />
+                {t("nav.wallet")}
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild className="rounded-xl py-2.5">
+              <Link to="/live">
+                <Radio className="h-4 w-4" />
+                {t("nav.live")}
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <Languages className="h-3.5 w-3.5" />
+              {t("nav.language")}
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={currentLang} onValueChange={setLanguage}>
+              {langs.map((l) => (
+                <DropdownMenuRadioItem key={l.code} value={l.code} className="rounded-xl py-2">
+                  {l.name}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => logoutMutation.mutate()}
+              className="rounded-xl py-2.5 text-brand-coral focus:text-brand-coral"
+            >
+              <LogOut className="h-4 w-4" />
+              {t("nav.logout")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );

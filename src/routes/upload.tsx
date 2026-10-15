@@ -315,7 +315,7 @@ function UploadPage() {
               onClick={() => setType(tp.key)}
               className={`press-scale flex flex-col items-center gap-1 rounded-2xl border p-3 text-[11px] font-semibold transition-colors ${
                 type === tp.key
-                  ? "border-primary bg-primary/10 text-primary"
+                  ? "border-primary bg-primary/10 text-brand-coral"
                   : "border-border bg-card/60"
               }`}
             >
@@ -408,13 +408,13 @@ function UploadPage() {
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setV("public")}
-                className={`press-scale flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold transition-colors ${visibility === "public" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/60"}`}
+                className={`press-scale flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold transition-colors ${visibility === "public" ? "border-primary bg-primary/10 text-brand-coral" : "border-border bg-card/60"}`}
               >
                 <Globe className="h-4 w-4" /> {t("upload.public")}
               </button>
               <button
                 onClick={() => setV("private")}
-                className={`press-scale flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold transition-colors ${visibility === "private" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/60"}`}
+                className={`press-scale flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold transition-colors ${visibility === "private" ? "border-primary bg-primary/10 text-brand-coral" : "border-border bg-card/60"}`}
               >
                 <Lock className="h-4 w-4" /> {t("upload.private")}
               </button>

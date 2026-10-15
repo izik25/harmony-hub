@@ -2,7 +2,7 @@ import { createFileRoute, redirect, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { formatDistanceToNow } from "date-fns";
+import { useFormatNumber, useTimeAgo } from "@/hooks/use-locale-format";
 import {
   ShieldCheck,
   Home,
@@ -283,6 +283,8 @@ function OverviewTab() {
 }
 
 function UsersTab() {
+  const timeAgo = useTimeAgo();
+  const formatNumber = useFormatNumber();
   const [query, setQuery] = useState("");
   const queryClient = useQueryClient();
 
@@ -341,13 +343,13 @@ function UsersTab() {
                     <img src={u.avatarUrl} className="h-8 w-8 shrink-0 rounded-full" alt="" />
                     <div className="min-w-0">
                       <p className="truncate font-semibold">{u.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">@{u.handle}</p>
+                      <p className="bidi-auto truncate text-xs text-muted-foreground">@{u.handle}</p>
                     </div>
                   </div>
                 </TableCell>
                 <TableCell className="text-xs">{u.email || "—"}</TableCell>
                 <TableCell className="font-mono tabular-nums">
-                  {u.coinsBalance.toLocaleString()}
+                  {formatNumber(u.coinsBalance)}
                 </TableCell>
                 <TableCell>
                   <Badge variant={u.role === "admin" ? "default" : "outline"}>
@@ -362,7 +364,7 @@ function UsersTab() {
                   )}
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                  {formatDistanceToNow(new Date(u.createdAt), { addSuffix: true })}
+                  {timeAgo(u.createdAt)}
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1.5">
@@ -384,7 +386,7 @@ function UsersTab() {
                       className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold press-scale disabled:opacity-50 ${
                         u.isBanned
                           ? "border-border"
-                          : "border-destructive/40 text-destructive hover:bg-destructive/10"
+                          : "border-destructive/40 text-danger hover:bg-destructive/10"
                       }`}
                     >
                       {u.isBanned ? "בטל חסימה" : "חסום"}
@@ -422,6 +424,8 @@ function StatusBadge({ status, endAt }: { status: string; endAt: string | Date |
 }
 
 function PromotionsTab() {
+  const timeAgo = useTimeAgo();
+  const formatNumber = useFormatNumber();
   const [status, setStatus] = useState<PromotionStatus | undefined>("pending");
   const [newOpen, setNewOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<PromotionRow | null>(null);
@@ -499,9 +503,9 @@ function PromotionsTab() {
               </div>
               <div className="shrink-0 text-end text-xs text-muted-foreground">
                 <p>
-                  {p.budgetCoins.toLocaleString()} מטבעות · {p.durationDays} ימים
+                  {formatNumber(p.budgetCoins)} מטבעות · {p.durationDays} ימים
                 </p>
-                <p>{formatDistanceToNow(new Date(p.createdAt), { addSuffix: true })}</p>
+                <p>{timeAgo(p.createdAt)}</p>
               </div>
             </div>
 
@@ -511,13 +515,13 @@ function PromotionsTab() {
                 href={p.targetUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-1 block truncate text-xs text-primary underline"
+                className="mt-1 block truncate text-xs text-brand-coral underline"
               >
                 {p.targetUrl}
               </a>
             )}
             {p.status === "rejected" && p.rejectionReason && (
-              <p className="mt-2 rounded-lg bg-destructive/10 p-2 text-xs text-destructive">
+              <p className="mt-2 rounded-lg bg-destructive/10 p-2 text-xs text-danger">
                 {p.rejectionReason}
               </p>
             )}
@@ -534,7 +538,7 @@ function PromotionsTab() {
                 <button
                   onClick={() => setRejectTarget(p)}
                   disabled={reviewMutation.isPending}
-                  className="flex items-center gap-1.5 rounded-full border border-destructive/40 px-3 py-1.5 text-xs font-bold text-destructive press-scale disabled:opacity-60"
+                  className="flex items-center gap-1.5 rounded-full border border-destructive/40 px-3 py-1.5 text-xs font-bold text-danger press-scale disabled:opacity-60"
                 >
                   <X className="h-3.5 w-3.5" /> דחה
                 </button>

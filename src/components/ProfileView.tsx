@@ -193,7 +193,7 @@ export function ProfileView({ handle }: { handle: string }) {
               {profile.role === "admin" && (
                 <Link
                   to="/admin"
-                  className="rounded-full p-2 text-foreground/80 press-scale hover:text-primary"
+                  className="rounded-full p-2 text-foreground/80 press-scale hover:text-brand-coral"
                   aria-label="Admin"
                 >
                   <ShieldCheck className="h-5 w-5" />
@@ -205,13 +205,13 @@ export function ProfileView({ handle }: { handle: string }) {
                   const result = await shareContent({ title: profile.name, url });
                   if (result === "copied") toast.success(t("profile.linkCopied"));
                 }}
-                className="rounded-full p-2 text-foreground/80 press-scale hover:text-primary"
+                className="rounded-full p-2 text-foreground/80 press-scale hover:text-brand-coral"
               >
                 <Share2 className="h-5 w-5" />
               </button>
               <button
                 onClick={() => setSettingsOpen(true)}
-                className="rounded-full p-2 text-foreground/80 press-scale hover:text-primary"
+                className="rounded-full p-2 text-foreground/80 press-scale hover:text-brand-coral"
               >
                 <Settings className="h-5 w-5" />
               </button>
@@ -233,10 +233,10 @@ export function ProfileView({ handle }: { handle: string }) {
             {profile.verified && <BadgeCheck className="h-5 w-5 text-accent" />}
           </div>
           <p className="text-sm text-muted-foreground">
-            @{profile.handle}
+            <bdi>@{profile.handle}</bdi>
             {profile.verified ? ` · ${t("profile.verified")}` : ""}
           </p>
-          {profile.bio && <p className="mt-2 max-w-xs text-sm">{profile.bio}</p>}
+          {profile.bio && <p className="bidi-auto mt-2 max-w-xs text-sm">{profile.bio}</p>}
 
           <div className="mt-4 flex items-center justify-center gap-6">
             <Stat n={profile.followingCount} k={t("profile.following")} delay={0} />
@@ -332,7 +332,7 @@ export function ProfileView({ handle }: { handle: string }) {
         {tab === "about" ? (
           <div className="p-4 text-sm">
             <h3 className="font-semibold">{t("profile.about")}</h3>
-            <p className="mt-1 text-muted-foreground">{profile.bio || t("profile.noBioYet")}</p>
+            <p className="bidi-auto mt-1 text-muted-foreground">{profile.bio || t("profile.noBioYet")}</p>
             {profile.voiceType && (
               <p className="mt-2 text-muted-foreground">
                 {profile.voiceType}
@@ -735,7 +735,7 @@ function ArtistShows({
   onAdd: (input: { title: string; venue?: string; city?: string; ticketUrl?: string }) => void;
   onDelete: (id: string) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [venue, setVenue] = useState("");
@@ -775,7 +775,7 @@ function ArtistShows({
               {s.showDate && (
                 <p className="flex items-center gap-1 text-xs text-muted-foreground">
                   <CalendarDays className="h-3 w-3" />
-                  {new Date(s.showDate).toLocaleDateString()}
+                  {new Date(s.showDate).toLocaleDateString(`${i18n.language}-u-nu-latn`)}
                 </p>
               )}
               {s.ticketUrl && (

@@ -77,7 +77,7 @@ function CompetitionDetailPage() {
           to="/competitions"
           className="mb-3 inline-flex items-center gap-1 text-xs text-muted-foreground"
         >
-          <ArrowLeft className="h-3.5 w-3.5" /> {t("comp.title")}
+          <ArrowLeft className="h-3.5 w-3.5 rtl:rotate-180" /> {t("comp.title")}
         </Link>
 
         <article className="relative h-48 overflow-hidden rounded-3xl shadow-pop-lg">
@@ -144,7 +144,7 @@ function CompetitionDetailPage() {
                     whileTap={{ scale: 0.88 }}
                     onClick={() => voteMutation.mutate(e.id)}
                     disabled={!!myVoteEntryId || e.user.id === me?.id || voteMutation.isPending}
-                    className="flex items-center gap-1 rounded-full border border-primary/60 px-3 py-1.5 text-xs font-semibold text-primary disabled:opacity-40"
+                    className="flex items-center gap-1 rounded-full border border-primary/60 px-3 py-1.5 text-xs font-semibold text-brand-coral disabled:opacity-40"
                   >
                     <ThumbsUp className="h-3.5 w-3.5" /> {t("common.vote")}
                   </motion.button>
@@ -180,7 +180,7 @@ function CompetitionDetailPage() {
                 <div className="relative h-10 w-10 overflow-hidden rounded-lg">
                   <PostCoverBg hue={p.hue} seed={p.id} />
                 </div>
-                <span className="flex-1 text-sm font-semibold">{p.title}</span>
+                <span className="bidi-auto flex-1 text-sm font-semibold">{p.title}</span>
               </button>
             ))}
           </div>

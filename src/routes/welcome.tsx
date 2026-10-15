@@ -43,12 +43,13 @@ function WelcomePage() {
   return (
     <div className="relative mx-auto h-dvh w-full max-w-[520px] overflow-hidden bg-black text-white">
       <header className="fixed left-1/2 top-0 z-30 flex w-full max-w-[520px] -translate-x-1/2 items-center justify-between bg-gradient-to-b from-black/70 via-black/25 to-transparent px-4 py-3">
-        <span className="flex items-center gap-2">
-          <img src="/brand/logo-mark.png" alt="" className="h-8 w-8 rounded-lg" />
-          <span className="font-display text-xl font-bold text-brand-coral drop-shadow-md">
-            Studio26
-          </span>
-        </span>
+        <img
+          src="/brand/logo-wordmark-alpha.png"
+          alt="Studio26"
+          width={699}
+          height={213}
+          className="h-8 w-auto drop-shadow-md"
+        />
         <div className="flex items-center gap-1.5">
           <div className="hidden items-center gap-0.5 rounded-full border border-white/15 p-0.5 sm:flex">
             {LANGS.map((l) => (
@@ -316,7 +317,7 @@ function PublicFeedItem({
         initial={false}
         animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: -10 }}
         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-        className="absolute left-4 top-16 z-10 flex items-center gap-2"
+        className="absolute start-4 top-16 z-10 flex items-center gap-2"
       >
         <span className="rounded-full glass px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/90">
           {typeLabel[post.type] ?? post.type}
@@ -327,7 +328,7 @@ function PublicFeedItem({
         initial={false}
         animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: 24 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1], delay: active ? 0.05 : 0 }}
-        className="absolute bottom-32 right-3 z-10 flex flex-col items-center gap-5"
+        className="absolute bottom-32 end-3 z-10 flex flex-col items-center gap-5"
       >
         <button onClick={onGate} className="relative">
           <img
@@ -370,14 +371,16 @@ function PublicFeedItem({
         initial={false}
         animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: 24 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1], delay: active ? 0.1 : 0 }}
-        className="absolute inset-x-0 bottom-0 z-10 p-4 pb-8"
+        className="absolute inset-x-0 bottom-0 z-10 p-4 pe-20 pb-8"
       >
         <button onClick={onGate} className="flex items-center gap-2 text-white">
           <span className="font-display text-base font-bold">{post.user.name}</span>
           {post.user.verified && <BadgeCheck className="h-4 w-4 text-accent" />}
-          <span className="text-xs text-white/70">@{post.user.handle}</span>
+          <bdi className="text-xs text-white/70">@{post.user.handle}</bdi>
         </button>
-        <p className="mt-1 max-w-[85%] text-sm text-white/90">{post.title}</p>
+        <p className="mt-1 text-sm text-white/90">
+          <bdi>{post.title}</bdi>
+        </p>
         <div className="mt-2 flex items-center gap-2 text-xs text-white/80">
           {post.audioUrl || post.videoUrl ? (
             <button
@@ -404,7 +407,7 @@ function PublicFeedItem({
                 : "rounded-full glass border border-white/20 px-4 py-1.5 text-xs font-bold text-white"
             }
           >
-            <Trophy className="mr-1 inline h-3.5 w-3.5" />
+            <Trophy className="me-1 inline h-3.5 w-3.5" />
             {t("feed.competition")}
           </button>
         </div>

@@ -17,6 +17,7 @@ import { getCurrentUser } from "../functions/auth";
 import { detectServerLanguage } from "../functions/locale";
 import i18n, { isRTL, reconcileClientLanguage } from "../lib/i18n";
 import { Toaster } from "../components/ui/sonner";
+import { DirectionProvider } from "@radix-ui/react-direction";
 
 const PUBLIC_PATHS = new Set(["/login", "/signup", "/welcome"]);
 
@@ -96,7 +97,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { name: "theme-color", content: "#f9f6f0" },
+      { name: "theme-color", content: "#0f0f15" },
       { title: "Studio26 — Music Social Network" },
       {
         name: "description",
@@ -116,7 +117,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Rubik:wght@500;600;700&family=Heebo:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap",
       },
     ],
   }),
@@ -150,13 +151,18 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const { i18n: activeI18n } = useTranslation();
   useEffect(() => {
     reconcileClientLanguage();
   }, []);
+  // Radix primitives (menus, selects, tabs, sliders) default to LTR and ignore <html dir>, so
+  // without this every popover and slider renders mirrored wrong in Hebrew/Arabic.
   return (
-    <QueryClientProvider client={queryClient}>
-      <Outlet />
-      <Toaster richColors position="top-center" />
-    </QueryClientProvider>
+    <DirectionProvider dir={isRTL(activeI18n.language) ? "rtl" : "ltr"}>
+      <QueryClientProvider client={queryClient}>
+        <Outlet />
+        <Toaster richColors position="top-center" />
+      </QueryClientProvider>
+    </DirectionProvider>
   );
 }

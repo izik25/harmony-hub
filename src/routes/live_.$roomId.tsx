@@ -86,7 +86,7 @@ function LiveRoomPage() {
             to="/live"
             className="rounded-full bg-brand-coral px-5 py-2 text-sm font-semibold text-white shadow-pop-coral press-scale"
           >
-            <ArrowLeft className="mr-1 inline h-4 w-4" /> {t("live.backToLive")}
+            <ArrowLeft className="me-1 inline h-4 w-4 rtl:rotate-180" /> {t("live.backToLive")}
           </Link>
         </div>
       </AppShell>
@@ -284,7 +284,7 @@ function InviteGuestSheet({
                 <img src={u.avatarUrl} alt="" className="h-10 w-10 rounded-full" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">{u.name}</span>
-                  <span className="block truncate text-xs text-muted-foreground">@{u.handle}</span>
+                  <span className="bidi-auto block truncate text-xs text-muted-foreground">@{u.handle}</span>
                 </span>
               </button>
             ))}

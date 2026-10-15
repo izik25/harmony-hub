@@ -340,7 +340,7 @@ function FeedItem({
         initial={false}
         animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: -10 }}
         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-        className="absolute left-4 top-4 z-10 flex items-center gap-2"
+        className="absolute start-4 top-16 z-10 flex items-center gap-2"
       >
         <span className="rounded-full glass px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/90">
           {typeLabel[post.type] ?? post.type}
@@ -360,7 +360,7 @@ function FeedItem({
         initial={false}
         animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: 24 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1], delay: active ? 0.05 : 0 }}
-        className="absolute bottom-32 right-3 z-10 flex flex-col items-center gap-5"
+        className="absolute bottom-32 end-3 z-10 flex flex-col items-center gap-5"
       >
         <div className="relative">
           <img
@@ -398,7 +398,7 @@ function FeedItem({
               transition={{ type: "spring", stiffness: 500, damping: 15 }}
               className="block"
             >
-              <Heart className={`h-7 w-7 ${post.likedByMe ? "fill-primary text-primary" : ""}`} />
+              <Heart className={`h-7 w-7 ${post.likedByMe ? "fill-primary text-brand-coral" : ""}`} />
             </motion.span>
           }
           count={formatCount(post.likes)}
@@ -440,7 +440,7 @@ function FeedItem({
         initial={false}
         animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: 24 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1], delay: active ? 0.1 : 0 }}
-        className="absolute inset-x-0 bottom-0 z-10 p-4 pb-24"
+        className="absolute inset-x-0 bottom-0 z-10 p-4 pe-20 pb-24"
       >
         <Link
           to="/profile/$handle"
@@ -449,9 +449,11 @@ function FeedItem({
         >
           <span className="font-display text-base font-bold">{post.user.name}</span>
           {post.user.verified && <BadgeCheck className="h-4 w-4 text-accent" />}
-          <span className="text-xs text-white/70">@{post.user.handle}</span>
+          <bdi className="text-xs text-white/70">@{post.user.handle}</bdi>
         </Link>
-        <p className="mt-1 max-w-[85%] text-sm text-white/90">{post.title}</p>
+        <p className="mt-1 text-sm text-white/90">
+          <bdi>{post.title}</bdi>
+        </p>
         <div className="mt-2 flex items-center gap-2 text-xs text-white/80">
           {post.audioUrl || post.videoUrl ? (
             <button
@@ -489,7 +491,7 @@ function FeedItem({
                 : "rounded-full glass border border-white/20 px-4 py-1.5 text-xs font-bold text-white"
             }
           >
-            <Trophy className="mr-1 inline h-3.5 w-3.5" />
+            <Trophy className="me-1 inline h-3.5 w-3.5" />
             {t("feed.competition")}
           </button>
           <CreditsPop credits={post.credits} />
@@ -594,7 +596,7 @@ function CommentsSheet({ postId, onClose }: { postId: string | null; onClose: ()
               <img src={c.user.avatar} className="h-8 w-8 rounded-full" alt="" />
               <div>
                 <p className="text-xs font-semibold">{c.user.name}</p>
-                <p className="text-sm">{c.body}</p>
+                <p className="bidi-auto text-sm">{c.body}</p>
               </div>
             </div>
           ))}
