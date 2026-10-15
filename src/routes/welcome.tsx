@@ -46,8 +46,8 @@ function WelcomePage() {
         <img
           src="/brand/logo-wordmark-alpha.png"
           alt="Studio26"
-          width={699}
-          height={213}
+          width={701}
+          height={216}
           className="h-8 w-auto drop-shadow-md"
         />
         <div className="flex items-center gap-1.5">

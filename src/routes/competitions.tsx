@@ -26,7 +26,7 @@ function CompetitionsPage() {
   const rest = competitions?.slice(1) ?? [];
 
   return (
-    <AppShell>
+    <AppShell width="wide">
       <TopBar />
       <div className="px-4 pt-3 pb-6">
         <div className="flex items-center justify-between">
@@ -85,7 +85,7 @@ function CompetitionsPage() {
           </Link>
         )}
 
-        <div className="mt-6 space-y-3">
+        <div className="mt-6 grid gap-3 lg:grid-cols-2">
           {rest.map((c, i) => (
             <Link
               key={c.id}

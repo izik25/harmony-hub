@@ -168,7 +168,7 @@ export function ProfileView({ handle }: { handle: string }) {
 
   if (!profile) {
     return (
-      <AppShell>
+      <AppShell width="wide">
         <TopBar />
       </AppShell>
     );
@@ -184,7 +184,7 @@ export function ProfileView({ handle }: { handle: string }) {
           : [];
 
   return (
-    <AppShell>
+    <AppShell width="wide">
       <TopBar />
       <div className="relative">
         <div className="flex items-center justify-end gap-2 px-4 pt-2">
@@ -406,7 +406,7 @@ export function ProfileView({ handle }: { handle: string }) {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-1 p-1">
+          <div className="grid grid-cols-3 gap-1 p-1 lg:grid-cols-5 lg:gap-2">
             {shownPosts?.length === 0 && (
               <p className="col-span-3 py-6 text-center text-sm text-muted-foreground">
                 {t("profile.nothingHereYet")}

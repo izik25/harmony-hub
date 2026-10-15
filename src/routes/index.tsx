@@ -42,9 +42,9 @@ function HomePage() {
   const { data } = useQuery({ queryKey: ["feed"], queryFn: () => listFeed() });
 
   return (
-    <AppShell overlayNav>
+    <AppShell overlayNav width="feed">
       <TopBar transparent />
-      <div className="relative -mt-14">
+      <div className="relative -mt-14 lg:mt-0">
         <FeedSlider posts={data ?? []} />
       </div>
     </AppShell>
@@ -340,7 +340,7 @@ function FeedItem({
         initial={false}
         animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: -10 }}
         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-        className="absolute start-4 top-16 z-10 flex items-center gap-2"
+        className="absolute start-4 top-16 z-10 flex items-center gap-2 lg:top-4"
       >
         <span className="rounded-full glass px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/90">
           {typeLabel[post.type] ?? post.type}

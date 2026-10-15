@@ -136,7 +136,7 @@ function WalletPage() {
         <h2 className="mt-6 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           {t("wallet.giftsHeading")}
         </h2>
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-3 gap-2 lg:grid-cols-5">
           {gifts?.map((g, i) => (
             <div
               key={g.id}

@@ -35,7 +35,10 @@ function AmbientNotes({ count = 5 }: { count?: number }) {
   return (
     // Hidden via CSS rather than useReducedMotion(): that hook is false during SSR and true on the
     // client for reduced-motion users, which made the page fail hydration.
-    <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden motion-reduce:hidden">
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 z-0 overflow-hidden motion-reduce:hidden"
+    >
       {notes.map((n, i) => (
         <motion.span
           key={i}
@@ -92,8 +95,8 @@ function LoginPage() {
           <img
             src="/brand/logo-wordmark-alpha.png"
             alt="Studio26"
-            width={699}
-            height={213}
+            width={701}
+            height={216}
             className="animate-fade-up h-auto w-full max-w-[280px]"
           />
           <p className="mt-3 text-sm text-muted-foreground">{t("auth.welcome")}</p>
@@ -192,9 +195,12 @@ function LoginPage() {
             </Link>
           </p>
 
-          <p className="mt-8 max-w-sm text-center text-[11px] text-muted-foreground">
-            {t("auth.demoAccounts")}
-          </p>
+          {/* The seeded demo accounts only exist in local dev databases. */}
+          {import.meta.env.DEV && (
+            <p className="mt-8 max-w-sm text-center text-[11px] text-muted-foreground">
+              {t("auth.demoAccounts")}
+            </p>
+          )}
         </div>
       </div>
 

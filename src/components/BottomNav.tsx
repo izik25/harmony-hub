@@ -43,7 +43,7 @@ export function BottomNav({ overlay = false }: { overlay?: boolean }) {
 
   return (
     <nav
-      className={`fixed bottom-0 left-1/2 z-40 w-full max-w-[520px] -translate-x-1/2 ${
+      className={`fixed bottom-0 left-1/2 z-40 w-full max-w-[520px] -translate-x-1/2 lg:hidden ${
         overlay
           ? "bg-gradient-to-t from-black/85 via-black/40 to-transparent pt-6"
           : "glass border-t border-border"

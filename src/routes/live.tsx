@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { PostCoverBg } from "@/components/PostCoverBg";
+import { EmptyState } from "@/components/EmptyState";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { listLiveRooms, startRoom, isLiveConfigured } from "@/functions/live";
 import { translateServerError } from "@/lib/i18n";
@@ -62,7 +63,7 @@ function LivePage() {
   });
 
   return (
-    <AppShell>
+    <AppShell width="wide">
       <TopBar />
       <div className="px-4 pt-3 pb-6">
         <div className="flex items-center justify-between">
@@ -89,10 +90,22 @@ function LivePage() {
         )}
 
         {rooms?.length === 0 && (
-          <p className="mt-6 text-center text-sm text-muted-foreground">{t("live.noOneLive")}</p>
+          <EmptyState
+            icon={Radio}
+            title={t("live.noOneLive")}
+            className="mt-10"
+            action={
+              <button
+                onClick={() => setGoLiveOpen(true)}
+                className="rounded-full bg-brand-coral px-6 py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale"
+              >
+                {t("live.goLive")}
+              </button>
+            }
+          />
         )}
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
           {rooms?.map((r, i) => (
             <motion.button
               key={r.id}

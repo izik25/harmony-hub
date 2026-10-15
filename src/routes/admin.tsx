@@ -77,7 +77,7 @@ function AdminPage() {
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-brand-coral" />
-          <h1 className="font-display text-lg font-bold">ניהול · SONA</h1>
+          <h1 className="font-display text-lg font-bold">ניהול · Studio26</h1>
         </div>
         <Link
           to="/"

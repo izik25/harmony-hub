@@ -6,6 +6,7 @@ import { ArrowLeft, Music2, Play, Pause, Mic } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { PostCoverBg } from "@/components/PostCoverBg";
+import { EmptyState } from "@/components/EmptyState";
 import { formatCount } from "@/lib/mock-data";
 import { getKaraokeTrack, listKaraokeTrackPosts } from "@/functions/karaoke";
 
@@ -25,9 +26,11 @@ function SoundPage() {
   const navigate = useNavigate();
   const [playingId, setPlayingId] = useState<string | null>(null);
 
-  const { data: track } = useQuery({
+  const { data: track, isPending } = useQuery({
     queryKey: ["karaokeTrack", id],
     queryFn: () => getKaraokeTrack({ data: { id } }),
+    // A bad/unknown id is a final answer — retrying only keeps the skeleton up for ~7s.
+    retry: false,
   });
   const { data: trackPosts } = useQuery({
     queryKey: ["karaokeTrackPosts", id],
@@ -38,6 +41,32 @@ function SoundPage() {
     return (
       <AppShell>
         <TopBar />
+        {isPending ? (
+          <div className="px-4 pt-3" aria-busy>
+            <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+            <div className="mt-3 flex items-center gap-4 rounded-3xl border border-border bg-card p-4">
+              <div className="h-20 w-20 shrink-0 animate-pulse rounded-2xl bg-muted" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <EmptyState
+            icon={Music2}
+            title={t("sound.notFound")}
+            className="mt-16"
+            action={
+              <Link
+                to="/"
+                className="rounded-full border border-border px-5 py-2 text-sm font-semibold press-scale"
+              >
+                {t("nav.home")}
+              </Link>
+            }
+          />
+        )}
       </AppShell>
     );
   }

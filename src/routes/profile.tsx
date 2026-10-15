@@ -13,7 +13,7 @@ function OwnProfilePage() {
 
   if (!me) {
     return (
-      <AppShell>
+      <AppShell width="wide">
         <TopBar />
       </AppShell>
     );

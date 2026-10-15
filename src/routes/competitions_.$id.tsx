@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { PostCoverBg } from "@/components/PostCoverBg";
+import { EmptyState } from "@/components/EmptyState";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getCompetition, joinCompetition, voteEntry } from "@/functions/competitions";
 import { listMyPublishedPosts } from "@/functions/posts";
@@ -111,9 +112,7 @@ function CompetitionDetailPage() {
         <h2 className="mt-6 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           {t("comp.entriesHeading")}
         </h2>
-        {entries.length === 0 && (
-          <p className="mt-2 text-sm text-muted-foreground">{t("comp.noEntriesYet")}</p>
-        )}
+        {entries.length === 0 && <EmptyState icon={Trophy} title={t("comp.noEntriesYet")} />}
         <div className="mt-2 space-y-2">
           {entries.map((e, i) => (
             <div

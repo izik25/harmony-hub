@@ -49,7 +49,7 @@ function ConversationPage() {
   return (
     <AppShell>
       <TopBar />
-      <div className="flex h-[calc(100dvh-136px)] flex-col px-4 pt-3">
+      <div className="flex h-[calc(100dvh-136px)] flex-col px-4 pt-3 lg:h-[calc(100dvh-2rem)] lg:pt-6">
         <div className="flex items-center gap-2 pb-3">
           <Link to="/messages" className="text-muted-foreground">
             <ArrowLeft className="h-4 w-4 rtl:rotate-180" />

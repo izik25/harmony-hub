@@ -56,7 +56,7 @@ export function TopBar({ transparent = false }: { transparent?: boolean }) {
 
   return (
     <div
-      className={`sticky top-0 z-30 flex h-14 items-center justify-between gap-2 ps-4 pe-2 ${
+      className={`sticky top-0 z-30 flex h-14 items-center justify-between gap-2 ps-4 pe-2 lg:hidden ${
         transparent
           ? "bg-gradient-to-b from-black/55 via-black/15 to-transparent"
           : "glass border-b border-border"
@@ -69,8 +69,8 @@ export function TopBar({ transparent = false }: { transparent?: boolean }) {
         <img
           src="/brand/logo-wordmark-alpha.png"
           alt="Studio26"
-          width={699}
-          height={213}
+          width={701}
+          height={216}
           className={`h-8 w-auto ${transparent ? "drop-shadow-md" : ""}`}
         />
       </Link>

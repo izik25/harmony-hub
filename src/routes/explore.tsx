@@ -46,7 +46,7 @@ function ExplorePage() {
   const djResults = results?.posts.filter((p) => p.type === "djset") ?? [];
 
   return (
-    <AppShell>
+    <AppShell width="wide">
       <TopBar />
       <div className="px-4 pt-3">
         <label className="flex items-center gap-2 rounded-full bg-muted/60 px-4 py-3 ring-1 ring-border">
@@ -99,7 +99,7 @@ function ExplorePage() {
             <div className="mt-6 flex items-center gap-2 text-xs uppercase tracking-widest text-muted-foreground">
               <TrendingUp className="h-3.5 w-3.5 text-accent" /> {t("common.top")}
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
               {topPosts?.map((p) => (
                 <article
                   key={p.id}
@@ -117,7 +117,7 @@ function ExplorePage() {
 
             <div className="mt-6 mb-8">
               <h3 className="mb-2 font-display text-lg font-bold">{t("explore.genres")}</h3>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                 {genres.map((g, i) => (
                   <div
                     key={g}
@@ -156,7 +156,7 @@ function ExplorePage() {
               </ul>
             )}
             {(tab === "songs" || tab === "djs") && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {(tab === "songs" ? songResults : djResults).length === 0 && (
                   <p className="col-span-2 text-sm text-muted-foreground">
                     {t("explore.noMatchingTracks")}
@@ -174,7 +174,7 @@ function ExplorePage() {
               </div>
             )}
             {tab === "genres" && (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                 {genres
                   .filter((g) => g.toLowerCase().includes(query.toLowerCase()))
                   .map((g, i) => (

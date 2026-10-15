@@ -11,6 +11,17 @@ import { toSafeError } from "./safe-error";
 const SESSION_COOKIE = "sona_session";
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 
+// Initials on one of the brand fills (coral, indigo, teal, gold) — identifies the person at a
+// glance, unlike the random gradient blobs of DiceBear's "glass" style used before.
+function defaultAvatarUrl(label: string) {
+  const params = new URLSearchParams({
+    seed: label,
+    backgroundColor: "d23b3b,3a3d8f,1f8585,e2b22b",
+    fontWeight: "600",
+  });
+  return `https://api.dicebear.com/9.x/initials/svg?${params}`;
+}
+
 export type SessionUser = {
   id: string;
   handle: string;
@@ -125,7 +136,7 @@ export const signup = createServerFn({ method: "POST" })
           name,
           email,
           passwordHash,
-          avatarUrl: `https://api.dicebear.com/9.x/glass/svg?seed=${handle}`,
+          avatarUrl: defaultAvatarUrl(name),
         })
         .returning();
 
@@ -223,7 +234,7 @@ export const verifyPhoneCode = createServerFn({ method: "POST" })
           handle,
           name: "New Artist",
           phone,
-          avatarUrl: `https://api.dicebear.com/9.x/glass/svg?seed=${handle}`,
+          avatarUrl: defaultAvatarUrl(handle),
         })
         .returning();
       await createSession(user.id);

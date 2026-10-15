@@ -46,7 +46,7 @@ function MessagesPage() {
                 <img src={c.other.avatarUrl} className="h-11 w-11 rounded-full" alt="" />
                 <div className="flex-1 overflow-hidden">
                   <p className="text-sm font-semibold">{c.other.name}</p>
-                  <p className="line-clamp-1 text-xs text-muted-foreground">
+                  <p className="bidi-auto line-clamp-1 text-xs text-muted-foreground">
                     {c.lastMessage ?? "…"}
                   </p>
                 </div>

@@ -13,6 +13,8 @@ import {
   ChevronUp,
   Image as ImageIcon,
   X,
+  Mic,
+  Upload,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,6 +23,7 @@ import * as Tone from "tone";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
+import { EmptyState } from "@/components/EmptyState";
 import { getDraft, updateDraftAudio } from "@/functions/posts";
 import { getVocalCleanupStatus, startVocalCleanup } from "@/functions/vocal-cleanup";
 import { smartUploadMedia } from "@/lib/blob-upload";
@@ -918,17 +921,30 @@ function StudioPage() {
         <p className="text-xs text-muted-foreground">{t("studio.subtitle")}</p>
 
         {!draftId ? (
-          <div className="mt-6 rounded-3xl border border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-pop">
-            {t("studio.noTrack")}{" "}
-            <Link to="/record" className="text-accent underline">
-              {t("studio.record")}
-            </Link>{" "}
-            {t("studio.or")}{" "}
-            <Link to="/upload" search={{}} className="text-accent underline">
-              {t("studio.upload")}
-            </Link>{" "}
-            {t("studio.oneFirst")}
-          </div>
+          <EmptyState
+            icon={Wand2}
+            title={t("studio.noTrack")}
+            className="mt-6"
+            action={
+              <div className="flex gap-2">
+                <Link
+                  to="/record"
+                  className="flex items-center gap-1.5 rounded-full bg-brand-coral px-5 py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale"
+                >
+                  <Mic className="h-4 w-4" />
+                  {t("studio.record")}
+                </Link>
+                <Link
+                  to="/upload"
+                  search={{}}
+                  className="flex items-center gap-1.5 rounded-full border border-border px-5 py-2.5 text-sm font-semibold press-scale"
+                >
+                  <Upload className="h-4 w-4" />
+                  {t("studio.upload")}
+                </Link>
+              </div>
+            }
+          />
         ) : (
           <>
             {/* One shared player for the whole take: when a camera video is attached, it's the
@@ -1126,7 +1142,7 @@ function StudioPage() {
                 ) : (
                   <>
                     {cleanupStatus.data?.status === "failed" && (
-                      <p className="mt-2 text-xs text-destructive">{t("studio.cleanupFailed")}</p>
+                      <p className="mt-2 text-xs text-danger">{t("studio.cleanupFailed")}</p>
                     )}
                     <button
                       onClick={() => cleanupMutation.mutate()}
