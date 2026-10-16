@@ -30,9 +30,11 @@ type Prediction = {
 };
 
 function replicateConfig() {
-  const token = process.env.REPLICATE_API_TOKEN;
+  // Trimmed: values piped into `vercel env add` from a shell can pick up a trailing newline, which
+  // would otherwise silently corrupt the Authorization header.
+  const token = process.env.REPLICATE_API_TOKEN?.trim();
   // The 64-char version id `cog push` prints — community models can only be run by version.
-  const version = process.env.REPLICATE_VOCAL_CLEANUP_VERSION;
+  const version = process.env.REPLICATE_VOCAL_CLEANUP_VERSION?.trim();
   if (!token || !version) throw new Error("vocalCleanupNotConfigured");
   return { token, version };
 }
