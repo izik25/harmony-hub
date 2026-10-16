@@ -326,3 +326,99 @@ export const createSponsorAd = createServerFn({ method: "POST" })
       .returning();
     return row;
   });
+
+// ── Competitions ──────────────────────────────────────────────────────────────────────────────
+
+const COMPETITION_STAGES = ["quarter", "semi", "final"] as const;
+const COMPETITION_STATUSES = ["upcoming", "active", "finished"] as const;
+type CompetitionInput = {
+  title: string;
+  prize: string;
+  stage: (typeof COMPETITION_STAGES)[number];
+  status: (typeof COMPETITION_STATUSES)[number];
+  hue: number;
+};
+
+// The validator only types the payload; this is the real check, shared by create and update.
+function cleanCompetitionInput(data: CompetitionInput) {
+  const title = data.title?.trim() ?? "";
+  const prize = data.prize?.trim() ?? "";
+  if (!title) throw new Error("competitionTitleRequired");
+  if (title.length > 80) throw new Error("competitionTitleTooLong");
+  if (!prize) throw new Error("competitionPrizeRequired");
+  if (!COMPETITION_STAGES.includes(data.stage) || !COMPETITION_STATUSES.includes(data.status)) {
+    throw new Error("invalidCompetition");
+  }
+  const hue = Math.round(Number(data.hue));
+  if (!Number.isFinite(hue)) throw new Error("invalidCompetition");
+  return {
+    title,
+    prize: prize.slice(0, 40),
+    stage: data.stage,
+    status: data.status,
+    hue: ((hue % 360) + 360) % 360,
+  };
+}
+
+export const listAdminCompetitions = createServerFn({ method: "GET" }).handler(async () => {
+  await requireAdmin();
+  return db
+    .select({
+      id: competitions.id,
+      title: competitions.title,
+      stage: competitions.stage,
+      status: competitions.status,
+      prize: competitions.prize,
+      hue: competitions.hue,
+      coverSeed: competitions.coverSeed,
+      createdAt: competitions.createdAt,
+      entries:
+        sql<number>`(select count(*) from ${competitionEntries} where ${competitionEntries.competitionId} = ${competitions.id})`.mapWith(
+          Number,
+        ),
+      votes:
+        sql<number>`(select count(*) from ${competitionVotes} where ${competitionVotes.competitionId} = ${competitions.id})`.mapWith(
+          Number,
+        ),
+    })
+    .from(competitions)
+    .orderBy(desc(competitions.createdAt));
+});
+
+export const createCompetition = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input as CompetitionInput)
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const values = cleanCompetitionInput(data);
+    const [row] = await db
+      .insert(competitions)
+      .values({ ...values, coverSeed: crypto.randomUUID() })
+      .returning();
+    return row;
+  });
+
+export const updateCompetition = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input as CompetitionInput & { id: string })
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const [row] = await db
+      .update(competitions)
+      .set(cleanCompetitionInput(data))
+      .where(eq(competitions.id, data.id))
+      .returning();
+    if (!row) throw new Error("competitionNotFound");
+    return row;
+  });
+
+// Entries and votes go with it (ON DELETE CASCADE); the posts themselves are untouched.
+export const deleteCompetition = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input as { id: string })
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const [row] = await db
+      .delete(competitions)
+      .where(eq(competitions.id, data.id))
+      .returning({ id: competitions.id });
+    if (!row) throw new Error("competitionNotFound");
+    return { ok: true };
+  });

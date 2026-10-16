@@ -69,6 +69,8 @@ function CompetitionDetailPage() {
 
   const { competition, entries, myVoteEntryId } = data;
   const alreadyEntered = entries.some((e) => e.user.id === me?.id);
+  // Mirrors the server rule: entering and voting only while the competition is active.
+  const isOpen = competition.status === "active";
 
   return (
     <AppShell>
@@ -102,11 +104,15 @@ function CompetitionDetailPage() {
 
         <button
           onClick={() => setJoinOpen(true)}
-          disabled={alreadyEntered}
+          disabled={alreadyEntered || !isOpen}
           className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-50"
         >
           <Trophy className="h-4 w-4" />{" "}
-          {alreadyEntered ? t("comp.alreadyEntered") : t("comp.join")}
+          {!isOpen
+            ? t(competition.status === "upcoming" ? "comp.openingSoon" : "comp.closed")
+            : alreadyEntered
+              ? t("comp.alreadyEntered")
+              : t("comp.join")}
         </button>
 
         <h2 className="mt-6 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
@@ -142,7 +148,7 @@ function CompetitionDetailPage() {
                     key="vote"
                     whileTap={{ scale: 0.88 }}
                     onClick={() => voteMutation.mutate(e.id)}
-                    disabled={!!myVoteEntryId || e.user.id === me?.id || voteMutation.isPending}
+                    disabled={!isOpen || !!myVoteEntryId || e.user.id === me?.id || voteMutation.isPending}
                     className="flex items-center gap-1 rounded-full border border-primary/60 px-3 py-1.5 text-xs font-semibold text-brand-coral disabled:opacity-40"
                   >
                     <ThumbsUp className="h-3.5 w-3.5" /> {t("common.vote")}

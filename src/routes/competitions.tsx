@@ -77,8 +77,16 @@ function CompetitionsPage() {
                     <Award className="h-3.5 w-3.5 text-accent" /> {featured.prize}
                   </span>
                 </div>
-                <span className="mt-3 inline-block rounded-full bg-brand-coral px-4 py-2 text-xs font-bold text-white shadow-pop-coral">
-                  {t("comp.join")}
+                <span
+                  className={`mt-3 inline-block rounded-full px-4 py-2 text-xs font-bold ${
+                    featured.status === "active"
+                      ? "bg-brand-coral text-white shadow-pop-coral"
+                      : "bg-white/15 text-white"
+                  }`}
+                >
+                  {featured.status === "active"
+                    ? t("comp.join")
+                    : t(featured.status === "upcoming" ? "comp.openingSoon" : "comp.closed")}
                 </span>
               </div>
             </article>
@@ -102,8 +110,16 @@ function CompetitionsPage() {
                   {t(`comp.${c.stage}`)} · {c.participants} · {c.prize}
                 </p>
               </div>
-              <span className="rounded-full border border-primary/60 px-3 py-1.5 text-xs font-semibold text-brand-coral">
-                {t("common.vote")}
+              <span
+                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                  c.status === "active"
+                    ? "border-primary/60 text-brand-coral"
+                    : "border-border text-muted-foreground"
+                }`}
+              >
+                {c.status === "active"
+                  ? t("common.vote")
+                  : t(c.status === "upcoming" ? "comp.openingSoon" : "comp.closed")}
               </span>
             </Link>
           ))}

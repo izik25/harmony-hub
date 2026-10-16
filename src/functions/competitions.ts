@@ -79,10 +79,23 @@ export const getCompetition = createServerFn({ method: "GET" })
     return { competition, entries, myVoteEntryId: myVote?.entryId ?? null };
   });
 
+// Entering and voting are only open while a competition is "active" — upcoming ones haven't opened
+// yet and finished ones are closed (the admin moves a competition between the three).
+async function requireActiveCompetition(competitionId: string) {
+  const [c] = await db
+    .select({ status: competitions.status })
+    .from(competitions)
+    .where(eq(competitions.id, competitionId));
+  if (!c) throw new Error("competitionNotFound");
+  if (c.status === "upcoming") throw new Error("competitionNotOpenYet");
+  if (c.status !== "active") throw new Error("competitionClosed");
+}
+
 export const joinCompetition = createServerFn({ method: "POST" })
   .validator((input: unknown) => input as { competitionId: string; postId: string })
   .handler(async ({ data }) => {
     const userId = await requireUserId();
+    await requireActiveCompetition(data.competitionId);
     const [post] = await db
       .select()
       .from(posts)
@@ -116,6 +129,7 @@ export const voteEntry = createServerFn({ method: "POST" })
       .where(eq(competitionEntries.id, data.entryId));
     if (!entry) throw new Error("entryNotFound");
     if (entry.userId === voterId) throw new Error("cantVoteOwnEntry");
+    await requireActiveCompetition(entry.competitionId);
 
     const [existing] = await db
       .select()

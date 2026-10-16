@@ -21,6 +21,8 @@ import {
   X,
   Loader2,
   Plus,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import {
   AreaChart,
@@ -56,7 +58,22 @@ import {
   listPromotions,
   reviewPromotion,
   createSponsorAd,
+  listAdminCompetitions,
+  createCompetition,
+  updateCompetition,
+  deleteCompetition,
 } from "@/functions/admin";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { PostCoverBg } from "@/components/PostCoverBg";
 import { translateServerError } from "@/lib/i18n";
 import { formatCount } from "@/lib/mock-data";
 import type { SessionUser } from "@/functions/auth";
@@ -70,7 +87,7 @@ export const Route = createFileRoute("/admin")({
 });
 
 function AdminPage() {
-  const [tab, setTab] = useState<"overview" | "users" | "promotions">("overview");
+  const [tab, setTab] = useState<"overview" | "users" | "competitions" | "promotions">("overview");
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -92,6 +109,7 @@ function AdminPage() {
           <TabsList>
             <TabsTrigger value="overview">סקירה כללית</TabsTrigger>
             <TabsTrigger value="users">משתמשים</TabsTrigger>
+            <TabsTrigger value="competitions">תחרויות</TabsTrigger>
             <TabsTrigger value="promotions">קידומים ומודעות</TabsTrigger>
           </TabsList>
           <TabsContent value="overview">
@@ -99,6 +117,9 @@ function AdminPage() {
           </TabsContent>
           <TabsContent value="users">
             <UsersTab />
+          </TabsContent>
+          <TabsContent value="competitions">
+            <CompetitionsTab />
           </TabsContent>
           <TabsContent value="promotions">
             <PromotionsTab />
@@ -343,7 +364,9 @@ function UsersTab() {
                     <img src={u.avatarUrl} className="h-8 w-8 shrink-0 rounded-full" alt="" />
                     <div className="min-w-0">
                       <p className="truncate font-semibold">{u.name}</p>
-                      <p className="bidi-auto truncate text-xs text-muted-foreground">@{u.handle}</p>
+                      <p className="bidi-auto truncate text-xs text-muted-foreground">
+                        @{u.handle}
+                      </p>
                     </div>
                   </div>
                 </TableCell>
@@ -702,6 +725,367 @@ function NewSponsorAdDialog({
           </button>
         </DialogFooter>
         <style>{`.admin-dialog-input { width: 100%; border-radius: 12px; background: var(--color-input); padding: 10px 12px; font-size: 14px; outline: none; border: 1px solid var(--color-border); }`}</style>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Competitions ──────────────────────────────────────────────────────────────────────────────
+
+type AdminCompetition = Awaited<ReturnType<typeof listAdminCompetitions>>[number];
+type CompetitionStage = "quarter" | "semi" | "final";
+type CompetitionStatus = "upcoming" | "active" | "finished";
+
+const STAGE_LABELS: Record<CompetitionStage, string> = {
+  quarter: "רבע גמר",
+  semi: "חצי גמר",
+  final: "גמר",
+};
+const COMPETITION_STATUS_LABELS: Record<CompetitionStatus, string> = {
+  upcoming: "בקרוב",
+  active: "פעילה",
+  finished: "הסתיימה",
+};
+// Cover glow hues for the generated competition art — spread around the wheel, brand-leaning.
+const COVER_HUES = [320, 280, 250, 210, 175, 140, 45, 20];
+
+function CompetitionsTab() {
+  const queryClient = useQueryClient();
+  const formatNumber = useFormatNumber();
+  const [editing, setEditing] = useState<AdminCompetition | "new" | null>(null);
+  const [deleting, setDeleting] = useState<AdminCompetition | null>(null);
+
+  const { data: rows } = useQuery({
+    queryKey: ["admin", "competitions"],
+    queryFn: () => listAdminCompetitions(),
+  });
+
+  // The public list/detail pages and the overview counts all read competitions too.
+  const invalidate = () => {
+    for (const key of [["admin"], ["competitions"], ["competition"]]) {
+      queryClient.invalidateQueries({ queryKey: key });
+    }
+  };
+
+  const statusMutation = useMutation({
+    mutationFn: (vars: { row: AdminCompetition; status: CompetitionStatus }) =>
+      updateCompetition({
+        data: {
+          id: vars.row.id,
+          title: vars.row.title,
+          prize: vars.row.prize,
+          stage: vars.row.stage as CompetitionStage,
+          hue: vars.row.hue,
+          status: vars.status,
+        },
+      }),
+    onSuccess: (_, vars) => {
+      invalidate();
+      toast.success(`הסטטוס עודכן ל"${COMPETITION_STATUS_LABELS[vars.status]}"`);
+    },
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteCompetition({ data: { id } }),
+    onSuccess: () => {
+      invalidate();
+      toast.success("התחרות נמחקה");
+      setDeleting(null);
+    },
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
+  });
+
+  return (
+    <div className="mt-4 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          רק תחרות <span className="font-semibold text-foreground">פעילה</span> פתוחה להגשות
+          ולהצבעות.
+        </p>
+        <button
+          onClick={() => setEditing("new")}
+          className="flex items-center gap-1.5 rounded-full bg-brand-coral px-3 py-1.5 text-xs font-bold text-white shadow-pop-coral press-scale"
+        >
+          <Plus className="h-3.5 w-3.5" /> תחרות חדשה
+        </button>
+      </div>
+
+      {rows?.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+          <Trophy className="mx-auto h-8 w-8 text-brand-coral" />
+          <p className="mt-2 text-sm text-muted-foreground">עדיין אין תחרויות.</p>
+          <button
+            onClick={() => setEditing("new")}
+            className="mt-4 rounded-full bg-brand-coral px-5 py-2 text-sm font-bold text-white shadow-pop-coral press-scale"
+          >
+            צור את התחרות הראשונה
+          </button>
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {rows?.map((c) => (
+          <div
+            key={c.id}
+            className="flex gap-3 rounded-2xl border border-border bg-card p-3 shadow-pop"
+          >
+            <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl">
+              <PostCoverBg hue={c.hue} seed={c.coverSeed} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="bidi-auto truncate font-semibold">{c.title}</p>
+              <p className="text-xs text-muted-foreground">
+                {STAGE_LABELS[c.stage as CompetitionStage] ?? c.stage} · <bdi>{c.prize}</bdi>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {formatNumber(c.entries)} הגשות · {formatNumber(c.votes)} הצבעות
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {(Object.keys(COMPETITION_STATUS_LABELS) as CompetitionStatus[]).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => c.status !== s && statusMutation.mutate({ row: c, status: s })}
+                    disabled={statusMutation.isPending}
+                    aria-pressed={c.status === s}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold press-scale disabled:opacity-60 ${
+                      c.status === s
+                        ? s === "active"
+                          ? "bg-accent text-accent-foreground"
+                          : "bg-secondary text-secondary-foreground"
+                        : "border border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {COMPETITION_STATUS_LABELS[s]}
+                  </button>
+                ))}
+                <span className="ms-auto flex gap-1">
+                  <button
+                    onClick={() => setEditing(c)}
+                    aria-label="עריכה"
+                    className="grid h-8 w-8 place-items-center rounded-full border border-border press-scale hover:text-brand-coral"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setDeleting(c)}
+                    aria-label="מחיקה"
+                    className="grid h-8 w-8 place-items-center rounded-full border border-border press-scale hover:text-danger"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {editing && (
+        <CompetitionDialog
+          key={editing === "new" ? "new" : editing.id}
+          initial={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={invalidate}
+        />
+      )}
+
+      <AlertDialog open={!!deleting} onOpenChange={(v) => !v && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>למחוק את &quot;{deleting?.title}&quot;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleting && deleting.entries > 0
+                ? `יימחקו גם ${deleting.entries} ההגשות ו-${deleting.votes} ההצבעות שלה. הפוסטים עצמם נשארים אצל המשתמשים. `
+                : "אין בה הגשות. "}
+              לא ניתן לבטל את הפעולה.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ביטול</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleting) deleteMutation.mutate(deleting.id);
+              }}
+              disabled={deleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              מחק תחרות
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function CompetitionDialog({
+  initial,
+  onClose,
+  onSaved,
+}: {
+  initial: AdminCompetition | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [prize, setPrize] = useState(initial?.prize ?? "");
+  const [stage, setStage] = useState<CompetitionStage>(
+    (initial?.stage as CompetitionStage) ?? "quarter",
+  );
+  const [status, setStatus] = useState<CompetitionStatus>(
+    (initial?.status as CompetitionStatus) ?? "upcoming",
+  );
+  const [hue, setHue] = useState(initial?.hue ?? COVER_HUES[0]);
+  // New competitions get their real cover seed on the server; preview with a stable stand-in.
+  const previewSeed = initial?.coverSeed ?? "new-competition-preview";
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const data = { title, prize, stage, status, hue };
+      return initial
+        ? updateCompetition({ data: { ...data, id: initial.id } })
+        : createCompetition({ data });
+    },
+    onSuccess: () => {
+      toast.success(initial ? "התחרות עודכנה" : "התחרות נוצרה");
+      onSaved();
+      onClose();
+    },
+    onError: (e: Error) => toast.error(translateServerError(e.message)),
+  });
+
+  const canSave = !!title.trim() && !!prize.trim() && !saveMutation.isPending;
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{initial ? "עריכת תחרות" : "תחרות חדשה"}</DialogTitle>
+        </DialogHeader>
+
+        {/* Live preview — the same card the competitions page renders. */}
+        <div className="relative h-40 overflow-hidden rounded-2xl">
+          <PostCoverBg hue={hue} seed={previewSeed} />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent" />
+          <div className="absolute inset-x-0 bottom-0 p-3">
+            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-primary-foreground">
+              {STAGE_LABELS[stage]}
+            </span>
+            <p className="bidi-auto mt-1.5 truncate font-display text-xl font-bold text-white">
+              {title.trim() || "שם התחרות"}
+            </p>
+            <p className="flex items-center gap-1 text-xs text-white/80">
+              <Trophy className="h-3.5 w-3.5 text-accent" />
+              <bdi>{prize.trim() || "פרס"}</bdi>
+            </p>
+          </div>
+        </div>
+
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (canSave) saveMutation.mutate();
+          }}
+        >
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold text-muted-foreground">
+              שם התחרות
+            </span>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              maxLength={80}
+              placeholder="למשל: קול ישראל 2026"
+              className="w-full rounded-xl border border-border bg-input px-3 py-2.5 text-sm outline-none focus:border-primary"
+              autoFocus
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold text-muted-foreground">פרס</span>
+            <input
+              value={prize}
+              onChange={(e) => setPrize(e.target.value)}
+              maxLength={40}
+              placeholder="למשל: ₪10,000 או 5,000 מטבעות"
+              className="w-full rounded-xl border border-border bg-input px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+          </label>
+
+          <fieldset>
+            <legend className="mb-1 text-xs font-semibold text-muted-foreground">שלב</legend>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(Object.keys(STAGE_LABELS) as CompetitionStage[]).map((s) => (
+                <button
+                  type="button"
+                  key={s}
+                  onClick={() => setStage(s)}
+                  aria-pressed={stage === s}
+                  className={`rounded-xl py-2 text-sm font-semibold press-scale ${
+                    stage === s ? "bg-primary text-primary-foreground" : "border border-border"
+                  }`}
+                >
+                  {STAGE_LABELS[s]}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend className="mb-1 text-xs font-semibold text-muted-foreground">סטטוס</legend>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(Object.keys(COMPETITION_STATUS_LABELS) as CompetitionStatus[]).map((s) => (
+                <button
+                  type="button"
+                  key={s}
+                  onClick={() => setStatus(s)}
+                  aria-pressed={status === s}
+                  className={`rounded-xl py-2 text-sm font-semibold press-scale ${
+                    status === s ? "bg-primary text-primary-foreground" : "border border-border"
+                  }`}
+                >
+                  {COMPETITION_STATUS_LABELS[s]}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              בקרוב — מוצגת בלי אפשרות להגיש · פעילה — פתוחה להגשות ולהצבעות · הסתיימה — נסגרת
+            </p>
+          </fieldset>
+
+          <fieldset>
+            <legend className="mb-1 text-xs font-semibold text-muted-foreground">צבע עטיפה</legend>
+            <div className="flex flex-wrap gap-2">
+              {COVER_HUES.map((h) => (
+                <button
+                  type="button"
+                  key={h}
+                  onClick={() => setHue(h)}
+                  aria-label={`גוון ${h}`}
+                  aria-pressed={hue === h}
+                  className={`h-8 w-8 rounded-full press-scale ${
+                    hue === h ? "ring-2 ring-foreground ring-offset-2 ring-offset-background" : ""
+                  }`}
+                  style={{ backgroundColor: `hsl(${h} 80% 55%)` }}
+                />
+              ))}
+            </div>
+          </fieldset>
+
+          <DialogFooter>
+            <button
+              type="submit"
+              disabled={!canSave}
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-60"
+            >
+              {saveMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {initial ? "שמור שינויים" : "צור תחרות"}
+            </button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
