@@ -1,0 +1,4 @@
+# torch pinned to match Cog's prebuilt base image (r8.im/cog-base:cuda12.1-python3.11-torch2.4.1),
+# so the multi-GB PyTorch/CUDA layers already exist on Replicate and never get uploaded.
+torch==2.4.1
+audio-separator[gpu]>=0.28

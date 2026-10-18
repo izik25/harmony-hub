@@ -17,7 +17,7 @@ on:
 jobs:
   push:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       # The image (CUDA + PyTorch + ~1GB of baked-in model weights) doesn't fit in the runner's
       # default free disk; the preinstalled Android/.NET/Haskell toolchains are ~30GB we don't use.
@@ -32,6 +32,10 @@ jobs:
       - uses: replicate/setup-cog@v2
         with:
           token: ${{ secrets.REPLICATE_CLI_AUTH_TOKEN }}
+          # The action's default is still v0.9.8 (2024), which predates Cog's prebuilt base images:
+          # it builds on the full nvidia/cuda devel image and then has to upload every multi-GB
+          # CUDA/PyTorch layer to r8.im, where the biggest one kept timing out mid-push.
+          cog-version: v0.23.0
 
       - name: Push to Replicate
         working-directory: ml/vocal-cleanup
