@@ -108,8 +108,7 @@ const en = {
     reverb: "Reverb",
     eq: "EQ",
     compression: "Compression",
-    master: "AI Mastering",
-    manualEdit: "Manual Edit",
+    manualEdit: "Manual Mastering",
     sendComp: "Send to Competition",
     skipUpload: "Skip → Upload",
     chooserSubtitle: "How do you want to create?",
@@ -140,7 +139,6 @@ const en = {
       "Live monitoring is on — use headphones, or you'll get feedback/howling.",
     monitorBluetoothLatency:
       "Bluetooth audio has a built-in delay (100-300ms) — for real-time monitoring, try wired headphones instead.",
-    mixBalance: "Mix Balance",
     vocalVolume: "Vocal Volume",
     playbackVolume: "Playback Volume",
     remix: "Update Mix",
@@ -238,9 +236,6 @@ const en = {
     upload: "upload",
     oneFirst: "one first.",
     loading: "Loading…",
-    masteringPreset: "AI Mastering",
-    masteringDesc:
-      "One tap analyzes this take, cleans up background noise, corrects pitch where it drifts off-note, tightens the reverb, and tunes EQ/compression to match — already-clean, in-tune takes get a light polish instead of unnecessary processing. Open Manual Edit below to fine-tune anything by hand.",
     loadTrackFirst: "Load a track first.",
     couldNotLoad: "Could not load the track for editing.",
     exportFailed: "Export failed.",
@@ -249,13 +244,16 @@ const en = {
     masterAppliedClean: "Already sounds studio-clean — applied a light polish.",
     masterAppliedCleaned: "Cleaned up background noise and tightened the reverb.",
     masterAppliedPitchSuffix: "Pitch was gently corrected where it drifted off-note.",
-    cleanupTitle: "AI Vocal Cleanup",
+    cleanupTitle: "AI Vocal Cleanup & Mastering",
     cleanupDesc:
-      "Removes the room echo, background noise and any music that leaked into your mic — leaves just your dry voice, like it was recorded in a studio booth.",
-    cleanupStart: "Clean up my vocal",
-    cleanupProcessing: "Cleaning up… usually takes a minute or two",
-    cleanupFailed: "Cleanup didn't work this time — try again.",
-    cleanupUseClean: "AI clean",
+      "One tap does it all: AI removes the room echo, background noise and any music that leaked into your mic, then our engine balances your voice against the playback, adds just the right reverb, corrects pitch where it drifts, and brings it all up to a finished, release-ready level. Open Manual Mastering below to fine-tune anything yourself.",
+    cleanupStart: "Clean up & master my track",
+    cleanupProcessing: "Cleaning up and mastering… usually takes a minute or two",
+    cleanupFailed:
+      "The AI cleanup didn't work this time, so we mastered your original take instead. Try again for the full cleanup.",
+    cleanupReady: "Ready — cleaned, balanced and mastered.",
+    cleanupDoneToast: "Your track is cleaned up and mastered.",
+    cleanupUseClean: "AI version",
     cleanupUseOriginal: "Original",
     fixSection: "Fix a Section",
     fixSectionDesc:
@@ -639,7 +637,8 @@ const en = {
     fileTooLarge: "File too large (max 100MB).",
     imageGenNotConfigured: "AI cover images aren't configured yet.",
     vocalCleanupNotConfigured: "AI vocal cleanup isn't configured yet.",
-    vocalCleanupNoCredits: "The AI cleanup account is out of credits — add billing at replicate.com.",
+    vocalCleanupNoCredits:
+      "The AI cleanup account is out of credits — add billing at replicate.com.",
     vocalCleanupFailed: "AI vocal cleanup failed. Please try again.",
     vocalCleanupNoRawTake: "This track has no original recording to clean up.",
     imageGenNoCredits:
@@ -913,8 +912,7 @@ const he = {
     reverb: "ריוורב",
     eq: "EQ",
     compression: "דחיסה",
-    master: "מאסטרינג AI",
-    manualEdit: "עריכה ידנית",
+    manualEdit: "מאסטרינג ידני",
     sendComp: "שלח לתחרות",
     skipUpload: "דלג ← העלאה",
     chooserSubtitle: "איך תרצה ליצור?",
@@ -944,7 +942,6 @@ const he = {
     monitorFeedbackWarning: "ניטור חי פעיל — השתמש באוזניות, אחרת יתקבל פידבק (צפצוף).",
     monitorBluetoothLatency:
       "לאוזניות בלוטות' יש השהיה מובנית (100-300ms) — לניטור בזמן אמת, נסה אוזניות חוטיות.",
-    mixBalance: "איזון מיקס",
     vocalVolume: "עוצמת קול",
     playbackVolume: "עוצמת פלייבק",
     remix: "עדכן מיקס",
@@ -1042,9 +1039,6 @@ const he = {
     upload: "העלה",
     oneFirst: "אחד קודם.",
     loading: "טוען…",
-    masteringPreset: "מאסטרינג AI",
-    masteringDesc:
-      "לחיצה אחת מנתחת את ההקלטה, מנקה רעשי רקע, מתקנת גובה צליל במקומות שסוטים מהתו, מקטינה את הריוורב, ומכווננת EQ ודחיסה בהתאם — הקלטה שכבר נקייה ומדויקת בגובה הצליל תקבל ליטוש קליל בלבד, בלי עיבוד מיותר. פתח עריכה ידנית למטה כדי לדייק כל פרמטר בעצמך.",
     loadTrackFirst: "טען טראק קודם.",
     couldNotLoad: "לא ניתן היה לטעון את הטראק לעריכה.",
     exportFailed: "הייצוא נכשל.",
@@ -1053,13 +1047,16 @@ const he = {
     masterAppliedClean: "ההקלטה כבר נשמעת נקייה ברמת אולפן — הוחל ליטוש קליל.",
     masterAppliedCleaned: "נוקה רעש רקע והוקטן הריוורב לצליל ברור יותר.",
     masterAppliedPitchSuffix: "הגובה כוון בעדינות במקומות שסטה מהתו.",
-    cleanupTitle: "ניקוי קול AI",
+    cleanupTitle: "ניקוי קול ומאסטרינג AI",
     cleanupDesc:
-      "מסיר את ההד של החדר, רעשי רקע ומוזיקה שזלגה למיקרופון, ומשאיר רק את הקול היבש שלך, כאילו הוקלט בתא של אולפן.",
-    cleanupStart: "נקה את הקול שלי",
-    cleanupProcessing: "מנקה… בדרך כלל לוקח דקה–שתיים",
-    cleanupFailed: "הניקוי לא הצליח הפעם, נסה שוב.",
-    cleanupUseClean: "נקי AI",
+      "לחיצה אחת עושה הכול: ה-AI מסיר את ההד של החדר, רעשי רקע ומוזיקה שזלגה למיקרופון, ואז המנוע שלנו מאזן את הקול מול הפלייבק, מוסיף בדיוק את הריוורב שצריך, מתקן גובה צליל במקומות שסוטים, ומביא הכול לעוצמה של טראק מוגמר ומוכן לפרסום. פתח מאסטרינג ידני למטה כדי לדייק כל דבר בעצמך.",
+    cleanupStart: "נקה ועשה מאסטרינג",
+    cleanupProcessing: "מנקה ועושה מאסטרינג… בדרך כלל לוקח דקה–שתיים",
+    cleanupFailed:
+      "ניקוי ה-AI לא הצליח הפעם, אז עשינו מאסטרינג להקלטה המקורית. נסה שוב לניקוי המלא.",
+    cleanupReady: "מוכן — נוקה, אוזן ועבר מאסטרינג.",
+    cleanupDoneToast: "הטראק שלך נוקה ועבר מאסטרינג.",
+    cleanupUseClean: "גרסת AI",
     cleanupUseOriginal: "מקור",
     fixSection: "תקן קטע",
     fixSectionDesc:
@@ -1441,7 +1438,8 @@ const he = {
     fileTooLarge: "הקובץ גדול מדי (מקסימום 100MB).",
     imageGenNotConfigured: "יצירת תמונות קאבר בעזרת AI עדיין לא הוגדרה.",
     vocalCleanupNotConfigured: "ניקוי קול AI עדיין לא הוגדר.",
-    vocalCleanupNoCredits: "אין יתרת קרדיט בחשבון ניקוי ה-AI. צריך להוסיף אמצעי תשלום ב-replicate.com.",
+    vocalCleanupNoCredits:
+      "אין יתרת קרדיט בחשבון ניקוי ה-AI. צריך להוסיף אמצעי תשלום ב-replicate.com.",
     vocalCleanupFailed: "ניקוי הקול נכשל. נסה שוב.",
     vocalCleanupNoRawTake: "לטראק הזה אין הקלטה מקורית לנקות.",
     imageGenNoCredits:
@@ -1713,8 +1711,7 @@ const ar = {
     reverb: "صدى",
     eq: "EQ",
     compression: "ضغط",
-    master: "ماسترينج AI",
-    manualEdit: "تحرير يدوي",
+    manualEdit: "ماسترينج يدوي",
     sendComp: "إرسال للمسابقة",
     skipUpload: "تخطَّ ← رفع",
     chooserSubtitle: "كيف تريد أن تبدع؟",
@@ -1744,7 +1741,6 @@ const ar = {
     monitorFeedbackWarning: "المراقبة الحية مفعّلة — استخدم سماعات وإلا ستحصل على صدى/صفير.",
     monitorBluetoothLatency:
       "لسماعات البلوتوث تأخير مدمج (100-300ms) — للمراقبة بالوقت الفعلي، جرّب سماعات سلكية.",
-    mixBalance: "توازن المزيج",
     vocalVolume: "مستوى الصوت",
     playbackVolume: "مستوى التشغيل",
     remix: "تحديث المزيج",
@@ -1844,9 +1840,6 @@ const ar = {
     upload: "رفع",
     oneFirst: "واحداً أولاً.",
     loading: "جارٍ التحميل…",
-    masteringPreset: "ماسترينج AI",
-    masteringDesc:
-      "لمسة واحدة تحلّل هذا التسجيل، تنظّف ضوضاء الخلفية، تصحّح طبقة الصوت حيث تنحرف عن النغمة، تقلّل الصدى، وتضبط EQ والضغط تبعاً لذلك — تسجيل نظيف ومضبوط النغمة مسبقاً يحصل على لمسة تلميع خفيفة فقط دون معالجة زائدة. افتح التحرير اليدوي أدناه لضبط أي عنصر بنفسك.",
     loadTrackFirst: "حمّل مقطعاً أولاً.",
     couldNotLoad: "تعذّر تحميل المقطع للتحرير.",
     exportFailed: "فشل التصدير.",
@@ -1855,6 +1848,17 @@ const ar = {
     masterAppliedClean: "الصوت نظيف بالفعل بمستوى استوديو — تم تطبيق لمسة تلميع خفيفة.",
     masterAppliedCleaned: "تم تنظيف ضوضاء الخلفية وتقليل الصدى لصوت أوضح.",
     masterAppliedPitchSuffix: "تم ضبط طبقة الصوت بلطف حيث انحرفت عن النغمة.",
+    cleanupTitle: "تنظيف الصوت وماسترينج AI",
+    cleanupDesc:
+      "لمسة واحدة تقوم بكل شيء: الذكاء الاصطناعي يزيل صدى الغرفة وضوضاء الخلفية وأي موسيقى تسرّبت إلى الميكروفون، ثم يوازن محرّكنا صوتك مع المرافقة الموسيقية، ويضيف الصدى المناسب تماماً، ويصحّح طبقة الصوت حيث تنحرف، ويرفع كل شيء إلى مستوى مقطع نهائي جاهز للنشر. افتح الماسترينج اليدوي أدناه لضبط أي شيء بنفسك.",
+    cleanupStart: "نظّف واعمل ماسترينج",
+    cleanupProcessing: "جارٍ التنظيف والماسترينج… يستغرق عادةً دقيقة أو دقيقتين",
+    cleanupFailed:
+      "لم ينجح تنظيف الذكاء الاصطناعي هذه المرة، لذا عملنا ماسترينج للتسجيل الأصلي. حاول مرة أخرى للتنظيف الكامل.",
+    cleanupReady: "جاهز — تم التنظيف والموازنة والماسترينج.",
+    cleanupDoneToast: "تم تنظيف مقطعك وعمل الماسترينج له.",
+    cleanupUseClean: "نسخة AI",
+    cleanupUseOriginal: "الأصلي",
     fixSection: "إصلاح مقطع",
     fixSectionDesc:
       "غنّيت جملة بشكل خاطئ في مكان ما في المنتصف؟ حدّد أين تبدأ وأين تنتهي، أعد تسجيل هذا الجزء فقط، وسيتم دمجه مرة أخرى مع باقي التسجيل — لا شيء آخر يتغيّر.",

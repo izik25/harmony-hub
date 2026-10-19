@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import {
   Sliders,
   Wand2,
-  Waves,
   Send,
   Play,
   Pause,
@@ -126,7 +125,13 @@ type DraftDTO = Awaited<ReturnType<typeof getDraft>>;
 
 /** What the chain plays: separate vocal/backing stems when the draft has its raw take, or just the
  * already-mixed audioUrl (uploaded files, drafts from before stems existed) as the "vocal". */
-type Sources = { vocalUrl: string; backingUrl: string | null; stems: boolean };
+type Sources = {
+  vocalUrl: string;
+  backingUrl: string | null;
+  stems: boolean;
+  /** The vocal is the Replicate-cleaned take (functions/vocal-cleanup.ts), not the raw one. */
+  cleanVocal: boolean;
+};
 
 type Params = {
   speed: number;
@@ -467,11 +472,35 @@ function StudioPage() {
     enabled: !!draftId && !!draft?.rawVocalUrl,
     refetchInterval: (query) => (query.state.data?.status === "processing" ? 4000 : false),
   });
+  // "AI Cleanup & Mastering" is one action: the take goes to Replicate first, and once the cleaned
+  // vocal is loaded into the chain applyMaster runs on it automatically (see the load effect
+  // below). This flag is what tells that load "the user just asked for this — announce it", and
+  // is mirrored into a ref because the load effect's promise outlives the render that started it.
+  const [awaitingMaster, setAwaitingMasterState] = useState(false);
+  const awaitingMasterRef = useRef(false);
+  const setAwaitingMaster = (v: boolean) => {
+    awaitingMasterRef.current = v;
+    setAwaitingMasterState(v);
+  };
   const cleanupMutation = useMutation({
     mutationFn: () => startVocalCleanup({ data: { draftId: draftId! } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["vocalCleanup", draftId] }),
-    onError: (e: Error) => toast.error(translateServerError(e.message)),
+    onError: (e: Error) => {
+      toast.error(translateServerError(e.message));
+      // Replicate unavailable (not configured, out of credits…) shouldn't leave the user with
+      // nothing — master the raw take with our own engine instead.
+      if (awaitingMasterRef.current) {
+        setAwaitingMaster(false);
+        applyMasterRef.current({ announce: true });
+      }
+    },
   });
+  const cleanupState = cleanupStatus.data?.status;
+  useEffect(() => {
+    if (cleanupState !== "failed" || !awaitingMasterRef.current) return;
+    setAwaitingMaster(false);
+    applyMasterRef.current({ announce: true });
+  }, [cleanupState]);
   const cleanVocalUrl =
     cleanupStatus.data?.status === "succeeded"
       ? cleanupStatus.data.cleanVocalUrl
@@ -488,7 +517,9 @@ function StudioPage() {
     let cancelled = false;
     const objectUrls: string[] = [];
     const fallback = (): Sources | null =>
-      draft.audioUrl ? { vocalUrl: draft.audioUrl, backingUrl: null, stems: false } : null;
+      draft.audioUrl
+        ? { vocalUrl: draft.audioUrl, backingUrl: null, stems: false, cleanVocal: false }
+        : null;
     setSources(null);
     setReady(false);
     if (!draft.rawVocalUrl) {
@@ -512,7 +543,7 @@ function StudioPage() {
         return url;
       };
       const next = { vocalUrl: toUrl(vocal), backingUrl: backing ? toUrl(backing) : null };
-      if (!cancelled) setSources({ ...next, stems: true });
+      if (!cancelled) setSources({ ...next, stems: true, cleanVocal: !!clean });
     })().catch((err) => {
       console.error(err);
       if (!cancelled) setSources(fallback());
@@ -571,9 +602,19 @@ function StudioPage() {
         durationRef.current = dur;
         setDuration(dur);
         setReady(true);
+        // A cleaned vocal is never handed over raw: our own analysis decides gate, EQ,
+        // compression, reverb, vocal/playback balance and loudness on top of it right away, so
+        // the user lands on a finished track. Manual Mastering can still override any of it.
+        // Also runs when a requested cleanup couldn't load as stems and fell back to the mix —
+        // the user still asked for a mastered track.
+        if (sources.cleanVocal || awaitingMasterRef.current) {
+          applyMasterRef.current({ announce: awaitingMasterRef.current });
+          setAwaitingMaster(false);
+        }
       })
       .catch((err) => {
         if (!disposed) toast.error(t("studio.couldNotLoad"));
+        setAwaitingMaster(false);
         console.error(err);
       });
     return () => {
@@ -770,7 +811,7 @@ function StudioPage() {
   // top of the gate/EQ/compression/reverb tightening, it also pushes the take's overall loudness
   // up toward a real mastered level through makeupGain + a limiter (see gainBoostDb below) — the
   // one part of "mastering" that reshaping dynamics/tone alone can never produce on its own.
-  const applyMaster = () => {
+  const applyMaster = ({ announce }: { announce: boolean }) => {
     const chain = chainRef.current;
     const buffer = chain?.player.buffer.get();
     if (!chain || !buffer) {
@@ -818,12 +859,37 @@ function StudioPage() {
     // reference point) lands at 50 (flat, matching the "left closer to flat" intent above), only
     // pinning to the 40 floor for genuinely harsh/bright outliers past ~0.83.
     const eqAmt = clamp(65 - after.brightness * 30, 40, 68);
-    // Just a sheen, never a space: a phone take was sung in a real room and already carries it, so
-    // a polished "finished record" vocal comes from keeping that dry and up front, not from adding
-    // a second room on top. The 25-55 this used to set (on what was then the whole mix, drums
+    // A Replicate-cleaned vocal is the opposite case from everything below: the de-reverb model
+    // strips the room entirely, and a bone-dry voice reads as pasted on top of the backing rather
+    // than sitting in it. That one gets a short plate put back instead of being kept dry.
+    //
+    // Otherwise just a sheen, never a space: a phone take was sung in a real room and already
+    // carries it, so a polished "finished record" vocal comes from keeping that dry and up front,
+    // not from adding a second room on top. The 25-55 this used to set (on what was then the whole mix, drums
     // included) is what read as "too much echo / too studio-y". A noisier take — more of its own
     // room baked in — gets even less; a clean, close capture gets a touch more.
-    const reverbAmt = clamp(14 - (after.noiseFloorDb + 55) * 0.33, 4, 14);
+    const reverbAmt = sources?.cleanVocal
+      ? 20
+      : clamp(14 - (after.noiseFloorDb + 55) * 0.33, 4, 14);
+
+    // Vocal/playback balance, measured rather than left at the defaults: the cleaned take's level
+    // depends on how loud it was sung and how much the model took out, and backing tracks vary
+    // just as much. Aim for the vocal's loud passages sitting a couple of dB over the backing's
+    // (both on analyzeSignal's 85th-percentile level) — on top, but not floating off the music.
+    // Playback stays near its default and the vocal moves; playback only gives way once the vocal
+    // slider would run off its own range.
+    const backingBuffer = chain.backingPlayer.loaded
+      ? (chain.backingPlayer.buffer.get() ?? null)
+      : null;
+    let vocalPct = vocalVolume;
+    let playbackPct = playbackVolume;
+    if (stems && backingBuffer) {
+      const vocalOverBackingDb = 2;
+      const backingDb = analyzeSignal(backingBuffer).vocalLevelDb;
+      const ratio = Tone.dbToGain(vocalOverBackingDb - (after.vocalLevelDb - backingDb));
+      vocalPct = clamp(95 * ratio, 50, 200);
+      playbackPct = clamp(vocalPct / ratio, 0, 150);
+    }
 
     // The piece that actually makes mastering audible: push the take up toward a real "finished
     // record" loudness rather than just reshaping its dynamics/tone at the level it happened to be
@@ -848,9 +914,9 @@ function StudioPage() {
     // actually hits the limiter — not on the vocal stem alone.
     const peakDb = peakDbOfMix(
       buffer,
-      currentParams.vocalLevel,
-      chain.backingPlayer.loaded ? (chain.backingPlayer.buffer.get() ?? null) : null,
-      currentParams.backingLevel,
+      stems ? vocalPct / 100 : 1,
+      backingBuffer,
+      playbackPct / 100,
     );
     const limiterThresholdDb = -1;
     const headroomMarginDb = 3; // slack for the EQ high-shelf and reverb send between here and the limiter
@@ -902,13 +968,36 @@ function StudioPage() {
     setE(eqAmt);
     setC(compAmt);
     setGainDb(gainBoostDb);
-    const baseMsg = alreadyExcellent
-      ? t("studio.masterAppliedClean")
-      : t("studio.masterAppliedCleaned");
+    setVocalVolume(vocalPct);
+    setPlaybackVolume(playbackPct);
+    if (!announce) return;
+    const baseMsg = sources?.cleanVocal
+      ? t("studio.cleanupDoneToast")
+      : alreadyExcellent
+        ? t("studio.masterAppliedClean")
+        : t("studio.masterAppliedCleaned");
     toast.success(
       pitchStrength > 0 ? `${baseMsg} ${t("studio.masterAppliedPitchSuffix")}` : baseMsg,
     );
   };
+  const applyMasterRef = useRef(applyMaster);
+  applyMasterRef.current = applyMaster;
+
+  // The one "AI Cleanup & Mastering" button. With a raw take, it goes through Replicate first and
+  // the load effect masters the result once it's in; switching back from Original re-masters the
+  // same way. Uploads (no raw take to clean) go straight to our own mastering pass.
+  const runAiMaster = () => {
+    if (draft?.rawVocalUrl && !cleanVocalUrl) {
+      setAwaitingMaster(true);
+      cleanupMutation.mutate();
+    } else if (cleanVocalUrl && !useCleanVocal) {
+      setAwaitingMaster(true);
+      setUseCleanVocal(true);
+    } else {
+      applyMaster({ announce: true });
+    }
+  };
+  const aiMasterBusy = awaitingMaster || cleanupMutation.isPending || cleanupState === "processing";
 
   return (
     <AppShell>
@@ -1082,41 +1171,27 @@ function StudioPage() {
               />
             )}
 
-            {/* Live levels on the separate stems — what you hear is what publish renders, so
-                there's no separate "re-mix" step to apply them. */}
-            {stems && (
-              <section className="mt-5 rounded-3xl border border-border bg-card p-4 shadow-pop">
-                <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                  <Sliders className="h-4 w-4 text-accent" /> {t("record.mixBalance")}
-                </h2>
-                <Slider
-                  label={t("record.vocalVolume")}
-                  v={vocalVolume}
-                  onChange={setVocalVolume}
-                  min={50}
-                  max={200}
-                />
-                {sources?.backingUrl && (
-                  <Slider
-                    label={t("record.playbackVolume")}
-                    v={playbackVolume}
-                    onChange={setPlaybackVolume}
-                    min={0}
-                    max={150}
-                  />
-                )}
-              </section>
-            )}
-
-            {draft?.rawVocalUrl && (
-              <section className="mt-5 rounded-3xl border border-border bg-card p-4 shadow-pop">
-                <h2 className="flex items-center gap-2 text-sm font-semibold">
-                  <Sparkles className="h-4 w-4 text-accent" /> {t("studio.cleanupTitle")}
-                </h2>
-                <p className="mt-1 text-xs text-muted-foreground">{t("studio.cleanupDesc")}</p>
-                {cleanVocalUrl ? (
-                  // Before/after, not just "on": the only honest way to judge a model's result
-                  // on a given take is to flip between the two at the same spot.
+            {/* One action for a finished track: Replicate cleans the take, then our own analysis
+                masters it (reverb, balance, loudness…) — see runAiMaster. Manual Mastering below
+                is where anything it decided can be overridden by hand. */}
+            <section className="mt-5 rounded-3xl border border-accent/40 bg-accent/5 p-4">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-accent">
+                <Sparkles className="h-4 w-4" /> {t("studio.cleanupTitle")}
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">{t("studio.cleanupDesc")}</p>
+              {aiMasterBusy ? (
+                <div className="mt-3 flex items-center justify-center gap-2 rounded-full border border-border px-4 py-2.5 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> {t("studio.cleanupProcessing")}
+                </div>
+              ) : cleanVocalUrl ? (
+                <>
+                  {useCleanVocal && (
+                    <p className="mt-3 text-xs font-semibold text-accent">
+                      {t("studio.cleanupReady")}
+                    </p>
+                  )}
+                  {/* Before/after, not just "on": the only honest way to judge the result on a
+                      given take is to flip between the two at the same spot. */}
                   <div className="mt-3 grid grid-cols-2 gap-1 rounded-full bg-muted p-1 text-xs font-semibold">
                     {[
                       { on: true, label: t("studio.cleanupUseClean") },
@@ -1124,8 +1199,9 @@ function StudioPage() {
                     ].map((opt) => (
                       <button
                         key={String(opt.on)}
-                        onClick={() => setUseCleanVocal(opt.on)}
-                        className={`rounded-full px-3 py-2 transition-colors ${
+                        onClick={() => (opt.on ? runAiMaster() : setUseCleanVocal(false))}
+                        disabled={!ready}
+                        className={`rounded-full px-3 py-2 transition-colors disabled:opacity-50 ${
                           useCleanVocal === opt.on
                             ? "bg-brand-coral text-white shadow-pop-coral"
                             : "text-muted-foreground"
@@ -1135,40 +1211,24 @@ function StudioPage() {
                       </button>
                     ))}
                   </div>
-                ) : cleanupStatus.data?.status === "processing" || cleanupMutation.isPending ? (
-                  <div className="mt-3 flex items-center justify-center gap-2 rounded-full border border-border px-4 py-2.5 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" /> {t("studio.cleanupProcessing")}
-                  </div>
-                ) : (
-                  <>
-                    {cleanupStatus.data?.status === "failed" && (
-                      <p className="mt-2 text-xs text-danger">{t("studio.cleanupFailed")}</p>
-                    )}
-                    <button
-                      onClick={() => cleanupMutation.mutate()}
-                      className="press-scale mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-accent"
-                    >
-                      <Sparkles className="h-4 w-4" /> {t("studio.cleanupStart")}
-                    </button>
-                  </>
-                )}
-              </section>
-            )}
-
-            <section className="mt-5 rounded-3xl border border-accent/40 bg-accent/5 p-4">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-accent">
-                <Waves className="h-4 w-4" /> {t("studio.masteringPreset")}
-              </h2>
-              <p className="mt-1 text-xs text-muted-foreground">{t("studio.masteringDesc")}</p>
-              <motion.button
-                onClick={applyMaster}
-                whileTap={{ scale: 0.97 }}
-                whileHover={{ scale: 1.01, y: -1 }}
-                transition={{ type: "spring", stiffness: 450, damping: 28 }}
-                className="mt-3 w-full rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral"
-              >
-                {t("record.master")}
-              </motion.button>
+                </>
+              ) : (
+                <>
+                  {cleanupState === "failed" && (
+                    <p className="mt-2 text-xs text-danger">{t("studio.cleanupFailed")}</p>
+                  )}
+                  <motion.button
+                    onClick={runAiMaster}
+                    disabled={!ready}
+                    whileTap={ready ? { scale: 0.97 } : undefined}
+                    whileHover={ready ? { scale: 1.01, y: -1 } : undefined}
+                    transition={{ type: "spring", stiffness: 450, damping: 28 }}
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral disabled:opacity-50"
+                  >
+                    <Sparkles className="h-4 w-4" /> {t("studio.cleanupStart")}
+                  </motion.button>
+                </>
+              )}
             </section>
 
             <section className="mt-4 rounded-3xl border border-border bg-card p-4 shadow-pop">
@@ -1187,6 +1247,26 @@ function StudioPage() {
               </button>
               {manualOpen && (
                 <div className="mt-3">
+                  {/* Live levels on the separate stems — what you hear is what publish renders.
+                      On an already-mixed file there's nothing separate to balance. */}
+                  {stems && (
+                    <Slider
+                      label={t("record.vocalVolume")}
+                      v={vocalVolume}
+                      onChange={setVocalVolume}
+                      min={50}
+                      max={200}
+                    />
+                  )}
+                  {stems && sources?.backingUrl && (
+                    <Slider
+                      label={t("record.playbackVolume")}
+                      v={playbackVolume}
+                      onChange={setPlaybackVolume}
+                      min={0}
+                      max={150}
+                    />
+                  )}
                   <Slider
                     label={t("record.autotune")}
                     v={autotune}

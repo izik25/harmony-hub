@@ -164,6 +164,14 @@ function useMicLevels(active: boolean, monitor: boolean) {
   // start of recording on it.
   const gatedStreamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number>(0);
+  // Both contexts below, kept so resumeAudio() can wake them from inside a tap — a phone suspends
+  // (iOS: "interrupted") a page's AudioContexts while it's backgrounded, and one left suspended
+  // makes the gated stream record pure silence after resuming a paused take.
+  const ctxRef = useRef<AudioContext | null>(null);
+  const monitorCtxRef = useRef<AudioContext | null>(null);
+  // Bumped whenever the OS kills a mic track out from under us (app backgrounded mid-pause, an
+  // incoming call) so both captures below reopen instead of a resumed take recording a dead track.
+  const [restartKey, setRestartKey] = useState(0);
 
   // The stream MediaRecorder actually records from — nothing else ever touches this track.
   useEffect(() => {
@@ -180,7 +188,11 @@ function useMicLevels(active: boolean, monitor: boolean) {
           return;
         }
         streamRef.current = stream;
+        stream.getAudioTracks()[0]?.addEventListener("ended", () => {
+          if (!cancelled) setRestartKey((k) => k + 1);
+        });
         ctx = new AudioContext();
+        ctxRef.current = ctx;
         ctx.resume().catch(() => {});
         const source = ctx.createMediaStreamSource(stream);
         const analyser = ctx.createAnalyser();
@@ -224,10 +236,14 @@ function useMicLevels(active: boolean, monitor: boolean) {
       gate?.dispose();
       gatedStreamRef.current = null;
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      // Cleared so the recorder-setup effect waits for the reopened stream rather than starting
+      // on the one just stopped.
+      streamRef.current = null;
+      ctxRef.current = null;
       ctx?.close();
       setLevels(Array(BAR_COUNT).fill(6));
     };
-  }, [active]);
+  }, [active, restartKey]);
 
   // Live monitor ("Hear Yourself") gets its own, fully independent mic capture — a second
   // getUserMedia() call, its own MediaStreamTrack, opened only while monitoring is actually on.
@@ -259,6 +275,9 @@ function useMicLevels(active: boolean, monitor: boolean) {
           return;
         }
         monitorStream = stream;
+        stream.getAudioTracks()[0]?.addEventListener("ended", () => {
+          if (!cancelled) setRestartKey((k) => k + 1);
+        });
         // `latencyHint: "interactive"` is a broadly-safe preset the browser picks to cover any
         // kind of app; passing an explicit `0` instead is the spec's own escape hatch for exactly
         // this case — it asks the platform for the smallest render buffer it's actually willing
@@ -279,6 +298,7 @@ function useMicLevels(active: boolean, monitor: boolean) {
         } catch {
           ctx = new AudioContext({ latencyHint: 0 });
         }
+        monitorCtxRef.current = ctx;
         ctx.resume().catch(() => {});
         const source = ctx.createMediaStreamSource(stream);
         // Plain BiquadFilterNodes, not a compressor or anything with lookahead — these are
@@ -319,12 +339,18 @@ function useMicLevels(active: boolean, monitor: boolean) {
 
     return () => {
       cancelled = true;
+      monitorCtxRef.current = null;
       ctx?.close();
       monitorStream?.getTracks().forEach((t) => t.stop());
     };
-  }, [active, monitor]);
+  }, [active, monitor, restartKey]);
 
-  return { levels, stream: streamRef, gatedStream: gatedStreamRef };
+  const resumeAudio = () => {
+    ctxRef.current?.resume().catch(() => {});
+    monitorCtxRef.current?.resume().catch(() => {});
+  };
+
+  return { levels, stream: streamRef, gatedStream: gatedStreamRef, resumeAudio };
 }
 
 // Opens the raw selfie camera and, whenever a virtual background is chosen, layers a live
@@ -337,6 +363,10 @@ function useSelfieCameraStream(enabled: boolean, backgroundId: BackgroundId, onD
   const [outputStream, setOutputStream] = useState<MediaStream | null>(null);
   const composerRef = useRef<VirtualBackgroundComposer | null>(null);
   const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
+  // Bumped when the OS ends the camera track (app backgrounded while a take sits paused, another
+  // app grabbing the camera) so the selfie reopens on its own rather than resuming the take on a
+  // dead track — black/frozen video from that point on.
+  const [reopenKey, setReopenKey] = useState(0);
 
   useEffect(() => {
     if (!enabled) {
@@ -350,6 +380,13 @@ function useSelfieCameraStream(enabled: boolean, backgroundId: BackgroundId, onD
           camStream.getTracks().forEach((t) => t.stop());
           return;
         }
+        camStream.getVideoTracks()[0]?.addEventListener("ended", () => {
+          if (cancelled) return;
+          // Dropping the dead stream right away (rather than leaving it in place until the new
+          // one opens) is what makes record.tsx's recorder setup wait for the reopened camera.
+          setRawStream(null);
+          setReopenKey((k) => k + 1);
+        });
         setRawStream(camStream);
       })
       .catch(() => onDenied());
@@ -357,7 +394,7 @@ function useSelfieCameraStream(enabled: boolean, backgroundId: BackgroundId, onD
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
+  }, [enabled, reopenKey]);
 
   // A hidden <video> (never attached to the DOM, same technique video-splice.ts uses for its own
   // offscreen decoding) plays the raw stream purely as a frame source for the segmenter — the
@@ -374,7 +411,14 @@ function useSelfieCameraStream(enabled: boolean, backgroundId: BackgroundId, onD
     source.srcObject = rawStream;
     source.play().catch(() => {});
     sourceVideoRef.current = source;
+    // Browsers pause media elements while the page is hidden; without this the composer would
+    // keep drawing the one frame it had when the app was backgrounded.
+    const replay = () => {
+      if (!document.hidden) source.play().catch(() => {});
+    };
+    document.addEventListener("visibilitychange", replay);
     return () => {
+      document.removeEventListener("visibilitychange", replay);
       rawStream.getTracks().forEach((t) => t.stop());
       source.pause();
       source.srcObject = null;
@@ -465,7 +509,12 @@ function useCameraEffectsStream(
     source.srcObject = baseStream;
     source.play().catch(() => {});
     sourceVideoRef.current = source;
+    const replay = () => {
+      if (!document.hidden) source.play().catch(() => {});
+    };
+    document.addEventListener("visibilitychange", replay);
     return () => {
+      document.removeEventListener("visibilitychange", replay);
       source.pause();
       source.srcObject = null;
       if (sourceVideoRef.current === source) sourceVideoRef.current = null;
@@ -693,7 +742,6 @@ function RecordPage() {
   const effectiveCamStreamRef = useRef<MediaStream | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Array<BlobPart>>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   // The video element's Web Audio graph, built lazily the first time the pitch control is actually
   // used — see ensurePitchGraph/applyLivePitch below. Left untouched (native <video> playback,
@@ -719,13 +767,22 @@ function RecordPage() {
   // Resolves once a live recorder's audio has been folded into baseBlobRef; awaited before
   // anything (finish, a new scrub) reads baseBlobRef so it never races an in-flight checkpoint.
   const checkpointPromiseRef = useRef<Promise<void>>(Promise.resolve());
+  // Every recorder's fold-into-baseBlobRef runs on this one queue, in stop order. A camera take's
+  // commit is a real-time re-encode (video-splice.ts) that can easily outlast a short pause, and
+  // without the queue a quick pause → continue → pause would start a second commit from the
+  // still-stale baseBlobRef and the later finisher would silently drop the earlier segment.
+  const commitChainRef = useRef<Promise<void>>(Promise.resolve());
+  // The backing video's exact position when a scrub began — where "no real rewind" snaps it back
+  // to. `seconds` is only a whole-second ticker, so snapping to it could leave the backing up to
+  // a second out of step with what was actually recorded.
+  const scrubOriginRef = useRef<number | null>(null);
   const checkpointResolveRef = useRef<(() => void) | null>(null);
   const stopModeRef = useRef<"checkpoint" | "finish">("checkpoint");
   // Whether recording was actively running when a scrub gesture began, so releasing without a
   // real rewind (or answering "no" to the cut prompt) knows whether to resume or stay paused.
   const wasRecordingRef = useRef(false);
   const recording = phase === "recording";
-  const { stream, gatedStream } = useMicLevels(
+  const { stream, gatedStream, resumeAudio } = useMicLevels(
     phase === "recording" || phase === "paused",
     monitorEnabled,
   );
@@ -766,6 +823,15 @@ function RecordPage() {
     effectiveCamStreamRef.current = selfieStream;
     if (camVideoRef.current) camVideoRef.current.srcObject = selfieStream;
   }, [selfieStream]);
+  // Same reason as the hidden source videos inside the camera hooks: coming back to the app after
+  // a pause, the self-preview should be live again, not frozen on its last frame.
+  useEffect(() => {
+    const replay = () => {
+      if (!document.hidden) camVideoRef.current?.play().catch(() => {});
+    };
+    document.addEventListener("visibilitychange", replay);
+    return () => document.removeEventListener("visibilitychange", replay);
+  }, []);
 
   // Remembers the last background/look/overlay pick across visits, same pattern as monitorEnabled
   // above.
@@ -968,50 +1034,58 @@ function RecordPage() {
     // mic is recorded on its own, clean — the karaoke backing track (if any) gets blended in
     // afterward via an offline render (finishMutation), not mixed live while recording.
     let cancelled = false;
-    const waitForStream = setInterval(() => {
-      if (cancelled) return clearInterval(waitForStream);
-      if (stream.current) {
-        clearInterval(waitForStream);
-        chunksRef.current = [];
-        if (videoRef.current) {
-          // Only rewind the backing video to the top of the chosen segment for a genuinely fresh
-          // take — resuming after a pause/scrub checkpoint should carry on from wherever it
-          // already is.
-          if (!baseBlobRef.current) videoRef.current.currentTime = segmentStart;
-          videoRef.current.play().catch(() => {});
-          // The mic stream just became ready, meaning getUserMedia (with echoCancellation) just
-          // granted permission — Android may have switched to voice-call routing as a result, so
-          // (re-)pin playback to a connected headset if one's available.
-          routeToHeadphonesIfAvailable(videoRef.current);
-        }
-        // Explicit bitrate — MediaRecorder's default Opus encoding is conservative enough that
-        // the raw capture itself can come out sounding thin/"voice memo"-like before any
-        // cleanup even runs. 128kbps is comfortably high quality for a mono voice track.
-        // Prefers the gated stream (background noise already reduced — see mic-noise-gate.ts)
-        // once it's ready; the raw stream is a safe fallback for the rare case where this
-        // recorder starts before the AudioWorklet has finished registering.
-        const recordingStream = gatedStream.current ?? stream.current;
-        const usingCamera = cameraEnabled && !!effectiveCamStreamRef.current;
-        const recorder = usingCamera
-          ? buildCombinedRecorder(recordingStream, effectiveCamStreamRef.current!).recorder
-          : new MediaRecorder(recordingStream, { audioBitsPerSecond: 128_000 });
-        // Which splice implementation folds/cuts this take's checkpoints — audio-splice.ts's
-        // in-memory buffer slicing for a normal take, video-splice.ts's canvas re-encode for a
-        // camera one (see that file). Captured once per recorder since cameraEnabled can't
-        // change mid-take (the toggle is disabled once recording starts).
-        const splice = usingCamera ? videoSplice : { commitCheckpoint, trimCheckpoint };
-        recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) chunksRef.current.push(e.data);
-        };
-        recorder.onstop = async () => {
-          const newBlob = new Blob(chunksRef.current, {
-            type: recorder.mimeType || (usingCamera ? "video/webm" : "audio/webm"),
-          });
-          chunksRef.current = [];
-          const mode = stopModeRef.current;
-          const resolveCheckpoint = checkpointResolveRef.current;
-          checkpointResolveRef.current = null;
+    let started = false;
+    const tryStart = () => {
+      if (cancelled || started) return;
+      if (!stream.current) return;
+      // A camera take also waits for a live selfie stream — right after resuming from a pause the
+      // camera may still be reopening (see useSelfieCameraStream), and starting without it would
+      // drop video from the rest of the take.
+      if (cameraEnabled && !effectiveCamStreamRef.current) return;
+      started = true;
+      clearInterval(waitForStream);
+      const chunks: BlobPart[] = [];
+      if (videoRef.current) {
+        // Only rewind the backing video to the top of the chosen segment for a genuinely fresh
+        // take — resuming after a pause/scrub checkpoint should carry on from wherever it
+        // already is.
+        if (!baseBlobRef.current) videoRef.current.currentTime = segmentStart;
+        videoRef.current.play().catch(() => {});
+        // The mic stream just became ready, meaning getUserMedia (with echoCancellation) just
+        // granted permission — Android may have switched to voice-call routing as a result, so
+        // (re-)pin playback to a connected headset if one's available.
+        routeToHeadphonesIfAvailable(videoRef.current);
+      }
+      // Explicit bitrate — MediaRecorder's default Opus encoding is conservative enough that
+      // the raw capture itself can come out sounding thin/"voice memo"-like before any
+      // cleanup even runs. 128kbps is comfortably high quality for a mono voice track.
+      // Prefers the gated stream (background noise already reduced — see mic-noise-gate.ts)
+      // once it's ready; the raw stream is a safe fallback for the rare case where this
+      // recorder starts before the AudioWorklet has finished registering.
+      const recordingStream = gatedStream.current ?? stream.current;
+      const usingCamera = cameraEnabled && !!effectiveCamStreamRef.current;
+      const recorder = usingCamera
+        ? buildCombinedRecorder(recordingStream, effectiveCamStreamRef.current!).recorder
+        : new MediaRecorder(recordingStream, { audioBitsPerSecond: 128_000 });
+      // Which splice implementation folds/cuts this take's checkpoints — audio-splice.ts's
+      // in-memory buffer slicing for a normal take, video-splice.ts's canvas re-encode for a
+      // camera one (see that file). Captured once per recorder since cameraEnabled can't
+      // change mid-take (the toggle is disabled once recording starts).
+      const splice = usingCamera ? videoSplice : { commitCheckpoint, trimCheckpoint };
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      recorder.onstop = () => {
+        const newBlob = new Blob(chunks, {
+          type: recorder.mimeType || (usingCamera ? "video/webm" : "audio/webm"),
+        });
+        const mode = stopModeRef.current;
+        const resolveCheckpoint = checkpointResolveRef.current;
+        checkpointResolveRef.current = null;
 
+        // Queued behind any earlier commit still in flight (see commitChainRef), so
+        // baseBlobRef is read only once every earlier segment has been folded into it.
+        commitChainRef.current = commitChainRef.current.then(async () => {
           if (mode === "finish") {
             if (baseBlobRef.current) {
               try {
@@ -1039,12 +1113,18 @@ function RecordPage() {
             }
           }
           resolveCheckpoint?.();
-        };
-        recorder.start();
-        mediaRecorderRef.current = recorder;
-        spliceRef.current = splice;
-      }
-    }, 100);
+        });
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      spliceRef.current = splice;
+    };
+    const waitForStream = setInterval(tryStart, 100);
+    // Checked right away too, not just on the first 100ms tick: on a resume the mic is already
+    // open, and the backing video started playing back in startOrResume's tap — every
+    // millisecond until the recorder starts would otherwise land as vocal-vs-backing drift,
+    // stacking up with every pause.
+    tryStart();
     return () => {
       cancelled = true;
       clearInterval(waitForStream);
@@ -1073,6 +1153,15 @@ function RecordPage() {
       if (fresh) videoRef.current.currentTime = segmentStart;
       videoRef.current.play().catch(() => {});
     }
+    // Also inside the tap for the same reason: a phone that backgrounded the app during a pause
+    // suspends its AudioContexts (mic gate/monitor, and the pitch graph the backing track plays
+    // through once a key change was used), and only a user gesture can reliably wake them.
+    resumeAudio();
+    if (pitchShiftRef.current)
+      Tone.getContext()
+        .resume()
+        .catch(() => {});
+    camVideoRef.current?.play().catch(() => {});
     setPhase("recording");
     setOpenPanel(null); // don't leave a background/filter tray crowding the controls mid-take
   };
@@ -1082,7 +1171,7 @@ function RecordPage() {
   // starting a new scrub) await this instead of racing the async decode/encode.
   const stopRecorder = (mode: "checkpoint" | "finish"): Promise<void> => {
     const recorder = mediaRecorderRef.current;
-    if (!recorder || recorder.state !== "recording") return Promise.resolve();
+    if (!recorder || recorder.state !== "recording") return commitChainRef.current;
     const promise = new Promise<void>((resolve) => {
       checkpointResolveRef.current = resolve;
     });
@@ -1100,11 +1189,14 @@ function RecordPage() {
   const finishRecording = async () => {
     setFinishing(true);
     videoRef.current?.pause();
-    await checkpointPromiseRef.current;
     if (mediaRecorderRef.current?.state === "recording") {
+      // Stopped right away rather than after awaiting an earlier pause's commit — onstop's
+      // commitChainRef queue already orders it after that, and waiting first kept recording a
+      // tail past where the backing video had just stopped.
       await stopRecorder("finish"); // onstop calls finishMutation.mutate itself
-    } else if (baseBlobRef.current) {
-      finishMutation.mutate(baseBlobRef.current);
+    } else {
+      await commitChainRef.current;
+      if (baseBlobRef.current) finishMutation.mutate(baseBlobRef.current);
     }
     setPhase("finished");
   };
@@ -1119,6 +1211,7 @@ function RecordPage() {
   const handleScrubStart = () => {
     if (finishing || seconds < 1) return;
     wasRecordingRef.current = phase === "recording";
+    scrubOriginRef.current = videoRef.current?.currentTime ?? null;
     setPreviewSeconds(seconds);
     if (wasRecordingRef.current) {
       videoRef.current?.pause();
@@ -1127,6 +1220,11 @@ function RecordPage() {
       // length stays put for the rest of the gesture instead of growing while the user drags.
       setPhase("paused");
     }
+  };
+
+  const restoreScrubOrigin = () => {
+    if (!videoRef.current) return;
+    videoRef.current.currentTime = scrubOriginRef.current ?? segmentStart + seconds;
   };
 
   const handleScrubMove = (value: number) => {
@@ -1144,7 +1242,7 @@ function RecordPage() {
     if (value >= seconds) {
       // No real rewind — a tap, or released right back where it started. Snap the video back to
       // "now" in case the drag scrubbed it away from that.
-      if (videoRef.current) videoRef.current.currentTime = segmentStart + seconds;
+      restoreScrubOrigin();
       resumeIfWasRecording();
       return;
     }
@@ -1153,7 +1251,7 @@ function RecordPage() {
 
   const cancelCut = () => {
     setCutConfirm(null);
-    if (videoRef.current) videoRef.current.currentTime = segmentStart + seconds;
+    restoreScrubOrigin();
     resumeIfWasRecording();
   };
 
@@ -1690,6 +1788,15 @@ function ScrubBar({
           if (!draggingRef.current) return;
           draggingRef.current = false;
           onDragEnd(seekFromClientX(e.clientX));
+        }}
+        // The OS can yank the pointer mid-drag (a notification, a system gesture, an incoming
+        // call) — treat that as an aborted gesture rather than a cut. Ending at totalSeconds is
+        // the caller's "no real rewind" case, so it snaps back to "now" and resumes recording if
+        // it was running, instead of leaving the bar stuck mid-drag with the take paused.
+        onPointerCancel={() => {
+          if (!draggingRef.current) return;
+          draggingRef.current = false;
+          onDragEnd(totalSeconds);
         }}
         className="relative h-8 w-full touch-none"
       >
