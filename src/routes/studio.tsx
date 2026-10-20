@@ -540,25 +540,40 @@ function StudioPage() {
     awaitingMasterRef.current = v;
     setAwaitingMasterState(v);
   };
+  // Why the cleanup couldn't start (not configured, out of credits…), kept on screen. There's
+  // deliberately no silent fallback to mastering the raw take: that made a cleanup that never
+  // reached Replicate look exactly like one that had.
+  const [cleanupError, setCleanupError] = useState("");
+  // Wall-clock time since the cleanup was sent, ticking while it's in flight.
+  const [cleanupStartedAt, setCleanupStartedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const cleanupMutation = useMutation({
     mutationFn: () => startVocalCleanup({ data: { draftId: draftId! } }),
+    onMutate: () => {
+      setCleanupError("");
+      setCleanupStartedAt(Date.now());
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["vocalCleanup", draftId] }),
     onError: (e: Error) => {
-      toast.error(translateServerError(e.message));
-      // Replicate unavailable (not configured, out of credits…) shouldn't leave the user with
-      // nothing — master the raw take with our own engine instead.
-      if (awaitingMasterRef.current) {
-        setAwaitingMaster(false);
-        applyMasterRef.current({ announce: true });
-      }
+      setAwaitingMaster(false);
+      setCleanupError(translateServerError(e.message));
     },
   });
   const cleanupState = cleanupStatus.data?.status;
   useEffect(() => {
-    if (cleanupState !== "failed" || !awaitingMasterRef.current) return;
-    setAwaitingMaster(false);
-    applyMasterRef.current({ announce: true });
+    if (cleanupState === "failed") setAwaitingMaster(false);
   }, [cleanupState]);
+  useEffect(() => {
+    if (cleanupState !== "processing" && !cleanupMutation.isPending) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [cleanupState, cleanupMutation.isPending]);
+  // Evidence the take really went through Replicate: the job id and the GPU time Replicate
+  // reported, from the poll that collected the result.
+  const replicateProof =
+    cleanupStatus.data?.status === "succeeded" && "predictionId" in cleanupStatus.data
+      ? cleanupStatus.data
+      : null;
   const cleanVocalUrl =
     cleanupStatus.data?.status === "succeeded"
       ? cleanupStatus.data.cleanVocalUrl
@@ -1117,12 +1132,28 @@ function StudioPage() {
   const aiMasterBusy =
     awaitingMaster || cleaningNow || masterStage === "analyzing" || masterStage === "mastering";
   type StepState = "pending" | "active" | "done";
-  const steps: { label: string; state: StepState; progress?: number }[] = [
+  const replicateStatus =
+    cleanupStatus.data?.status === "processing" && "replicateStatus" in cleanupStatus.data
+      ? cleanupStatus.data.replicateStatus
+      : null;
+  const steps: { label: string; state: StepState; progress?: number; detail?: string }[] = [
     ...(draft?.rawVocalUrl
       ? [
           {
             label: t("studio.stageClean"),
             state: (cleaningNow ? "active" : cleanVocalUrl ? "done" : "pending") as StepState,
+            detail: cleaningNow
+              ? [
+                  replicateStatus === "starting"
+                    ? t("studio.replicateStarting")
+                    : replicateStatus
+                      ? t("studio.replicateProcessing")
+                      : t("studio.replicateSending"),
+                  cleanupStartedAt ? formatTime(Math.max(0, (now - cleanupStartedAt) / 1000)) : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : undefined,
           },
         ]
       : []),
@@ -1318,21 +1349,26 @@ function StudioPage() {
               {aiMasterBusy ? (
                 <ol className="mt-3 space-y-2 rounded-2xl border border-border bg-card/60 p-3">
                   {steps.map((step) => (
-                    <li key={step.label} className="flex items-center gap-2 text-sm">
-                      {step.state === "done" ? (
-                        <Check className="h-4 w-4 shrink-0 text-accent" />
-                      ) : step.state === "active" ? (
-                        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
-                      ) : (
-                        <span className="h-4 w-4 shrink-0 rounded-full border border-border" />
-                      )}
-                      <span className={step.state === "pending" ? "text-muted-foreground" : ""}>
-                        {step.label}
-                      </span>
-                      {step.progress != null && (
-                        <span className="ms-auto font-mono text-xs text-accent">
-                          {Math.round(step.progress * 100)}%
+                    <li key={step.label}>
+                      <div className="flex items-center gap-2 text-sm">
+                        {step.state === "done" ? (
+                          <Check className="h-4 w-4 shrink-0 text-accent" />
+                        ) : step.state === "active" ? (
+                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
+                        ) : (
+                          <span className="h-4 w-4 shrink-0 rounded-full border border-border" />
+                        )}
+                        <span className={step.state === "pending" ? "text-muted-foreground" : ""}>
+                          {step.label}
                         </span>
+                        {step.progress != null && (
+                          <span className="ms-auto font-mono text-xs text-accent">
+                            {Math.round(step.progress * 100)}%
+                          </span>
+                        )}
+                      </div>
+                      {step.detail && (
+                        <p className="ms-6 mt-0.5 text-xs text-muted-foreground">{step.detail}</p>
                       )}
                     </li>
                   ))}
@@ -1359,6 +1395,17 @@ function StudioPage() {
                       {t("studio.cleanupReady")}
                     </p>
                   )}
+                  {replicateProof && (
+                    <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                      {t("studio.replicateDone", {
+                        seconds:
+                          replicateProof.predictSeconds != null
+                            ? Math.round(replicateProof.predictSeconds)
+                            : "?",
+                        id: replicateProof.predictionId,
+                      })}
+                    </p>
+                  )}
                   {/* Before/after, not just "on": the only honest way to judge the result on a
                       given take is to flip between the two at the same spot. */}
                   <div className="mt-3 grid grid-cols-2 gap-1 rounded-full bg-muted p-1 text-xs font-semibold">
@@ -1383,8 +1430,12 @@ function StudioPage() {
                 </>
               ) : (
                 <>
-                  {cleanupState === "failed" && (
-                    <p className="mt-2 text-xs text-danger">{t("studio.cleanupFailed")}</p>
+                  {cleanupError ? (
+                    <p className="mt-2 text-xs text-danger">{cleanupError}</p>
+                  ) : (
+                    cleanupState === "failed" && (
+                      <p className="mt-2 text-xs text-danger">{t("studio.cleanupFailed")}</p>
+                    )
                   )}
                   <motion.button
                     onClick={runAiMaster}

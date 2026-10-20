@@ -51,7 +51,7 @@ export async function routeAudioContextToHeadphonesIfAvailable(
   return { isBluetooth: /bluetooth/i.test(match.label) };
 }
 
-async function findHeadphoneOutput(): Promise<MediaDeviceInfo | undefined> {
+export async function findHeadphoneOutput(): Promise<MediaDeviceInfo | undefined> {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const outputs = devices.filter((d) => d.kind === "audiooutput");

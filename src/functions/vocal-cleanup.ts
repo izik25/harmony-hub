@@ -27,6 +27,8 @@ type Prediction = {
   status: "starting" | "processing" | "succeeded" | "failed" | "canceled";
   output?: string | string[] | null;
   error?: string | null;
+  /** predict_time: GPU seconds Replicate itself measured for the run. */
+  metrics?: { predict_time?: number } | null;
 };
 
 function replicateConfig() {
@@ -107,6 +109,7 @@ export const startVocalCleanup = createServerFn({ method: "POST" })
         }),
       })) as Prediction;
 
+      console.log("Vocal cleanup prediction started", prediction.id, "for draft", draft.id);
       await db.update(posts).set({ vocalCleanupJob: prediction.id }).where(eq(posts.id, draft.id));
       return { status: "processing" as const };
     } catch (error) {
@@ -133,7 +136,15 @@ export const getVocalCleanupStatus = createServerFn({ method: "GET" })
         await db.update(posts).set({ vocalCleanupJob: "" }).where(eq(posts.id, draft.id));
         return { status: "failed" as const };
       }
-      if (prediction.status !== "succeeded") return { status: "processing" as const };
+      // Passed through so Studio can show what Replicate is actually doing — "starting" is a GPU
+      // cold boot, which on its own can run a few minutes.
+      if (prediction.status !== "succeeded") {
+        return {
+          status: "processing" as const,
+          predictionId: job,
+          replicateStatus: prediction.status,
+        };
+      }
 
       const outputUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
       if (!outputUrl) throw new Error("vocalCleanupFailed");
@@ -153,7 +164,14 @@ export const getVocalCleanupStatus = createServerFn({ method: "GET" })
         .set({ cleanVocalUrl, vocalCleanupJob: "" })
         .where(and(eq(posts.id, draft.id), eq(posts.vocalCleanupJob, job)))
         .returning({ id: posts.id });
-      if (landed.length > 0) return { status: "succeeded" as const, cleanVocalUrl };
+      if (landed.length > 0) {
+        return {
+          status: "succeeded" as const,
+          cleanVocalUrl,
+          predictionId: job,
+          predictSeconds: prediction.metrics?.predict_time ?? null,
+        };
+      }
       // Either an overlapping poll already stored it (fine — report that one) or the take changed.
       const current = await ownedDraft(data.draftId);
       return current.cleanVocalUrl

@@ -67,6 +67,7 @@ import {
 import {
   routeToHeadphonesIfAvailable,
   routeAudioContextToHeadphonesIfAvailable,
+  findHeadphoneOutput,
 } from "@/lib/audio-output";
 import { createLiveNoiseGate, type LiveNoiseGate } from "@/lib/mic-noise-gate";
 
@@ -144,11 +145,12 @@ const MIC_CONSTRAINTS: ChromeAudioConstraints = {
 // as "hearing myself a beat late" — and none of it needs to be clean, since this stream is never
 // recorded, only listened to live. `latency: 0` additionally asks the capture layer itself for
 // the shortest buffering it can manage instead of its default (smoothness-favoring) buffer size.
+// No sampleRate ask: the mic's own native rate means no capture-side conversion at all, and the
+// monitor context below is sized to the output device instead (see the monitor effect).
 const MONITOR_CONSTRAINTS: MediaTrackConstraints & { latency?: ConstrainDouble } = {
   echoCancellation: false,
   noiseSuppression: false,
   autoGainControl: false,
-  sampleRate: { ideal: 48000 },
   channelCount: { ideal: 1 },
   latency: { ideal: 0 },
 };
@@ -259,83 +261,87 @@ function useMicLevels(active: boolean, monitor: boolean) {
   // rather than an <audio> element. HTMLMediaElement playback runs through a separate, much more
   // heavily buffered rendering pipeline (built for smooth *network* playback), which is where most
   // of "hearing myself a beat late" was actually coming from — MONITOR_CONSTRAINTS' `latency: 0`
-  // only shortens the *capture* side. `latencyHint: "interactive"` asks the output side for the
-  // shortest buffer it can manage too, so both ends of the loop are tuned for immediacy.
+  // only shortens the *capture* side. `latencyHint: 0` asks the output side for the shortest
+  // buffer it can manage too, so both ends of the loop are tuned for immediacy.
   useEffect(() => {
     if (!active || !monitor) return;
     let cancelled = false;
     let monitorStream: MediaStream | undefined;
     let ctx: AudioContext | undefined;
 
-    navigator.mediaDevices
-      .getUserMedia({ audio: MONITOR_CONSTRAINTS })
-      .then((stream) => {
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        monitorStream = stream;
-        stream.getAudioTracks()[0]?.addEventListener("ended", () => {
-          if (!cancelled) setRestartKey((k) => k + 1);
-        });
-        // `latencyHint: "interactive"` is a broadly-safe preset the browser picks to cover any
-        // kind of app; passing an explicit `0` instead is the spec's own escape hatch for exactly
-        // this case — it asks the platform for the smallest render buffer it's actually willing
-        // to hand a page, not a generic safety margin, and on Chrome/Android in particular that's
-        // a materially smaller buffer than "interactive" lands on. Also matches the context's
-        // processing rate to whatever the track actually negotiated (MONITOR_CONSTRAINTS only
-        // asks for 48000 "ideally" — a Bluetooth headset mic especially can land well under
-        // that), since a mismatch forces Web Audio to resample the track before anything else can
-        // run, adding its own smearing/delay on top. Some platforms (older Safari in particular)
-        // reject an explicit sampleRate they can't honor outright, so this falls back to the
-        // browser's own default rather than leaving the monitor silently broken there.
-        const negotiatedRate = stream.getAudioTracks()[0]?.getSettings().sampleRate;
-        try {
-          ctx = new AudioContext({
-            latencyHint: 0,
-            ...(negotiatedRate ? { sampleRate: negotiatedRate } : {}),
-          });
-        } catch {
-          ctx = new AudioContext({ latencyHint: 0 });
-        }
-        monitorCtxRef.current = ctx;
-        ctx.resume().catch(() => {});
-        const source = ctx.createMediaStreamSource(stream);
-        // Plain BiquadFilterNodes, not a compressor or anything with lookahead — these are
-        // single-sample IIR filters with no internal buffering, so unlike NS/AEC (skipped above
-        // for exactly this reason) they add no perceptible latency to the monitor loop. Without
-        // them the monitor is the completely raw, unshaped capsule signal (MONITOR_CONSTRAINTS
-        // turns off NS/AGC too), which is what was reading as thin/harsh once latency itself
-        // stopped being the complaint (wired headphones). Mirrors the same warmth/presence/rumble
-        // shaping mix-recording.ts applies to the actual recording, just lighter — this is only
-        // ever heard live, never baked into anything.
-        const rumble = ctx.createBiquadFilter();
-        rumble.type = "highpass";
-        rumble.frequency.value = 90;
-        const warmth = ctx.createBiquadFilter();
-        warmth.type = "lowshelf";
-        warmth.frequency.value = 200;
-        warmth.gain.value = 1.5;
-        const presence = ctx.createBiquadFilter();
-        presence.type = "peaking";
-        presence.frequency.value = 3000;
-        presence.Q.value = 1;
-        presence.gain.value = 3;
-        const gain = ctx.createGain();
-        gain.gain.value = MONITOR_GAIN;
-        source
-          .connect(rumble)
-          .connect(warmth)
-          .connect(presence)
-          .connect(gain)
-          .connect(ctx.destination);
-        // The mic getUserMedia() above (MIC_CONSTRAINTS) just granted permission, which is what
-        // makes real device labels available — safe to attempt the headphone-routing fix now.
-        routeAudioContextToHeadphonesIfAvailable(ctx).then((routed) => {
-          if (routed?.isBluetooth) toast.info(i18n.t("record.monitorBluetoothLatency"));
-        });
-      })
-      .catch(() => {}); // monitor is optional — a failure here shouldn't interrupt recording
+    (async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: MONITOR_CONSTRAINTS });
+      if (cancelled) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      monitorStream = stream;
+      stream.getAudioTracks()[0]?.addEventListener("ended", () => {
+        if (!cancelled) setRestartKey((k) => k + 1);
+      });
+      // The mic permission just granted above is what makes real device labels available, so the
+      // headset can be picked now — before the context exists rather than switched to after.
+      const headphone = await findHeadphoneOutput();
+      if (cancelled) return;
+      // `latencyHint: "interactive"` is a broadly-safe preset the browser picks to cover any
+      // kind of app; passing an explicit `0` instead is the spec's own escape hatch for exactly
+      // this case — it asks the platform for the smallest render buffer it's actually willing
+      // to hand a page, not a generic safety margin, and on Chrome/Android in particular that's
+      // a materially smaller buffer than "interactive" lands on.
+      //
+      // No explicit sampleRate, and the headset passed as `sinkId` up front: the context then
+      // runs at the native rate of the device it actually plays through. An earlier version
+      // matched the context to the mic track's rate instead, which moved the resample to the
+      // output side wherever the two differ (a 44.1kHz headset, a 16kHz Bluetooth mic) — and on
+      // Android a stream that isn't at the device's native rate can't use the low-latency
+      // fast-mixer path at all, which costs far more than the few-sample converter Web Audio
+      // runs on the input side instead. Calling setSinkId afterward would also reopen the output
+      // on a context already sized for the old device, so it's only the fallback now, for a
+      // browser that ignores the `sinkId` option.
+      try {
+        ctx = new AudioContext({
+          latencyHint: 0,
+          ...(headphone ? { sinkId: headphone.deviceId } : {}),
+        } as AudioContextOptions);
+      } catch {
+        ctx = new AudioContext({ latencyHint: 0 });
+      }
+      monitorCtxRef.current = ctx;
+      ctx.resume().catch(() => {});
+      const source = ctx.createMediaStreamSource(stream);
+      // Plain BiquadFilterNodes, not a compressor or anything with lookahead — these are
+      // single-sample IIR filters with no internal buffering, so unlike NS/AEC (skipped above
+      // for exactly this reason) they add no perceptible latency to the monitor loop. Without
+      // them the monitor is the completely raw, unshaped capsule signal (MONITOR_CONSTRAINTS
+      // turns off NS/AGC too), which is what was reading as thin/harsh once latency itself
+      // stopped being the complaint (wired headphones). Mirrors the same warmth/presence/rumble
+      // shaping mix-recording.ts applies to the actual recording, just lighter — this is only
+      // ever heard live, never baked into anything.
+      const rumble = ctx.createBiquadFilter();
+      rumble.type = "highpass";
+      rumble.frequency.value = 90;
+      const warmth = ctx.createBiquadFilter();
+      warmth.type = "lowshelf";
+      warmth.frequency.value = 200;
+      warmth.gain.value = 1.5;
+      const presence = ctx.createBiquadFilter();
+      presence.type = "peaking";
+      presence.frequency.value = 3000;
+      presence.Q.value = 1;
+      presence.gain.value = 3;
+      const gain = ctx.createGain();
+      gain.gain.value = MONITOR_GAIN;
+      source
+        .connect(rumble)
+        .connect(warmth)
+        .connect(presence)
+        .connect(gain)
+        .connect(ctx.destination);
+      if (!headphone) return;
+      if (/bluetooth/i.test(headphone.label)) toast.info(i18n.t("record.monitorBluetoothLatency"));
+      const sinkId = (ctx as AudioContext & { sinkId?: unknown }).sinkId;
+      if (sinkId !== headphone.deviceId) routeAudioContextToHeadphonesIfAvailable(ctx);
+    })().catch(() => {}); // monitor is optional — a failure here shouldn't interrupt recording
 
     return () => {
       cancelled = true;
