@@ -125,12 +125,26 @@ function autocorrelate(
   return sampleRate / refinedLag;
 }
 
-/** Nearest equal-tempered chromatic note to a detected frequency — no key/scale detection, just
- * "which of the 12 semitones is this closest to," which is what plain autotune snaps to. */
-export function nearestNoteFreq(freq: number, referenceA4 = 440): number {
+/**
+ * Where a sung frequency should be pulled to. Without a scale, the nearest chromatic note. With
+ * the song's scale (pitch classes, C = 0 — see song-analysis.ts), a frame whose nearest semitone
+ * falls outside the key is pulled to the closer in-key neighbor instead, since that's almost always
+ * a missed note — unless it's already sung within 30 cents of that out-of-key semitone, which is a
+ * deliberate chromatic/blue note sung in tune and is left where the singer put it.
+ */
+export function targetNoteFreq(freq: number, scale?: readonly number[], referenceA4 = 440): number {
   const semitones = 12 * Math.log2(freq / referenceA4);
   const nearest = Math.round(semitones);
-  return referenceA4 * 2 ** (nearest / 12);
+  const pitchClass = (n: number) => (((n + 9) % 12) + 12) % 12; // semitones from A4 → C = 0
+  if (!scale || scale.includes(pitchClass(nearest)) || Math.abs(semitones - nearest) < 0.3) {
+    return referenceA4 * 2 ** (nearest / 12);
+  }
+  const candidates = [nearest - 1, nearest + 1].filter((n) => scale.includes(pitchClass(n)));
+  if (candidates.length === 0) return referenceA4 * 2 ** (nearest / 12);
+  const best = candidates.reduce((a, b) =>
+    Math.abs(semitones - a) <= Math.abs(semitones - b) ? a : b,
+  );
+  return referenceA4 * 2 ** (best / 12);
 }
 
 function frameSizeFor(sampleRate: number): number {
@@ -202,9 +216,13 @@ export type PitchProfile = {
   /** Fraction of analyzed frames that carried a confident, median-filtered pitch — low for
    * spoken-word or mostly-consonant takes, where there's little sustained pitch worth correcting. */
   voicedRatio: number;
-  /** Average absolute distance from the nearest chromatic note across voiced frames, in cents
-   * (100 cents = 1 semitone). Near 0 for an already in-tune take, larger for one that drifts. */
+  /** Average absolute distance from the target note (see targetNoteFreq) across voiced frames,
+   * in cents (100 cents = 1 semitone). Near 0 for an already in-tune take, larger for one that
+   * drifts — or, given the song's scale, one that misses notes. */
   avgAbsCents: number;
+  /** The low end of the sung range (10th percentile of voiced pitch), Hz — null with too little
+   * sustained singing to tell. Anything filtered out below this would be the voice itself. */
+  lowHz: number | null;
 };
 
 /**
@@ -214,23 +232,30 @@ export type PitchProfile = {
  * the same median-filtered track applyPitchCorrection corrects toward, so this measurement isn't
  * inflated by single-frame detection noise that the correction itself would never act on.
  */
-export function analyzePitch(buffer: AudioBuffer, referenceA4 = 440): PitchProfile {
+export function analyzePitch(
+  buffer: AudioBuffer,
+  scale?: readonly number[],
+  referenceA4 = 440,
+): PitchProfile {
   const data = buffer.getChannelData(0);
   const frameSize = frameSizeFor(buffer.sampleRate);
   const hop = Math.floor(frameSize / 2);
   const filtered = medianFilterPitch(detectPitchTrack(data, buffer.sampleRate, frameSize, hop));
 
-  let voiced = 0;
+  const voicedHz: number[] = [];
   let centsSum = 0;
   for (const f0 of filtered) {
     if (f0 == null) continue;
-    voiced++;
-    const target = nearestNoteFreq(f0, referenceA4);
+    voicedHz.push(f0);
+    const target = targetNoteFreq(f0, scale, referenceA4);
     centsSum += Math.abs(1200 * Math.log2(f0 / target));
   }
+  const voiced = voicedHz.length;
+  voicedHz.sort((a, b) => a - b);
   return {
     voicedRatio: filtered.length > 0 ? voiced / filtered.length : 0,
     avgAbsCents: voiced > 0 ? centsSum / voiced : 0,
+    lowHz: voiced >= 40 ? voicedHz[Math.floor(voiced * 0.1)] : null,
   };
 }
 
@@ -243,7 +268,8 @@ function sampleAt(data: Float32Array, x: number): number {
 }
 
 /**
- * Destructively retunes the buffer toward the nearest chromatic note: detect the sung pitch track
+ * Destructively retunes the buffer toward the target note (nearest chromatic, or the song's
+ * scale when given — see targetNoteFreq): detect the sung pitch track
  * for the whole channel, median-filter it (rejects octave errors), turn it into a per-frame
  * correction ratio blended by `strength` (0 = untouched, 1 = fully snapped), smooth that ratio over
  * time (retune speed — see smoothRatioTrack), then resample each ~23ms grain by its smoothed ratio
@@ -254,6 +280,7 @@ function sampleAt(data: Float32Array, x: number): number {
 export function applyPitchCorrection(
   buffer: AudioBuffer,
   strength: number,
+  scale?: readonly number[],
   referenceA4 = 440,
 ): void {
   const clampedStrength = Math.min(1, Math.max(0, strength));
@@ -271,7 +298,7 @@ export function applyPitchCorrection(
     const filtered = medianFilterPitch(detectPitchTrack(input, buffer.sampleRate, frameSize, hop));
     const rawRatios = filtered.map((f0) => {
       if (f0 == null) return 1;
-      const target = nearestNoteFreq(f0, referenceA4);
+      const target = targetNoteFreq(f0, scale, referenceA4);
       return 1 + (target / f0 - 1) * clampedStrength;
     });
     const smoothed = smoothRatioTrack(rawRatios, hopMs).map((r) =>
