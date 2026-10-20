@@ -64,11 +64,7 @@ import {
   type BackgroundId,
   type VirtualBackgroundComposer,
 } from "@/lib/virtual-background";
-import {
-  routeToHeadphonesIfAvailable,
-  routeAudioContextToHeadphonesIfAvailable,
-  findHeadphoneOutput,
-} from "@/lib/audio-output";
+import { findHeadphoneOutput } from "@/lib/audio-output";
 import { createLiveNoiseGate, type LiveNoiseGate } from "@/lib/mic-noise-gate";
 
 export const Route = createFileRoute("/record")({
@@ -279,33 +275,28 @@ function useMicLevels(active: boolean, monitor: boolean) {
       stream.getAudioTracks()[0]?.addEventListener("ended", () => {
         if (!cancelled) setRestartKey((k) => k + 1);
       });
-      // The mic permission just granted above is what makes real device labels available, so the
-      // headset can be picked now — before the context exists rather than switched to after.
-      const headphone = await findHeadphoneOutput();
-      if (cancelled) return;
       // `latencyHint: "interactive"` is a broadly-safe preset the browser picks to cover any
       // kind of app; passing an explicit `0` instead is the spec's own escape hatch for exactly
       // this case — it asks the platform for the smallest render buffer it's actually willing
       // to hand a page, not a generic safety margin, and on Chrome/Android in particular that's
       // a materially smaller buffer than "interactive" lands on.
       //
-      // No explicit sampleRate, and the headset passed as `sinkId` up front: the context then
-      // runs at the native rate of the device it actually plays through. An earlier version
-      // matched the context to the mic track's rate instead, which moved the resample to the
-      // output side wherever the two differ (a 44.1kHz headset, a 16kHz Bluetooth mic) — and on
-      // Android a stream that isn't at the device's native rate can't use the low-latency
-      // fast-mixer path at all, which costs far more than the few-sample converter Web Audio
-      // runs on the input side instead. Calling setSinkId afterward would also reopen the output
-      // on a context already sized for the old device, so it's only the fallback now, for a
-      // browser that ignores the `sinkId` option.
-      try {
-        ctx = new AudioContext({
-          latencyHint: 0,
-          ...(headphone ? { sinkId: headphone.deviceId } : {}),
-        } as AudioContextOptions);
-      } catch {
-        ctx = new AudioContext({ latencyHint: 0 });
-      }
+      // No explicit sampleRate either: the context then runs at the native rate of the output
+      // device itself. An earlier version matched the context to the mic track's rate instead,
+      // which moved the resample to the output side wherever the two differ — and on Android a
+      // stream that isn't at the device's native rate can't use the low-latency fast-mixer path
+      // at all, which costs far more than the few-sample converter Web Audio runs on the input
+      // side instead.
+      //
+      // And deliberately no sinkId/setSinkId: the output stays on the system's default media
+      // route, which already is the plugged-in headphones. The named devices Chrome for Android
+      // lists ("Wired headset", "Bluetooth", "Speakerphone", ...) are its *call* routes — picking
+      // one puts the page's whole audio session into voice-communication mode, the phone-call
+      // path, with its own extra buffering and voice processing. That's what made the monitor
+      // both late and oddly processed-sounding even on plain wired headphones (and Bluetooth drop
+      // to narrowband SCO). It was only ever there to undo the same call mode echoCancellation
+      // used to trigger, which MIC_CONSTRAINTS no longer requests.
+      ctx = new AudioContext({ latencyHint: 0 });
       monitorCtxRef.current = ctx;
       ctx.resume().catch(() => {});
       const source = ctx.createMediaStreamSource(stream);
@@ -337,10 +328,11 @@ function useMicLevels(active: boolean, monitor: boolean) {
         .connect(presence)
         .connect(gain)
         .connect(ctx.destination);
-      if (!headphone) return;
-      if (/bluetooth/i.test(headphone.label)) toast.info(i18n.t("record.monitorBluetoothLatency"));
-      const sinkId = (ctx as AudioContext & { sinkId?: unknown }).sinkId;
-      if (sinkId !== headphone.deviceId) routeAudioContextToHeadphonesIfAvailable(ctx);
+      // The mic permission just granted above is what makes real device labels available.
+      const headphone = await findHeadphoneOutput();
+      if (!cancelled && headphone && /bluetooth/i.test(headphone.label)) {
+        toast.info(i18n.t("record.monitorBluetoothLatency"));
+      }
     })().catch(() => {}); // monitor is optional — a failure here shouldn't interrupt recording
 
     return () => {
@@ -880,10 +872,6 @@ function RecordPage() {
     // Starts bypassed — connected straight to the speakers rather than through pitchShift — so a
     // take stays at perfectly native quality/sync until the singer actually asks for a key change.
     Tone.connect(source, Tone.getDestination());
-    // Once a MediaElementAudioSourceNode exists, the element's own setSinkId stops controlling
-    // where its audio renders — the AudioContext's output device does instead (see
-    // routeToHeadphonesIfAvailable's call on this same video element during recording setup).
-    routeAudioContextToHeadphonesIfAvailable(rawContext);
   };
 
   // Rewires the graph between "straight to speakers" and "through the pitch shifter" so a shift
@@ -1057,10 +1045,6 @@ function RecordPage() {
         // already is.
         if (!baseBlobRef.current) videoRef.current.currentTime = segmentStart;
         videoRef.current.play().catch(() => {});
-        // The mic stream just became ready, meaning getUserMedia (with echoCancellation) just
-        // granted permission — Android may have switched to voice-call routing as a result, so
-        // (re-)pin playback to a connected headset if one's available.
-        routeToHeadphonesIfAvailable(videoRef.current);
       }
       // Explicit bitrate — MediaRecorder's default Opus encoding is conservative enough that
       // the raw capture itself can come out sounding thin/"voice memo"-like before any
