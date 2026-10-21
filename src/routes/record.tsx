@@ -93,9 +93,9 @@ const DEFAULT_VOCAL_GAIN = 1.15;
 const DEFAULT_BACKING_GAIN = 0.95;
 // Default position (0..1) of the "hear yourself" volume slider. The slider maps to gain
 // quadratically (see monitorGainFor) so its lower half — where a monitor actually sits under the
-// backing track — gets most of the travel; 0.5 lands at 0.25x. A fixed 0.8x, then 0.65x, of the
-// raw capsule (NS/AGC are off on the monitor capture) was far too loud on real phones.
-const DEFAULT_MONITOR_VOLUME = 0.5;
+// backing track — gets most of the travel; 0.35 lands at ~0.12x. A fixed 0.8x, then 0.65x, then a
+// 0.25x default were all still far too loud on real phones.
+const DEFAULT_MONITOR_VOLUME = 0.35;
 const monitorGainFor = (volume: number) => volume * volume;
 
 // Legacy Chromium-only constraint names ("goog*") aren't in the standard MediaTrackConstraints
@@ -139,19 +139,26 @@ const MIC_CONSTRAINTS: ChromeAudioConstraints = {
   googTypingNoiseDetection: true,
 };
 
-// The monitor's own capture deliberately skips everything MIC_CONSTRAINTS turns on. AEC/NS/AGC
-// are real-time DSP chains with their own lookahead/processing buffers — exactly what shows up
-// as "hearing myself a beat late" — and none of it needs to be clean, since this stream is never
-// recorded, only listened to live. `latency: 0` additionally asks the capture layer itself for
-// the shortest buffering it can manage instead of its default (smoothness-favoring) buffer size.
-// No sampleRate ask: the mic's own native rate means no capture-side conversion at all, and the
-// monitor context below is sized to the output device instead (see the monitor effect).
-const MONITOR_CONSTRAINTS: MediaTrackConstraints & { latency?: ConstrainDouble } = {
+// The monitor's own capture. Noise suppression is ON: a raw, unprocessed capsule (the earlier
+// setup, chosen to shave NS's ~10ms frame) put every bit of room hiss, rustle and handling noise
+// straight into the singer's headphones, which was far worse than the few milliseconds it saved.
+// AGC stays off — it would pump the room back up between phrases — and AEC stays off for the same
+// Android call-mode reason as MIC_CONSTRAINTS. `latency: 0` asks the capture layer for the
+// shortest buffering it can manage. No sampleRate ask: the mic's own native rate means no
+// capture-side conversion at all, and the monitor context below is sized to the output device.
+const MONITOR_CONSTRAINTS: ChromeAudioConstraints & { latency?: ConstrainDouble } = {
   echoCancellation: false,
-  noiseSuppression: false,
+  noiseSuppression: true,
   autoGainControl: false,
   channelCount: { ideal: 1 },
   latency: { ideal: 0 },
+  googEchoCancellation: false,
+  googEchoCancellation2: false,
+  googAutoGainControl: false,
+  googAutoGainControl2: false,
+  googNoiseSuppression: true,
+  googNoiseSuppression2: true,
+  googHighpassFilter: true,
 };
 
 function useMicLevels(active: boolean, monitor: boolean, monitorVolume: number) {
@@ -301,49 +308,27 @@ function useMicLevels(active: boolean, monitor: boolean, monitorVolume: number) 
       // at all, which costs far more than the few-sample converter Web Audio runs on the input
       // side instead.
       //
-      // The headset is passed as `sinkId` up front. A version that left the output on the
-      // default route instead (on the theory that Chrome for Android's named devices are call
-      // routes that add buffering) measurably made the monitor *later* on real phones, so the
-      // explicit routing is back. setSinkId afterward would reopen the output on a context
-      // already sized for the old device, so it's only the fallback, for a browser that ignores
-      // the `sinkId` option.
-      const headphone = await findHeadphoneOutput();
-      if (cancelled) return;
-      try {
-        ctx = new AudioContext({
-          latencyHint: 0,
-          ...(headphone ? { sinkId: headphone.deviceId } : {}),
-        } as AudioContextOptions);
-      } catch {
-        ctx = new AudioContext({ latencyHint: 0 });
-      }
+      // Deliberately no sinkId/setSinkId: the output stays on the system's default media route,
+      // which already is the plugged-in headphones. The named devices Chrome for Android lists
+      // ("Wired headset", "Bluetooth", ...) are its *call* routes; pinning the monitor to one
+      // (tried twice) didn't shorten the delay at all, and put playback on the phone-call path —
+      // call volume, voice processing, and narrowband SCO audio on Bluetooth.
+      ctx = new AudioContext({ latencyHint: 0 });
       monitorCtxRef.current = ctx;
       ctx.resume().catch(() => {});
       const source = ctx.createMediaStreamSource(stream);
-      // Plain BiquadFilterNodes, not a compressor or anything with lookahead — these are
-      // single-sample IIR filters with no internal buffering, so unlike NS/AEC (skipped above
-      // for exactly this reason) they add no perceptible latency to the monitor loop. A higher
-      // highpass and a lowpass trim the room's rumble and hiss, which the raw capsule (no NS)
-      // passes straight through; presence is kept only slight, since a 3kHz boost is exactly
-      // where clicks, taps and sibilance-like room noise live.
+      // Just a voice-band trim, no tone shaping: plain BiquadFilterNodes (single-sample IIR
+      // filters, no internal buffering, so no added latency) cutting rumble/handling thumps below
+      // the voice and hiss above it.
       const rumble = ctx.createBiquadFilter();
       rumble.type = "highpass";
       rumble.frequency.value = 120;
-      rumble.Q.value = 0.8;
-      const warmth = ctx.createBiquadFilter();
-      warmth.type = "lowshelf";
-      warmth.frequency.value = 220;
-      warmth.gain.value = 1.5;
-      const presence = ctx.createBiquadFilter();
-      presence.type = "peaking";
-      presence.frequency.value = 2500;
-      presence.Q.value = 0.8;
-      presence.gain.value = 1;
+      rumble.Q.value = 0.7;
       const hiss = ctx.createBiquadFilter();
       hiss.type = "lowpass";
-      hiss.frequency.value = 11000;
+      hiss.frequency.value = 9000;
       hiss.Q.value = 0.7;
-      // Pulls the room down between phrases — see MonitorGateProcessor in mic-noise-gate.ts.
+      // Silent unless you're actually singing — see MonitorGateProcessor in mic-noise-gate.ts.
       // Falls back to `source` itself (ungated) if AudioWorklet isn't available.
       gate = await createMonitorGate(ctx, source);
       if (cancelled) {
@@ -353,20 +338,11 @@ function useMicLevels(active: boolean, monitor: boolean, monitorVolume: number) 
       const gain = ctx.createGain();
       gain.gain.value = monitorGainFor(monitorVolumeRef.current);
       monitorGainRef.current = gain;
-      gate.node
-        .connect(rumble)
-        .connect(warmth)
-        .connect(presence)
-        .connect(hiss)
-        .connect(gain)
-        .connect(ctx.destination);
-      if (headphone && /bluetooth/i.test(headphone.label)) {
+      gate.node.connect(rumble).connect(hiss).connect(gain).connect(ctx.destination);
+      // The mic permission just granted above is what makes real device labels available.
+      const headphone = await findHeadphoneOutput();
+      if (!cancelled && headphone && /bluetooth/i.test(headphone.label)) {
         toast.info(i18n.t("record.monitorBluetoothLatency"));
-      }
-      const sinkId = (ctx as AudioContext & { sinkId?: unknown }).sinkId;
-      if (headphone && sinkId !== headphone.deviceId) {
-        const routable = ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> };
-        routable.setSinkId?.(headphone.deviceId).catch(() => {});
       }
       // outputLatency is only meaningful once the output stream is actually running.
       const inputLatency = stream.getAudioTracks()[0]?.getSettings() as { latency?: number };

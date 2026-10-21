@@ -62,7 +62,7 @@ registerProcessor("mic-noise-gate", MicNoiseGateProcessor);
 // fundamental and first formant sit (rustle/hiss/clicks are mostly above it, handling thumps below
 // it), sustained for a few milliseconds (clicks and taps are shorter). Once open it stays open on
 // level alone, with a hold, so consonants and word tails inside a phrase still come through.
-// Closed, it dips the signal to near-silence.
+// Closed, it's fully silent.
 class MonitorGateProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -120,7 +120,7 @@ class MonitorGateProcessor extends AudioWorkletProcessor {
       } else {
         this._armed = 0;
       }
-      const target = this._hold > 0 ? 1 : 0.02; // ~-34dB closed
+      const target = this._hold > 0 ? 1 : 0; // fully silent closed — only the voice gets through
       this._gain += (target - this._gain) * (target > this._gain ? this._gainAttack : this._gainRelease);
       outCh[i] = sample * this._gain;
     }

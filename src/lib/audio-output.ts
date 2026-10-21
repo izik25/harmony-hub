@@ -1,8 +1,10 @@
 /**
- * Finds a connected headset among the browser's `audiooutput` devices. record.tsx's live monitor
- * passes it as its AudioContext's `sinkId` (pinning the monitor to the headset measured lower
- * latency on real phones than leaving it on the default route), and also uses it to warn that
- * Bluetooth adds latency.
+ * Finds a connected headset among the browser's `audiooutput` devices — used only to *detect*
+ * one (to warn that Bluetooth adds latency), never to route playback to it. The device entries
+ * Chrome for Android lists here ("Wired headset", "Bluetooth", "Speakerphone", "Earpiece") are its
+ * call routes: pinning output to one with setSinkId puts playback on the phone-call path (call
+ * volume, voice processing, narrowband SCO on Bluetooth) and, tried twice for the live monitor,
+ * never made it any faster. The default media route already lands on the headphones.
  *
  * Device labels only become non-empty once mic permission has actually been granted, so call
  * this after a getUserMedia() call resolves.
@@ -16,7 +18,7 @@ export async function findHeadphoneOutput(): Promise<MediaDeviceInfo | undefined
     const isBuiltInRoute = (label: string) => /speakerphone|earpiece|receiver/i.test(label);
     return outputs.find((d) => isHeadphoneLike(d.label) && !isBuiltInRoute(d.label));
   } catch {
-    // Best-effort — the monitor just stays on the default route without it.
+    // Best-effort — only feeds an informational hint.
     return undefined;
   }
 }
