@@ -145,6 +145,9 @@ const en = {
       "Live monitoring is on — use headphones, or you'll get feedback/howling.",
     monitorBluetoothLatency:
       "Bluetooth audio has a built-in delay (100-300ms) — for real-time monitoring, try wired headphones instead.",
+    monitorVolume: "Monitor volume",
+    monitorLatency:
+      "Delay reported by this device: ~{{ms}}ms. Anything over ~40ms comes from the phone, browser and headphones themselves — wired headphones keep it lowest.",
     vocalVolume: "Vocal Volume",
     playbackVolume: "Playback Volume",
     remix: "Update Mix",
@@ -989,6 +992,9 @@ const he = {
     monitorFeedbackWarning: "ניטור חי פעיל — השתמש באוזניות, אחרת יתקבל פידבק (צפצוף).",
     monitorBluetoothLatency:
       "לאוזניות בלוטות' יש השהיה מובנית (100-300ms) — לניטור בזמן אמת, נסה אוזניות חוטיות.",
+    monitorVolume: "עוצמת שמיעה",
+    monitorLatency:
+      "ההשהיה שהמכשיר מדווח: ~{{ms}}ms. כל מה שמעל ~40ms מגיע מהטלפון, מהדפדפן ומהאוזניות עצמם — אוזניות חוטיות משאירות אותה הכי נמוכה.",
     vocalVolume: "עוצמת קול",
     playbackVolume: "עוצמת פלייבק",
     remix: "עדכן מיקס",
@@ -1830,6 +1836,9 @@ const ar = {
     monitorFeedbackWarning: "المراقبة الحية مفعّلة — استخدم سماعات وإلا ستحصل على صدى/صفير.",
     monitorBluetoothLatency:
       "لسماعات البلوتوث تأخير مدمج (100-300ms) — للمراقبة بالوقت الفعلي، جرّب سماعات سلكية.",
+    monitorVolume: "مستوى سماع الصوت",
+    monitorLatency:
+      "التأخير الذي يبلغ عنه هذا الجهاز: ~{{ms}}ms. أي شيء فوق ~40ms مصدره الهاتف والمتصفح والسماعات نفسها — السماعات السلكية تبقيه في أدنى مستوى.",
     vocalVolume: "مستوى الصوت",
     playbackVolume: "مستوى التشغيل",
     remix: "تحديث المزيج",

@@ -56,23 +56,33 @@ class MicNoiseGateProcessor extends AudioWorkletProcessor {
 registerProcessor("mic-noise-gate", MicNoiseGateProcessor);
 
 // The monitor's capture has NS/AGC off (they'd add latency), so without this every bit of room
-// noise goes straight into the singer's headphones. Unlike the recording gate above this one
-// follows a smoothed envelope instead of raw per-sample magnitude (so it doesn't chatter on
-// zero crossings), holds open briefly after the voice drops (so word tails survive), and dips
-// much deeper, since a quiet room between phrases is exactly what a monitor should sound like.
+// noise goes straight into the singer's headphones. A level-only gate isn't enough here: a shirt
+// rustle or a tap on the phone is easily as loud at the capsule as a voice. So the gate only
+// *opens* on sound that looks like singing — enough energy in the 150-1200Hz band where a voice's
+// fundamental and first formant sit (rustle/hiss/clicks are mostly above it, handling thumps below
+// it), sustained for a few milliseconds (clicks and taps are shorter). Once open it stays open on
+// level alone, with a hold, so consonants and word tails inside a phrase still come through.
+// Closed, it dips the signal to near-silence.
 class MonitorGateProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     const ms = (t) => 1 - Math.exp(-1 / (sampleRate * t / 1000));
-    this._envAttack = ms(0.5);
-    this._envRelease = ms(40);
-    this._floorDown = ms(80);
-    this._floorUp = ms(6000);
-    this._gainAttack = ms(1.5);
-    this._gainRelease = ms(180);
+    const hz = (f) => 1 - Math.exp(-2 * Math.PI * f / sampleRate);
+    this._hp = hz(150);
+    this._lp = hz(1200);
+    this._envAttack = ms(1);
+    this._envRelease = ms(50);
+    this._floorDown = ms(100);
+    this._floorUp = ms(8000);
+    this._gainAttack = ms(3);
+    this._gainRelease = ms(120);
+    this._armSamples = Math.round(sampleRate * 0.008);
     this._holdSamples = Math.round(sampleRate * 0.15);
-    this._env = 0;
-    this._floor = 0.001;
+    this._lp1 = 0; this._lp2 = 0; this._b1 = 0; this._b2 = 0;
+    this._band = 0;
+    this._full = 0;
+    this._floor = 0.0005; // ~-66dB; rises to the real room level within seconds
+    this._armed = 0;
     this._hold = 0;
     this._gain = 0;
   }
@@ -82,15 +92,35 @@ class MonitorGateProcessor extends AudioWorkletProcessor {
     if (!inCh || !outCh) return true;
     for (let i = 0; i < inCh.length; i++) {
       const sample = inCh[i];
-      const mag = Math.abs(sample);
-      this._env += (mag - this._env) * (mag > this._env ? this._envAttack : this._envRelease);
-      this._floor += (this._env - this._floor) * (this._env < this._floor ? this._floorDown : this._floorUp);
-      // ~+12dB over the room, never below ~-48dBFS so a near-silent room can't make the gate
-      // twitch open on breaths and clothing rustle.
-      const threshold = Math.max(this._floor * 4, 0.004);
-      if (this._env >= threshold) this._hold = this._holdSamples;
-      else if (this._hold > 0) this._hold--;
-      const target = this._hold > 0 ? 1 : 0.06; // ~-24dB between phrases
+      // Detector-only band split (the audio itself passes through unfiltered): two one-pole
+      // highpasses at 150Hz, then two one-pole lowpasses at 1200Hz.
+      this._lp1 += (sample - this._lp1) * this._hp;
+      const h1 = sample - this._lp1;
+      this._lp2 += (h1 - this._lp2) * this._hp;
+      const h2 = h1 - this._lp2;
+      this._b1 += (h2 - this._b1) * this._lp;
+      this._b2 += (this._b1 - this._b2) * this._lp;
+      const band = Math.abs(this._b2);
+      const full = Math.abs(sample);
+      this._band += (band - this._band) * (band > this._band ? this._envAttack : this._envRelease);
+      this._full += (full - this._full) * (full > this._full ? this._envAttack : this._envRelease);
+      // The floor only creeps up while the gate is closed — otherwise a long sustained note would
+      // slowly become "the room" and close the gate on itself mid-phrase.
+      if (this._band < this._floor) this._floor += (this._band - this._floor) * this._floorDown;
+      else if (this._hold === 0) this._floor += (this._band - this._floor) * this._floorUp;
+      // ~+16dB over the room's own voice-band level, and never below ~-50dBFS.
+      const threshold = Math.max(this._floor * 6, 0.003);
+      const voiced = this._band >= threshold && this._band >= this._full * 0.45;
+      if (this._hold > 0) {
+        // Already open: stays open on level alone (with some hysteresis), refreshing the hold.
+        if (this._band >= threshold * 0.7) this._hold = this._holdSamples;
+        else if (--this._hold === 0) this._armed = 0;
+      } else if (voiced) {
+        if (++this._armed >= this._armSamples) this._hold = this._holdSamples;
+      } else {
+        this._armed = 0;
+      }
+      const target = this._hold > 0 ? 1 : 0.02; // ~-34dB closed
       this._gain += (target - this._gain) * (target > this._gain ? this._gainAttack : this._gainRelease);
       outCh[i] = sample * this._gain;
     }
