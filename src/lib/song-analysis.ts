@@ -55,6 +55,9 @@ export type SongAnalysis = {
     bands: Bands;
     /** Gap between the take's loud and soft sung passages (p90 − p25 of active frames, dB). */
     phraseSpreadDb: number;
+    /** Level of the take's loudest sibilance — 97th percentile of 5-10kHz band level over sung
+     * frames, dBFS. The de-esser's threshold is set relative to this. */
+    sibilancePeakDb: number;
   };
   backing: {
     bands: Bands;
@@ -121,7 +124,13 @@ const toDb = (p: number) => (p > 0 ? 10 * Math.log10(p) : -120);
 const percentile = (sorted: number[], p: number) =>
   sorted[Math.floor(p * (sorted.length - 1))] ?? -120;
 
-type SpectralResult = { bands: Bands; chroma: Float64Array; frameDb: number[]; activeDb: number[] };
+type SpectralResult = {
+  bands: Bands;
+  chroma: Float64Array;
+  frameDb: number[];
+  activeDb: number[];
+  sibilancePeakDb: number;
+};
 
 /** One windowed-FFT sweep over a signal: per-band density and chroma, both averaged over the
  * frames that actually carry the music/voice (silence and room tone would only dilute them). */
@@ -135,7 +144,12 @@ async function spectralPass(
   const im = new Float64Array(FFT_SIZE);
   const binHz = sampleRate / FFT_SIZE;
   const half = FFT_SIZE / 2;
-  const frames: { db: number; bandPower: number[]; chroma: Float64Array }[] = [];
+  const frames: { db: number; bandPower: number[]; chroma: Float64Array; sibDb: number }[] = [];
+  const sibLo = Math.round(5000 / binHz);
+  const sibHi = Math.min(half - 1, Math.round(10000 / binHz));
+  // Parseval: a band's mean square in the signal is 2·Σ|X|² over its positive bins / (N · Σw²);
+  // a Hann window's Σw² is 0.375·N.
+  const bandMsScale = 2 / (FFT_SIZE * FFT_SIZE * 0.375);
   const bandKeys = Object.keys(BANDS) as (keyof typeof BANDS)[];
   const bandBins = bandKeys.map((k) => [
     Math.max(1, Math.round(BANDS[k][0] / binHz)),
@@ -171,7 +185,9 @@ async function spectralPass(
       const pc = binPitchClass[b];
       if (pc >= 0) chroma[pc] += Math.sqrt(power[b]);
     }
-    frames.push({ db: toDb(energy / FFT_SIZE), bandPower, chroma });
+    let sib = 0;
+    for (let b = sibLo; b <= sibHi; b++) sib += power[b];
+    frames.push({ db: toDb(energy / FFT_SIZE), bandPower, chroma, sibDb: toDb(sib * bandMsScale) });
     if (f % 48 === 47) {
       onProgress(f / total);
       await tick();
@@ -190,7 +206,14 @@ async function spectralPass(
   const chroma = new Float64Array(12);
   for (const fr of active) for (let pc = 0; pc < 12; pc++) chroma[pc] += fr.chroma[pc];
   onProgress(1);
-  return { bands, chroma, frameDb, activeDb: active.map((fr) => fr.db) };
+  const sibSorted = active.map((fr) => fr.sibDb).sort((a, b) => a - b);
+  return {
+    bands,
+    chroma,
+    frameDb,
+    activeDb: active.map((fr) => fr.db),
+    sibilancePeakDb: percentile(sibSorted, 0.97),
+  };
 }
 
 function pearson(a: ArrayLike<number>, b: ArrayLike<number>): number {
@@ -308,7 +331,11 @@ export async function analyzeSong(
     return {
       key,
       tempoBpm: null,
-      vocal: { bands: vocalSpec.bands, phraseSpreadDb },
+      vocal: {
+        bands: vocalSpec.bands,
+        phraseSpreadDb,
+        sibilancePeakDb: vocalSpec.sibilancePeakDb,
+      },
       backing: null,
     };
   }
@@ -329,7 +356,89 @@ export async function analyzeSong(
   return {
     key,
     tempoBpm,
-    vocal: { bands: vocalSpec.bands, phraseSpreadDb },
+    vocal: {
+      bands: vocalSpec.bands,
+      phraseSpreadDb,
+      sibilancePeakDb: vocalSpec.sibilancePeakDb,
+    },
     backing: { bands: backingSpec.bands, density },
+  };
+}
+
+/**
+ * Integrated loudness per ITU-R BS.1770-4 (what LUFS meters and streaming services' normalization
+ * measure): K-weighting (a +4dB shelf above ~1.7kHz and a 38Hz high-pass, the two biquads below,
+ * derived for any sample rate the way pyloudnorm does), 400ms blocks every 100ms, an absolute gate
+ * at −70 LUFS and a relative gate 10 LU under the ungated mean. Also returns the sample peak.
+ */
+export function measureLoudness(
+  channels: Float32Array[],
+  sampleRate: number,
+): { lufs: number; peakDb: number } {
+  const shelf = (() => {
+    const f0 = 1681.974450955533;
+    const gain = 3.999843853973347;
+    const q = 0.7071752369554196;
+    const k = Math.tan((Math.PI * f0) / sampleRate);
+    const vh = 10 ** (gain / 20);
+    const vb = vh ** 0.4996667741545416;
+    const a0 = 1 + k / q + k * k;
+    return [
+      (vh + (vb * k) / q + k * k) / a0,
+      (2 * (k * k - vh)) / a0,
+      (vh - (vb * k) / q + k * k) / a0,
+      (2 * (k * k - 1)) / a0,
+      (1 - k / q + k * k) / a0,
+    ];
+  })();
+  const highpass = (() => {
+    const f0 = 38.13547087602444;
+    const q = 0.5003270373238773;
+    const k = Math.tan((Math.PI * f0) / sampleRate);
+    const a0 = 1 + k / q + k * k;
+    return [1, -2, 1, (2 * (k * k - 1)) / a0, (1 - k / q + k * k) / a0];
+  })();
+  const biquad = (x: Float32Array, [b0, b1, b2, a1, a2]: number[]) => {
+    const y = new Float32Array(x.length);
+    let x1 = 0;
+    let x2 = 0;
+    let y1 = 0;
+    let y2 = 0;
+    for (let i = 0; i < x.length; i++) {
+      const v = b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1;
+      x1 = x[i];
+      y2 = y1;
+      y1 = v;
+      y[i] = v;
+    }
+    return y;
+  };
+
+  let peak = 0;
+  for (const ch of channels)
+    for (let i = 0; i < ch.length; i++) peak = Math.max(peak, Math.abs(ch[i]));
+  const weighted = channels.map((ch) => biquad(biquad(ch, shelf), highpass));
+  const block = Math.round(0.4 * sampleRate);
+  const step = Math.round(0.1 * sampleRate);
+  const length = channels[0]?.length ?? 0;
+  const blocks: number[] = [];
+  for (let start = 0; start + block <= length; start += step) {
+    let power = 0;
+    for (const ch of weighted) {
+      let sum = 0;
+      for (let i = start; i < start + block; i++) sum += ch[i] * ch[i];
+      power += sum / block;
+    }
+    blocks.push(power);
+  }
+  const loudnessOf = (power: number) => -0.691 + 10 * Math.log10(Math.max(power, 1e-12));
+  const meanPower = (list: number[]) => list.reduce((a, b) => a + b, 0) / Math.max(1, list.length);
+  const absGated = blocks.filter((p) => loudnessOf(p) > -70);
+  const relativeGate = loudnessOf(meanPower(absGated)) - 10;
+  const gated = absGated.filter((p) => loudnessOf(p) > relativeGate);
+  return {
+    lufs: gated.length > 0 ? loudnessOf(meanPower(gated)) : -70,
+    peakDb: peak > 0 ? 20 * Math.log10(peak) : -100,
   };
 }

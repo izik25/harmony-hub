@@ -34,9 +34,27 @@ import {
   noiseGateThresholdFor,
 } from "@/lib/mix-recording";
 import { analyzePitch, applyPitchCorrection } from "@/lib/pitch-correct";
-import { analyzeSong, NOTE_NAMES, type SongAnalysis } from "@/lib/song-analysis";
+import { analyzeSong, measureLoudness, NOTE_NAMES } from "@/lib/song-analysis";
+import {
+  applyMix,
+  buildChain,
+  DEFAULT_MIX,
+  disposeChain,
+  renderMix,
+  seekChain,
+  startChain,
+  stopChain,
+  type MixSettings,
+  type VocalChain,
+} from "@/lib/vocal-chain";
+import {
+  pitchStrengthFor,
+  planLevels,
+  planProcessing,
+  TARGET_LUFS,
+  type ReportLine,
+} from "@/lib/auto-master";
 import { audioBufferToWavBlob } from "@/lib/wav-encoder";
-import { generateImpulseResponse } from "@/lib/impulse-response";
 import { translateServerError } from "@/lib/i18n";
 import { FixSectionEditor, FixSectionToggle } from "@/components/FixSectionEditor";
 import { CoverImagePicker } from "@/components/CoverImagePicker";
@@ -50,11 +68,8 @@ interface StudioSearch {
 // old neon rainbow gradient sweep.
 const BRAND_BAR_COLORS = ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold", "bg-brand-teal"];
 
-// True peak, not RMS — vocalLevelDb (analyzeSignal) is an 85th-percentile short-window RMS
-// measure, and vocal takes routinely have a 10dB+ crest factor, so a take that reads e.g. -18dB
-// RMS can already have peaks sitting right under 0dBFS. applyMaster used to size its makeup-gain
-// boost off vocalLevelDb alone, with no idea how much real headroom the take had left — see the
-// comment by gainBoostDb below for why that's what was actually causing AI Mastering to distort.
+// Sample peak, not RMS — vocal takes routinely have a 10dB+ crest factor, so loudness alone says
+// nothing about how hard a gain change would hit the limiter.
 function peakDbOf(buffer: AudioBuffer): number {
   let peak = 0;
   for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
@@ -102,31 +117,6 @@ export const Route = createFileRoute("/studio")({
   component: StudioPage,
 });
 
-type VocalChain = {
-  /** The vocal stem — every DSP knob, AI Mastering's gate, and pitch correction act on this alone. */
-  player: Tone.Player;
-  /** The aligned backing stem (see prepareStems), mixed in after the vocal's processing, never
-   * through it. Left unloaded for drafts with no separate stems. */
-  backingPlayer: Tone.Player;
-  filter: Tone.Filter;
-  /** Peaking cut around 300Hz — the boxy/muddy band on a close-miked voice. */
-  mud: Tone.Filter;
-  /** Peaking boost around 3kHz — where words become intelligible over the music. */
-  presence: Tone.Filter;
-  eq3: Tone.EQ3;
-  compressor: Tone.Compressor;
-  reverbSendHighpass: Tone.Filter;
-  reverbSendLowpass: Tone.Filter;
-  reverbConvolver: Tone.Convolver;
-  reverbDry: Tone.Gain;
-  reverbWet: Tone.Gain;
-  reverbOut: Tone.Gain;
-  vocalLevel: Tone.Gain;
-  backingLevel: Tone.Gain;
-  makeupGain: Tone.Gain;
-  limiter: Tone.Compressor;
-};
-
 type DraftDTO = Awaited<ReturnType<typeof getDraft>>;
 
 /** What the chain plays: separate vocal/backing stems when the draft has its raw take, or just the
@@ -139,178 +129,30 @@ type Sources = {
   cleanVocal: boolean;
 };
 
-type Params = {
-  speed: number;
-  noise: number;
-  reverb: number;
-  eq: number;
-  compression: number;
-  /** dB at ~3kHz, negative to soften. */
-  presenceDb: number;
-  /** dB cut at ~300Hz, 0 or positive. */
-  mudCutDb: number;
-  /** 0-100 → reverb tail length (see reverbTailSeconds). */
-  reverbSize: number;
-  /** Reverb pre-delay in seconds — timed to the song's tempo by AI mastering. */
-  preDelay: number;
-  // Post-chain makeup gain, in dB, going into the limiter below — 0 for manual editing, only ever
-  // set above 0 by AI Mastering (see applyMaster). This is the piece that used to be missing: EQ,
-  // compression, and gating alone can tighten a take up, but none of them make it louder, and
-  // "louder" is most of what actually reads as "mastered" versus "the same raw recording."
-  gainDb: number;
-  /** Linear stem levels from the Mix Balance sliders — live, no re-render needed. */
-  vocalLevel: number;
-  backingLevel: number;
+type MasterStage = "idle" | "analyzing" | "tuning" | "mastering" | "verifying" | "done";
+const MASTER_STEPS = ["analyzing", "tuning", "mastering", "verifying"] as const;
+const MASTER_STEP_LABELS: Record<(typeof MASTER_STEPS)[number], string> = {
+  analyzing: "studio.stageAnalyze",
+  tuning: "studio.stageTune",
+  mastering: "studio.stageMaster",
+  verifying: "studio.stageVerify",
 };
 
-// A hand-generated decaying-noise impulse response (see src/lib/impulse-response.ts) keeps the
-// convolution reverb fully synchronous — no async IR generation, which is unsafe to nest inside
-// Tone.Offline (used for export/publish) since it swaps the global audio context internally.
-//
-// Signal flow: vocal → highpass → EQ → compressor → (dry + filtered reverb send) → vocal level ─┐
-//              backing → backing level ──────────────────────────────────────────────────────────┴→ makeup gain → limiter
-// The backing used to be baked into the one file this whole chain processed, so the reverb, gate,
-// compressor and even pitch correction were all running over the drums and the instrumental too —
-// reverb on a full mix is a wash of echo no matter how short the tail, which is a big part of
-// what read as "too much echo".
-const reverbTailSeconds = (size: number) => 0.6 + (size / 100) * 1.8;
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-// Which impulse response each chain's convolver currently holds — not a field on VocalChain
-// itself, since disposeChain disposes every field.
-const impulseKeys = new WeakMap<VocalChain, string>();
-
-function buildChain(): VocalChain {
-  const filter = new Tone.Filter({ type: "highpass" });
-  const mud = new Tone.Filter({ type: "peaking", frequency: 300, Q: 1.2, gain: 0 });
-  const presence = new Tone.Filter({ type: "peaking", frequency: 3200, Q: 0.9, gain: 0 });
-  const eq3 = new Tone.EQ3();
-  const compressor = new Tone.Compressor();
-
-  const rawContext = Tone.getContext().rawContext as unknown as BaseAudioContext;
-  const impulse = generateImpulseResponse(rawContext);
-  // The send is band-limited before it reaches the convolver — the standard vocal-reverb move.
-  // Reverberated lows are what make a tail boomy/muddy and read as a second, distant copy of the
-  // voice; reverberated top end turns every "s" into a hissy splash. 400Hz-7kHz keeps the sheen
-  // and drops both.
-  const reverbSendHighpass = new Tone.Filter({ type: "highpass", frequency: 400 });
-  const reverbSendLowpass = new Tone.Filter({ type: "lowpass", frequency: 7000 });
-  const reverbConvolver = new Tone.Convolver(impulse);
-  const reverbDry = new Tone.Gain(1);
-  const reverbWet = new Tone.Gain(0);
-  const reverbOut = new Tone.Gain(1);
-  const vocalLevel = new Tone.Gain(1);
-  const backingLevel = new Tone.Gain(1);
-  // Makeup gain + a brickwall limiter as the final stage, after everything else including the
-  // backing — the limiter's ceiling means gainDb can push a take audibly louder without clipping.
-  //
-  // Built by hand instead of Tone.Limiter: Tone.Limiter hardcodes its release at 10ms, and
-  // anything under ~50ms makes a limiter start tracking the waveform of the audio itself rather
-  // than its envelope — audible as added distortion/pumping, exactly what AI Mastering was
-  // producing whenever gainDb pushed much gain into it. Release matches mix-recording.ts's limiter.
-  const makeupGain = new Tone.Gain(1);
-  const limiter = new Tone.Compressor({
-    ratio: 20,
-    attack: 0.003,
-    release: 0.1,
-    threshold: -1,
-  }).toDestination();
-
-  compressor.fan(reverbDry, reverbSendHighpass);
-  reverbSendHighpass.chain(reverbSendLowpass, reverbConvolver, reverbWet);
-  reverbDry.connect(reverbOut);
-  reverbWet.connect(reverbOut);
-  reverbOut.chain(vocalLevel, makeupGain);
-  makeupGain.connect(limiter);
-
-  const player = new Tone.Player();
-  player.chain(filter, mud, presence, eq3, compressor);
-  const backingPlayer = new Tone.Player();
-  backingPlayer.chain(backingLevel, makeupGain);
-
-  return {
-    player,
-    backingPlayer,
-    filter,
-    mud,
-    presence,
-    eq3,
-    compressor,
-    reverbSendHighpass,
-    reverbSendLowpass,
-    reverbConvolver,
-    reverbDry,
-    reverbWet,
-    reverbOut,
-    vocalLevel,
-    backingLevel,
-    makeupGain,
-    limiter,
-  };
+/** Stereo → mono the way the mono export does it, (L+R)/2. */
+function downmix(buffer: AudioBuffer): Float32Array {
+  if (buffer.numberOfChannels === 1) return buffer.getChannelData(0);
+  const l = buffer.getChannelData(0);
+  const r = buffer.getChannelData(1);
+  const out = new Float32Array(l.length);
+  for (let i = 0; i < l.length; i++) out[i] = (l[i] + r[i]) / 2;
+  return out;
 }
 
-function applyParams(chain: VocalChain, p: Params) {
-  chain.player.playbackRate = p.speed / 100;
-  chain.backingPlayer.playbackRate = p.speed / 100;
-  // 50-150Hz rumble cut, not 80-380Hz: the old ceiling ran well into a lot of voices' actual
-  // fundamental range, thinning the take out under the guise of "removing noise."
-  chain.filter.frequency.value = 50 + (p.noise / 100) * 100;
-  chain.mud.gain.value = -p.mudCutDb;
-  chain.presence.gain.value = p.presenceDb;
-  // A tilt, not a parallel boost: brighter now means lift the top and trim the bottom (roughly
-  // equal-and-opposite, standard mastering "tilt EQ"), instead of pushing low and high by the same
-  // +/-12dB at once, which just made the take louder and boxier rather than actually brighter —
-  // and at the top of the old range was enough gain on its own to push the limiter into distortion.
-  const eqDb = ((p.eq - 50) / 50) * 8;
-  chain.eq3.high.value = eqDb;
-  chain.eq3.low.value = -eqDb * 0.5;
-  // Threshold/ratio brought down into the range real mastering compression actually uses (mild
-  // 2-4:1, up to ~6:1 for a heavy setting) instead of maxing out at -36dB/16:1, which was closer to
-  // a second limiter than a compressor and squashed takes hard enough to read as distortion/pumping
-  // once makeup gain and the final limiter (see buildChain) piled on top of it.
-  chain.compressor.threshold.value = -4 - (p.compression / 100) * 16;
-  chain.compressor.ratio.value = 1 + (p.compression / 100) * 5;
-  // Capped at 0.35 so even the slider maxed out reads as a short plate behind the voice, never a
-  // hall — the dry level barely dips, so the voice itself always stays up front.
-  const wetAmt = (p.reverb / 100) * 0.35;
-  chain.reverbWet.gain.value = wetAmt;
-  // Regenerated only when size/pre-delay actually change — and in whatever context is current,
-  // so Tone.Offline's export builds its own instead of borrowing the live context's buffer.
-  const irKey = `${p.reverbSize}|${p.preDelay}`;
-  if (impulseKeys.get(chain) !== irKey) {
-    impulseKeys.set(chain, irKey);
-    const context = Tone.getContext().rawContext as unknown as BaseAudioContext;
-    chain.reverbConvolver.buffer = new Tone.ToneAudioBuffer(
-      generateImpulseResponse(context, reverbTailSeconds(p.reverbSize), 3.6, p.preDelay),
-    );
-  }
-  chain.reverbDry.gain.value = 1 - wetAmt * 0.3;
-  chain.vocalLevel.gain.value = p.vocalLevel;
-  chain.backingLevel.gain.value = p.backingLevel;
-  chain.makeupGain.gain.value = Tone.dbToGain(p.gainDb);
-}
-
-// Both stems always start/stop/seek together on one shared timestamp — they're the same length
-// and already aligned (prepareStems), so a single position drives both.
-function startChain(chain: VocalChain, offset: number) {
-  const at = Tone.now() + 0.02;
-  chain.player.start(at, offset);
-  if (chain.backingPlayer.loaded) chain.backingPlayer.start(at, offset);
-}
-
-function stopChain(chain: VocalChain) {
-  chain.player.stop();
-  if (chain.backingPlayer.loaded) chain.backingPlayer.stop();
-}
-
-function seekChain(chain: VocalChain, offset: number) {
-  const at = Tone.now() + 0.02;
-  chain.player.seek(offset, at);
-  if (chain.backingPlayer.loaded) chain.backingPlayer.seek(offset, at);
-}
-
-function disposeChain(chain: VocalChain) {
-  for (const node of Object.values(chain)) node.dispose();
-}
+/** Loudness of a mono signal as it's actually heard — the same channel in both speakers. */
+const dualMonoLufs = (data: Float32Array, sampleRate: number) =>
+  measureLoudness([data, data], sampleRate);
 
 function StudioPage() {
   const { t } = useTranslation();
@@ -319,57 +161,29 @@ function StudioPage() {
   const search = Route.useSearch();
   const draftId = search.draftId;
 
-  // Strength (0-1, shown as 0-100) of the real pitch-correction engine in pitch-correct.ts —
-  // analyzePitch/applyPitchCorrection, which measures what was actually sung and resamples toward
-  // the nearest note. Defaults to off so a take stays untouched until someone deliberately reaches
-  // for it. Dragging this slider bakes correction destructively into the loaded buffer (see
-  // runPitchCorrection below) rather than driving a live effect — there's no cheap way to do real
-  // per-note pitch tracking in a live Web Audio graph, so unlike the other knobs here this one
-  // commits a bit after you stop moving it instead of updating in real time. AI Mastering drives
-  // this same slider/engine when it decides a take needs correction (see applyMaster), so this is
-  // the one place "how much autotune is on this take" ever lives.
+  // Strength (0-100) of the pitch correction baked into the loaded buffer — the real engine in
+  // pitch-correct.ts (per-note correction + PSOLA resynthesis). Dragging the slider bakes it in a
+  // beat after it stops moving (see runPitchCorrection) rather than live, since per-note pitch
+  // tracking can't run inside a live Web Audio graph. AI mastering sets it too.
   const [autotune, setA] = useState(0);
-  // A light touch, not a hall: 30 through the old 2.5s impulse response read as an audible echo
-  // on every take by default, since Studio is where every recording lands after record.tsx.
-  const [reverbAmt, setR] = useState(10);
-  const [eq, setE] = useState(50);
-  const [comp, setC] = useState(30);
-  // Defaults to 50 rather than 0 — this is a plain highpass filter for rumble/hum, and it turns
-  // out to matter enough for how a take actually sounds that it shouldn't need discovering.
-  const [noise, setN] = useState(50);
-  const [presence, setPresence] = useState(0);
-  const [mudCut, setMudCut] = useState(0);
-  // 22 ≈ the 1s plate impulse-response.ts was tuned around.
-  const [reverbSize, setReverbSize] = useState(22);
-  const [preDelay, setPreDelay] = useState(0.03);
-  const [speed, setSpeed] = useState(100);
+  // Every other knob — see MixSettings in vocal-chain.ts. Live: changes apply to the chain as you
+  // drag, and publish renders exactly these values.
+  const [mix, setMix] = useState<MixSettings>(DEFAULT_MIX);
+  const setMixValue =
+    <K extends keyof MixSettings>(key: K) =>
+    (value: MixSettings[K]) =>
+      setMix((m) => ({ ...m, [key]: value }));
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [manualOpen, setManualOpen] = useState(false);
-  // Whether AI Mastering's noise gate has been baked into the currently-loaded buffer. Read by
-  // renderProcessed to reapply the same gate on export/publish's independent offline decode (that
-  // decode never sees the live in-memory buffer AI Mastering mutated), and reset whenever a fresh
-  // audioUrl loads since a new take hasn't been mastered yet.
+  // Whether AI mastering's noise gate is baked into the loaded buffer — runPitchCorrection
+  // re-applies it after restoring the original, since gating changes what pitch detection sees.
   const gateAppliedRef = useRef(false);
-  // Strength (0-1) of the destructive pitch correction AI Mastering baked into the currently-loaded
-  // buffer, 0 if none was needed/applied. Read by renderProcessed to reapply the same correction on
-  // export/publish's independent offline decode, same reasoning as gateAppliedRef above. Reset
-  // whenever a fresh audioUrl loads since a new take hasn't been mastered yet.
-  const pitchAppliedRef = useRef(0);
   // The song's scale (from analyzeSong) that pitch correction aims at — undefined until AI
   // mastering has detected a confident key for this take, which means "nearest semitone".
   const pitchScaleRef = useRef<number[] | undefined>(undefined);
-  // Post-chain makeup gain (dB) — 0 until AI Mastering sets it (see applyMaster), reset alongside
-  // gateAppliedRef whenever a fresh take loads since it hasn't been mastered yet either.
-  const [gainDb, setGainDb] = useState(0);
-
-  // 115/95 match record.tsx's initial auto-mix — a touch under the vocal / a touch over the
-  // backing track so the instrumental doesn't get buried under it, expressed as % so the sliders
-  // read naturally.
-  const [vocalVolume, setVocalVolume] = useState(115);
-  const [playbackVolume, setPlaybackVolume] = useState(95);
   const [fixSectionOpen, setFixSectionOpen] = useState(false);
   // Whether the "replace video with a cover image" picker is expanded — see replaceCoverMutation.
   const [replacingCover, setReplacingCover] = useState(false);
@@ -389,11 +203,9 @@ function StudioPage() {
   const lastFrameRef = useRef<number | null>(null);
   const rafIdRef = useRef<number | null>(null);
   // Untouched copy of the currently-loaded take's channel data, captured once right after decode
-  // (see the load effect below) — every destructive pitch-correction pass (runPitchCorrection,
-  // applyMaster) restores from this first rather than resampling whatever the buffer currently
-  // holds, so repeated adjustments (drag the slider around, or run AI Mastering after already
-  // having nudged it manually) always derive fresh from the same clean source instead of compounding
-  // correction on top of correction.
+  // (see the load effect below) — every destructive pass (runPitchCorrection, applyMaster)
+  // restores from this first, so repeated adjustments always derive fresh from the same clean
+  // source instead of compounding correction on top of correction.
   const originalChannelsRef = useRef<Float32Array[] | null>(null);
   // Debounce handle for committing the Autotune slider's drag into the buffer — see
   // runPitchCorrection and the comment by the autotune state above.
@@ -401,28 +213,11 @@ function StudioPage() {
   // What the chain is playing — see the stems effect below. null while stems are being prepared.
   const [sources, setSources] = useState<Sources | null>(null);
   const stems = sources?.stems ?? false;
-  const currentParams: Params = {
-    speed,
-    noise,
-    reverb: reverbAmt,
-    eq,
-    compression: comp,
-    presenceDb: presence,
-    mudCutDb: mudCut,
-    reverbSize,
-    preDelay,
-    gainDb,
-    // On an already-mixed file (no stems) there's nothing separate to balance — the volume
-    // sliders aren't shown, and the mix passes through at unity.
-    vocalLevel: stems ? vocalVolume / 100 : 1,
-    backingLevel: playbackVolume / 100,
-  };
-  // Mirrors the DSP slider state without being a dependency of the chain-(re)build effect below —
-  // a Fix a Section save swaps the stems and rebuilds the chain from scratch, and it should pick
-  // up whatever the sliders are currently set to rather than resetting to Tone's raw defaults.
-  const paramsRef = useRef<Params>(currentParams);
+  // Mirrors the settings without being a dependency of the chain-(re)build effect below — a Fix a
+  // Section save swaps the stems and rebuilds the chain, which should keep the current settings.
+  const mixRef = useRef<MixSettings>(mix);
   useEffect(() => {
-    paramsRef.current = currentParams;
+    mixRef.current = mix;
   });
 
   // Restores the currently-loaded buffer to the untouched take before (re-)applying destructive
@@ -439,8 +234,7 @@ function StudioPage() {
   // always restores the clean original first (see restoreOriginalBuffer) so this is idempotent
   // regardless of how many times or in what order it's called, reapplies the noise gate if one was
   // already baked in (gating changes the signal pitch-correction analyzes, so order matters), then
-  // applies pitch correction at the given strength. Updates pitchAppliedRef so renderProcessed's
-  // independent offline export re-derives the exact same result on the actual publish/export path.
+  // applies pitch correction at the given strength.
   const runPitchCorrection = (strength: number) => {
     const chain = chainRef.current;
     const buffer = chain?.player.buffer.get();
@@ -451,7 +245,6 @@ function StudioPage() {
     }
     const clamped = Math.min(1, Math.max(0, strength));
     if (clamped > 0) applyPitchCorrection(buffer, clamped, pitchScaleRef.current);
-    pitchAppliedRef.current = clamped;
   };
 
   // Autotune slider onChange: keeps the number responsive while dragging, but only bakes the
@@ -486,7 +279,7 @@ function StudioPage() {
     if (lastFrameRef.current == null) lastFrameRef.current = time;
     const dt = (time - lastFrameRef.current) / 1000;
     lastFrameRef.current = time;
-    const rate = paramsRef.current.speed / 100;
+    const rate = mixRef.current.speed / 100;
     positionRef.current = Math.min(positionRef.current + dt * rate, durationRef.current);
     setCurrentTime(positionRef.current);
     // The video plays on its own native clock once started (see togglePlay) — this only nudges
@@ -526,9 +319,7 @@ function StudioPage() {
   // is mirrored into a ref because the load effect's promise outlives the render that started it.
   const [awaitingMaster, setAwaitingMasterState] = useState(false);
   // Where the mastering half is — shown step by step, with the analysis's real progress.
-  const [masterStage, setMasterStage] = useState<"idle" | "analyzing" | "mastering" | "done">(
-    "idle",
-  );
+  const [masterStage, setMasterStage] = useState<MasterStage>("idle");
   const [analysisProgress, setAnalysisProgress] = useState(0);
   // What the analysis found and what was changed because of it, one line each.
   const [masterReport, setMasterReport] = useState<string[]>([]);
@@ -642,13 +433,13 @@ function StudioPage() {
     const chain = buildChain();
     chainRef.current = chain;
     gateAppliedRef.current = false;
-    pitchAppliedRef.current = 0;
     pitchScaleRef.current = undefined;
     masterRunRef.current++;
     setMasterStage("idle");
     setMasterReport([]);
     originalChannelsRef.current = null;
-    setGainDb(0);
+    setMix((m) => ({ ...m, gainDb: 0 }));
+    mixRef.current = { ...mixRef.current, gainDb: 0 };
     setA(0);
     setReady(false);
     const loadWithRetry = async (player: Tone.Player, url: string, attempts = 4): Promise<void> => {
@@ -674,7 +465,13 @@ function StudioPage() {
             buf.getChannelData(ch).slice(),
           );
         }
-        applyParams(chain, paramsRef.current);
+        // Gain staging: the take's loud passages to −18 dBFS before the chain (see vocal-chain.ts).
+        const inputTrimDb = buf
+          ? Math.round(clamp(-18 - analyzeSignal(buf).vocalLevelDb, -24, 24) * 10) / 10
+          : 0;
+        mixRef.current = { ...mixRef.current, inputTrimDb };
+        setMix((m) => ({ ...m, inputTrimDb }));
+        applyMix(chain, mixRef.current, sources.stems);
         const dur = chain.player.buffer.duration || 0;
         durationRef.current = dur;
         setDuration(dur);
@@ -711,24 +508,9 @@ function StudioPage() {
 
   useEffect(() => {
     if (!chainRef.current) return;
-    applyParams(chainRef.current, currentParams);
-    if (draftVideoRef.current) draftVideoRef.current.playbackRate = speed / 100;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    noise,
-    presence,
-    mudCut,
-    reverbAmt,
-    reverbSize,
-    preDelay,
-    eq,
-    comp,
-    speed,
-    gainDb,
-    vocalVolume,
-    playbackVolume,
-    stems,
-  ]);
+    applyMix(chainRef.current, mix, stems);
+    if (draftVideoRef.current) draftVideoRef.current.playbackRate = mix.speed / 100;
+  }, [mix, stems]);
 
   const togglePlay = async () => {
     const chain = chainRef.current;
@@ -786,56 +568,18 @@ function StudioPage() {
     setFixSectionOpen(true);
   };
 
+  // Publish renders the live buffers — gated and pitch-corrected exactly as heard — through the
+  // same chain settings, so what you hear in Studio is what gets uploaded.
   const renderProcessed = async (): Promise<Blob> => {
     const chain = chainRef.current;
-    if (!chain || !ready || !sources) throw new Error(t("studio.loadTrackFirst"));
-    const sourceDuration = chain.player.buffer.duration;
-    const duration = sourceDuration / (speed / 100) + 0.3;
-    const params = currentParams;
-    const { vocalUrl, backingUrl } = sources;
-    const gateApplied = gateAppliedRef.current;
-    const pitchStrength = pitchAppliedRef.current;
-    const pitchScale = pitchScaleRef.current;
-
-    const rendered = await Tone.Offline(
-      async () => {
-        const offlineChain = buildChain();
-        // Re-decode fresh in the offline context rather than reusing the live AudioContext's
-        // buffer — Chromium can silently stall OfflineAudioContext rendering when a source node
-        // references an AudioBuffer decoded by a different context.
-        await Promise.all([
-          offlineChain.player.load(vocalUrl),
-          backingUrl ? offlineChain.backingPlayer.load(backingUrl) : null,
-        ]);
-        // This decode is independent of the live buffer AI Mastering gated/retuned in place —
-        // reapply the same gate and pitch correction here so export/publish actually carries them,
-        // not just the slider values. Deterministic: same source audio in both places always
-        // analyzes and detects pitch the same way.
-        if (gateApplied || pitchStrength > 0) {
-          const offlineBuffer = offlineChain.player.buffer.get();
-          if (offlineBuffer) {
-            if (gateApplied) {
-              applyNoiseGate(offlineBuffer, noiseGateThresholdFor(analyzeSignal(offlineBuffer)));
-            }
-            if (pitchStrength > 0) {
-              applyPitchCorrection(offlineBuffer, pitchStrength, pitchScale);
-            }
-          }
-        }
-        applyParams(offlineChain, params);
-        offlineChain.player.start(0);
-        if (backingUrl) offlineChain.backingPlayer.start(0);
-      },
-      duration,
-      // Mono — the source is a solo vocal take, so rendering to stereo would just double the
-      // exported WAV's byte size (and the risk of tripping a request-body size limit) for no
-      // audible benefit.
-      1,
-    );
-
-    const audioBuffer = rendered.get();
-    if (!audioBuffer) throw new Error(t("studio.exportFailed"));
-    return audioBufferToWavBlob(audioBuffer);
+    const vocal = chain?.player.buffer.get();
+    if (!chain || !ready || !vocal) throw new Error(t("studio.loadTrackFirst"));
+    const backing = chain.backingPlayer.loaded ? (chain.backingPlayer.buffer.get() ?? null) : null;
+    try {
+      return audioBufferToWavBlob(await renderMix(vocal, backing, mix, stems));
+    } catch {
+      throw new Error(t("studio.exportFailed"));
+    }
   };
 
   const publishMutation = useMutation({
@@ -887,18 +631,11 @@ function StudioPage() {
     onError: (e: Error) => toast.error(translateServerError(e.message)),
   });
 
-  // The mastering half of AI Cleanup & Mastering — nothing here is a preset. analyzeSong
-  // (song-analysis.ts) first measures this song and this take: key, tempo, the vocal's and the
-  // backing's spectrum band by band, how busy the arrangement is, how unevenly the take was sung.
-  // analyzePitch then measures the sung range and how far it drifts from the song's own scale.
-  // Every knob below is derived from those measurements, and each decision is reported back as a
-  // line in masterReport, so the user sees what was heard and why it was changed — and anything
-  // that measured fine is left alone rather than processed for the sake of it.
-  //
-  // Spectral targets are spectral-density differences (dB per FFT bin) against the vocal's own
-  // 500Hz-2kHz body, approximating a finished, well-mixed lead vocal — first calibrated against
-  // real phone takes from this app (which measured mud ≈ +8-11, presence ≈ −13, air ≈ −13-19 on
-  // those scales). They're the calibration knobs of this engine: tune them by ear on real takes.
+  // AI mastering, run on the cleaned take: measure the song, retune the voice, set each stage of
+  // the vocal chain from what was measured (planProcessing — standard engineering ranges, placed
+  // by the analysis), then render the result and measure it: balance and loudness come from that
+  // render, and a final render checks the mix actually lands on the streaming target. Every
+  // decision becomes a line in masterReport.
   const applyMaster = async ({ announce }: { announce: boolean }) => {
     const chain = chainRef.current;
     const buffer = chain?.player.buffer.get();
@@ -908,208 +645,146 @@ function StudioPage() {
     }
     const run = ++masterRunRef.current;
     const stale = () => run !== masterRunRef.current || chainRef.current !== chain;
-    // A pending manual Autotune drag shouldn't land after this has re-derived its own correction,
-    // and the analysis should always read the untouched take — restoring first makes the whole
-    // run idempotent no matter what state the buffer was already in.
+    const step = async (stage: MasterStage) => {
+      setMasterStage(stage);
+      // Let the step list repaint before the next (synchronous, heavy) stage.
+      await new Promise((r) => setTimeout(r, 0));
+      return !stale();
+    };
     if (autotuneCommitTimer.current != null) {
       window.clearTimeout(autotuneCommitTimer.current);
       autotuneCommitTimer.current = null;
     }
-    setMasterStage("analyzing");
     setAnalysisProgress(0);
     setMasterReport([]);
+    setMasterStage("analyzing");
     restoreOriginalBuffer(buffer);
-    const clamp = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)));
-    const clampF = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
     const isClean = !!sources?.cleanVocal;
-    const report: string[] = [];
+    const lines: ReportLine[] = [];
 
-    // The model already took the noise out of a cleaned take; gating it again would only risk
-    // chopping quiet syllables. A raw take gets the same destructive gate processRecording uses,
-    // unless it's already studio-quiet.
-    const before = analyzeSignal(buffer);
-    const gate =
-      !isClean && !(before.noiseFloorDb <= -42 && before.vocalLevelDb - before.noiseFloorDb >= 20);
-    if (gate) {
-      applyNoiseGate(buffer, noiseGateThresholdFor(before));
-      report.push(t("studio.reportGate"));
-    }
-    gateAppliedRef.current = gate;
-    const after = gate ? analyzeSignal(buffer) : before;
-
-    const backingBuffer =
-      stems && chain.backingPlayer.loaded ? (chain.backingPlayer.buffer.get() ?? null) : null;
-    let song: SongAnalysis;
     try {
-      song = await analyzeSong(buffer, backingBuffer, (f) => {
+      // The model already took the noise out of a cleaned take; a raw one gets the same gate
+      // processRecording uses, unless it's already studio-quiet.
+      const before = analyzeSignal(buffer);
+      const gate =
+        !isClean &&
+        !(before.noiseFloorDb <= -42 && before.vocalLevelDb - before.noiseFloorDb >= 20);
+      if (gate) {
+        applyNoiseGate(buffer, noiseGateThresholdFor(before));
+        lines.push({ key: "studio.reportGate" });
+      }
+      gateAppliedRef.current = gate;
+      const noiseFloorDb = gate ? analyzeSignal(buffer).noiseFloorDb : before.noiseFloorDb;
+      const backingBuffer =
+        stems && chain.backingPlayer.loaded ? (chain.backingPlayer.buffer.get() ?? null) : null;
+
+      const song = await analyzeSong(buffer, backingBuffer, (f) => {
         if (!stale()) setAnalysisProgress(f);
       });
+      if (!(await step("tuning"))) return;
+
+      const scale = song.key && song.key.confidence >= 0.6 ? song.key.scale : undefined;
+      pitchScaleRef.current = scale;
+      if (song.key) {
+        const keyName = `${NOTE_NAMES[song.key.tonic]} ${t(song.key.mode === "major" ? "studio.modeMajor" : "studio.modeMinor")}`;
+        lines.push({
+          key: scale ? "studio.reportKeyScale" : "studio.reportKey",
+          values: { key: keyName },
+        });
+      }
+      const pitchBefore = analyzePitch(buffer, scale);
+      const strength = pitchStrengthFor(pitchBefore);
+      if (strength > 0) {
+        applyPitchCorrection(buffer, strength, scale);
+        const pitchAfter = analyzePitch(buffer, scale);
+        lines.push({
+          key: "studio.reportPitchFixed",
+          values: {
+            off: pitchBefore.offNotes,
+            notes: pitchBefore.noteCount,
+            before: Math.round(pitchBefore.avgAbsCents),
+            after: Math.round(pitchAfter.avgAbsCents),
+            pct: Math.round(strength * 100),
+          },
+        });
+      } else if (pitchBefore.voicedRatio >= 0.15) {
+        lines.push({ key: "studio.reportPitchOk" });
+      }
+      setA(Math.round(strength * 100));
+      if (!(await step("mastering"))) return;
+
+      const { settings: processed, report } = planProcessing({
+        song,
+        pitch: pitchBefore,
+        isClean,
+        noiseFloorDb,
+        base: { ...mixRef.current, speed: 100, gainDb: 0 },
+      });
+      lines.push(...report);
+      if (!(await step("verifying"))) return;
+
+      // Balance from the processed vocal's real loudness: render it alone through the chain.
+      const vocalOnly = await renderMix(buffer, null, { ...processed, vocalVolume: 100 }, false);
+      if (stale()) return;
+      const vocalLufs = dualMonoLufs(vocalOnly.getChannelData(0), vocalOnly.sampleRate).lufs;
+      const backingLufs = backingBuffer
+        ? dualMonoLufs(downmix(backingBuffer), backingBuffer.sampleRate).lufs
+        : null;
+      const density = song.backing?.density ?? 0.5;
+      const { settings: leveled, gapDb } = planLevels({
+        vocalLufs,
+        backingLufs,
+        density,
+        base: processed,
+        mixPeakDbAt: (vl, bl) => peakDbOfMix(vocalOnly, vl, backingBuffer, bl),
+      });
+      if (gapDb != null) {
+        lines.push({
+          key: "studio.reportBalance",
+          values: {
+            db: gapDb.toFixed(1),
+            arrangement: t(density >= 0.6 ? "studio.reportDense" : "studio.reportSparse"),
+          },
+        });
+      }
+
+      // Final check: the whole mix, rendered and measured. The limiter shaves a little off any
+      // estimate, so one correction pass lands it — boosts capped at +2dB so the fix never comes
+      // from pushing the limiter harder.
+      let final = leveled;
+      let measured = dualMonoLufs(
+        (await renderMix(buffer, backingBuffer, final, stems)).getChannelData(0),
+        buffer.sampleRate,
+      );
+      if (stale()) return;
+      const miss = TARGET_LUFS - measured.lufs;
+      if (Math.abs(miss) > 0.5) {
+        final = {
+          ...final,
+          gainDb: Math.round(clamp(final.gainDb + Math.min(miss, 2), -12, 9) * 10) / 10,
+        };
+        measured = dualMonoLufs(
+          (await renderMix(buffer, backingBuffer, final, stems)).getChannelData(0),
+          buffer.sampleRate,
+        );
+        if (stale()) return;
+      }
+      lines.push({
+        key: "studio.reportLoudnessFinal",
+        values: { lufs: measured.lufs.toFixed(1), peak: measured.peakDb.toFixed(1) },
+      });
+
+      setMix({ ...final, speed: mixRef.current.speed });
+      setMasterReport(lines.map((line) => t(line.key, line.values)));
+      setMasterStage("done");
+      if (announce)
+        toast.success(t(isClean ? "studio.cleanupDoneToast" : "studio.masterDoneToast"));
     } catch (err) {
       console.error(err);
-      if (!stale()) setMasterStage("idle");
+      if (stale()) return;
+      setMasterStage("idle");
       toast.error(t("studio.masterFailed"));
-      return;
     }
-    if (stale()) return;
-    setMasterStage("mastering");
-    // Let the step list repaint before the synchronous pitch passes below.
-    await new Promise((r) => setTimeout(r, 0));
-    if (stale()) return;
-    const v = song.vocal.bands;
-    const density = song.backing?.density ?? 0.5;
-
-    // Pitch, against the song's own key when it's clear enough to trust. Measure first (detection
-    // only), and only pay for the resampling pass when there's sustained singing and a real drift:
-    // 30 cents sits outside normal vibrato, which alone swings ±50-100 cents around a note and
-    // averages out far lower. Strength scales with how far off it is, capped at 0.7 so a held note
-    // never picks up the shifter's character at full snap.
-    const scale = song.key && song.key.confidence >= 0.6 ? song.key.scale : undefined;
-    pitchScaleRef.current = scale;
-    const pitchProfile = analyzePitch(buffer, scale);
-    if (song.key) {
-      const keyName = `${NOTE_NAMES[song.key.tonic]} ${t(song.key.mode === "major" ? "studio.modeMajor" : "studio.modeMinor")}`;
-      report.push(t(scale ? "studio.reportKeyScale" : "studio.reportKey", { key: keyName }));
-    }
-    let pitchStrength = 0;
-    if (pitchProfile.voicedRatio > 0.2 && pitchProfile.avgAbsCents > 30) {
-      pitchStrength = clampF(0.15 + (pitchProfile.avgAbsCents / 220) * 0.55, 0.15, 0.7);
-      applyPitchCorrection(buffer, pitchStrength, scale);
-      report.push(t("studio.reportPitchFixed", { cents: Math.round(pitchProfile.avgAbsCents) }));
-    } else if (pitchProfile.voicedRatio > 0.2) {
-      report.push(t("studio.reportPitchOk"));
-    }
-    pitchAppliedRef.current = pitchStrength;
-
-    // Low cut just under the lowest note actually sung, so it takes rumble and handling noise
-    // without ever thinning the voice itself; a raw take in a noisy room leans on it harder, but
-    // still never above 80% of that lowest note.
-    const lowHz = pitchProfile.lowHz;
-    const ceilingHz = lowHz ? Math.min(150, lowHz * 0.8) : 150;
-    const roomHz = isClean ? 50 : 50 + clampF(((after.noiseFloorDb + 55) / 30) * 100, 0, 85);
-    const lowCutHz = clamp(
-      Math.max(lowHz ? lowHz * 0.6 : 80, Math.min(roomHz, ceilingHz)),
-      50,
-      150,
-    );
-    report.push(t("studio.reportLowCut", { hz: lowCutHz }));
-
-    // Vocal/playback balance from measured levels, not defaults: the vocal's loud passages sit a
-    // little over the backing's (analyzeSignal's 85th-percentile level), by more for a dense,
-    // wall-to-wall arrangement than for a sparse one. Playback stays near its default and the
-    // vocal moves; playback only gives way once the vocal slider would run off its range.
-    let vocalPct = vocalVolume;
-    let playbackPct = playbackVolume;
-    if (backingBuffer && song.backing) {
-      const gapDb = 1 + density * 2.5;
-      const backingDb = analyzeSignal(backingBuffer).vocalLevelDb;
-      const ratio = Tone.dbToGain(gapDb - (after.vocalLevelDb - backingDb));
-      vocalPct = clamp(95 * ratio, 50, 200);
-      playbackPct = clamp(vocalPct / ratio, 0, 150);
-      report.push(
-        t("studio.reportBalance", {
-          db: gapDb.toFixed(1),
-          arrangement: t(density >= 0.6 ? "studio.reportDense" : "studio.reportSparse"),
-        }),
-      );
-    }
-
-    // Presence (~3kHz): toward the target on the voice itself, plus half of whatever shortfall is
-    // left against the music at the levels just chosen — the band where the backing covering the
-    // voice costs the words first.
-    const presenceTilt = -11 - (v.presence - v.body);
-    let maskDb = 0;
-    if (song.backing) {
-      maskDb =
-        song.backing.bands.presence +
-        20 * Math.log10(Math.max(0.01, playbackPct / 100)) -
-        (v.presence + 20 * Math.log10(vocalPct / 100));
-    }
-    const presenceDb = clamp(presenceTilt + Math.max(0, maskDb + 3) * 0.5, -3, 5);
-    if (presenceDb >= 1) {
-      report.push(
-        t(maskDb > -3 ? "studio.reportMasking" : "studio.reportPresence", { db: presenceDb }),
-      );
-    } else if (presenceDb <= -1) {
-      report.push(t("studio.reportPresenceCut", { db: -presenceDb }));
-    }
-
-    // Mud (~300Hz): cut only the excess over a full-but-clear low-mid.
-    const mudCutDb = clamp((v.mud - v.body - 9) * 0.6, 0, 6);
-    if (mudCutDb >= 1) report.push(t("studio.reportMud", { db: mudCutDb }));
-
-    // Top end: open up a dull take, but never brighten a sibilant one — excess 5-9kHz energy
-    // pulls the tilt down instead.
-    const sibilanceExcess = v.sibilance - v.presence + 5;
-    let tiltDb = clampF((-12 - (v.air - v.presence)) * 0.5, -4, 4);
-    if (sibilanceExcess > 0) {
-      tiltDb = Math.min(tiltDb, 0) - Math.min(3, sibilanceExcess * 0.5);
-      report.push(t("studio.reportSibilance"));
-    } else if (tiltDb >= 1) {
-      report.push(t("studio.reportAir", { db: Math.round(tiltDb) }));
-    } else if (tiltDb <= -1) {
-      report.push(t("studio.reportDarken", { db: Math.round(-tiltDb) }));
-    }
-    const eqAmt = clamp(50 + (tiltDb / 8) * 50, 20, 75);
-
-    // Compression from how unevenly the take was actually sung (loud vs soft phrases), not from
-    // noise floor to peak — on a model-cleaned take that "range" is enormous and meaningless.
-    const spread = song.vocal.phraseSpreadDb;
-    const compAmt = clamp(((spread - 6) / 12) * 100, 15, 80);
-    if (spread > 8) report.push(t("studio.reportComp", { db: Math.round(spread) }));
-
-    // Reverb timed to the song: a tail of about two beats and a 1/64-note pre-delay, so the space
-    // breathes with the tempo instead of smearing across it. A cleaned take is bone-dry and needs
-    // a plate put back to sit inside the music — more in a sparse arrangement, less in a fast or
-    // dense one. A raw take already carries its own room, so it only gets a sheen.
-    const beat = song.tempoBpm ? 60 / song.tempoBpm : null;
-    const tail = beat ? clampF(beat * 2, 0.8, 2.2) : isClean ? 1.4 : 1.0;
-    const reverbSizeAmt = clamp(((tail - 0.6) / 1.8) * 100, 0, 100);
-    const preDelaySeconds = beat ? clampF(beat / 16, 0.012, 0.04) : 0.03;
-    const reverbAmt = isClean
-      ? clamp(18 + (1 - density) * 14 - ((song.tempoBpm ?? 0) > 130 ? 4 : 0), 12, 32)
-      : clamp(14 - (after.noiseFloorDb + 55) * 0.33, 4, 14);
-    report.push(
-      song.tempoBpm
-        ? t("studio.reportReverbTempo", {
-            bpm: Math.round(song.tempoBpm),
-            tail: tail.toFixed(1),
-            amount: reverbAmt,
-          })
-        : t(isClean ? "studio.reportReverb" : "studio.reportReverbRaw", {
-            tail: tail.toFixed(1),
-            amount: reverbAmt,
-          }),
-    );
-
-    // Loudness: push toward a finished-record level, capped by the headroom the mix's own measured
-    // peak actually leaves at the levels chosen above (minus slack for the EQ, presence boost and
-    // reverb send ahead of the limiter) — the limiter is a fast compressor, not a true brickwall,
-    // so it's only ever asked to trim a small, catchable amount. See peakDbOf for why peak, not RMS.
-    const peakDb = peakDbOfMix(
-      buffer,
-      stems ? vocalPct / 100 : 1,
-      backingBuffer,
-      playbackPct / 100,
-    );
-    const availableHeadroomDb = -1 - peakDb - 3 - Math.max(0, presenceDb) * 0.5;
-    const gainBoostDb = clamp(Math.min(-12 - after.vocalLevelDb, availableHeadroomDb), 0, 6);
-    if (gainBoostDb >= 1) report.push(t("studio.reportLoudness", { db: gainBoostDb }));
-
-    setA(Math.round(pitchStrength * 100));
-    setN(lowCutHz - 50);
-    setMudCut(mudCutDb);
-    setPresence(presenceDb);
-    setR(reverbAmt);
-    setReverbSize(reverbSizeAmt);
-    setPreDelay(Math.round(preDelaySeconds * 1000) / 1000);
-    setE(eqAmt);
-    setC(compAmt);
-    setGainDb(gainBoostDb);
-    setVocalVolume(vocalPct);
-    setPlaybackVolume(playbackPct);
-    setMasterReport(report);
-    setMasterStage("done");
-    if (announce) toast.success(t(isClean ? "studio.cleanupDoneToast" : "studio.masterDoneToast"));
   };
   const applyMasterRef = useRef(applyMaster);
   applyMasterRef.current = applyMaster;
@@ -1130,12 +805,15 @@ function StudioPage() {
   };
   const cleaningNow = cleanupMutation.isPending || cleanupState === "processing";
   const aiMasterBusy =
-    awaitingMaster || cleaningNow || masterStage === "analyzing" || masterStage === "mastering";
+    awaitingMaster ||
+    cleaningNow ||
+    MASTER_STEPS.includes(masterStage as (typeof MASTER_STEPS)[number]);
   type StepState = "pending" | "active" | "done";
   const replicateStatus =
     cleanupStatus.data?.status === "processing" && "replicateStatus" in cleanupStatus.data
       ? cleanupStatus.data.replicateStatus
       : null;
+  const masterStepIndex = MASTER_STEPS.indexOf(masterStage as (typeof MASTER_STEPS)[number]);
   const steps: { label: string; state: StepState; progress?: number; detail?: string }[] = [
     ...(draft?.rawVocalUrl
       ? [
@@ -1157,13 +835,15 @@ function StudioPage() {
           },
         ]
       : []),
-    {
-      label: t("studio.stageAnalyze"),
-      state:
-        masterStage === "analyzing" ? "active" : masterStage === "mastering" ? "done" : "pending",
-      progress: masterStage === "analyzing" ? analysisProgress : undefined,
-    },
-    { label: t("studio.stageMaster"), state: masterStage === "mastering" ? "active" : "pending" },
+    ...MASTER_STEPS.map((stage, i) => ({
+      label: t(MASTER_STEP_LABELS[stage]),
+      state: (masterStepIndex === i
+        ? "active"
+        : masterStepIndex > i
+          ? "done"
+          : "pending") as StepState,
+      progress: stage === "analyzing" && masterStepIndex === 0 ? analysisProgress : undefined,
+    })),
   ];
 
   return (
@@ -1325,8 +1005,8 @@ function StudioPage() {
                 backingTrackUrl={draft.backingTrackUrl}
                 backingStartOffsetSeconds={draft.backingStartOffsetSeconds}
                 videoUrl={draft.videoUrl || undefined}
-                vocalGain={vocalVolume / 100}
-                backingGain={playbackVolume / 100}
+                vocalGain={mix.vocalVolume / 100}
+                backingGain={mix.playbackVolume / 100}
                 initialStartFraction={duration > 0 ? currentTime / duration : 0}
                 onClose={() => setFixSectionOpen(false)}
                 onSaved={(urls) => {
@@ -1472,8 +1152,8 @@ function StudioPage() {
                   {stems && (
                     <Slider
                       label={t("record.vocalVolume")}
-                      v={vocalVolume}
-                      onChange={setVocalVolume}
+                      v={mix.vocalVolume}
+                      onChange={setMixValue("vocalVolume")}
                       min={50}
                       max={200}
                     />
@@ -1481,8 +1161,8 @@ function StudioPage() {
                   {stems && sources?.backingUrl && (
                     <Slider
                       label={t("record.playbackVolume")}
-                      v={playbackVolume}
-                      onChange={setPlaybackVolume}
+                      v={mix.playbackVolume}
+                      onChange={setMixValue("playbackVolume")}
                       min={0}
                       max={150}
                     />
@@ -1492,30 +1172,70 @@ function StudioPage() {
                     v={autotune}
                     onChange={handleAutotuneChange}
                   />
-                  <Slider label={t("record.noise")} v={noise} onChange={setN} />
+                  <Slider
+                    label={t("record.noise")}
+                    v={mix.lowCut + 50}
+                    onChange={(hz) => setMixValue("lowCut")(hz - 50)}
+                    min={50}
+                    max={150}
+                    suffix=" Hz"
+                  />
                   <Slider
                     label={t("record.mudCut")}
-                    v={mudCut}
-                    onChange={setMudCut}
+                    v={mix.mudCutDb}
+                    onChange={setMixValue("mudCutDb")}
                     max={6}
+                    step={0.5}
                     suffix=" dB"
+                  />
+                  <Slider
+                    label={t("record.deEsser")}
+                    v={mix.deEss}
+                    onChange={setMixValue("deEss")}
+                  />
+                  <Slider
+                    label={t("record.compression")}
+                    v={mix.compression}
+                    onChange={setMixValue("compression")}
                   />
                   <Slider
                     label={t("record.presence")}
-                    v={presence}
-                    onChange={setPresence}
+                    v={mix.presenceDb}
+                    onChange={setMixValue("presenceDb")}
                     min={-6}
                     max={6}
+                    step={0.5}
                     suffix=" dB"
                   />
-                  <Slider label={t("record.reverb")} v={reverbAmt} onChange={setR} />
-                  <Slider label={t("record.reverbSize")} v={reverbSize} onChange={setReverbSize} />
-                  <Slider label={t("record.eq")} v={eq} onChange={setE} />
-                  <Slider label={t("record.compression")} v={comp} onChange={setC} />
+                  <Slider
+                    label={t("record.eq")}
+                    v={mix.airDb}
+                    onChange={setMixValue("airDb")}
+                    min={-6}
+                    max={6}
+                    step={0.5}
+                    suffix=" dB"
+                  />
+                  <Slider
+                    label={t("record.warmth")}
+                    v={mix.warmth}
+                    onChange={setMixValue("warmth")}
+                  />
+                  <Slider
+                    label={t("record.reverb")}
+                    v={mix.reverb}
+                    onChange={setMixValue("reverb")}
+                  />
+                  <Slider
+                    label={t("record.reverbSize")}
+                    v={mix.reverbSize}
+                    onChange={setMixValue("reverbSize")}
+                  />
+                  <Slider label={t("record.delay")} v={mix.delay} onChange={setMixValue("delay")} />
                   <Slider
                     label={t("record.speed")}
-                    v={speed}
-                    onChange={setSpeed}
+                    v={mix.speed}
+                    onChange={setMixValue("speed")}
                     min={50}
                     max={150}
                     suffix="%"
@@ -1563,6 +1283,7 @@ function Slider({
   onChange,
   min = 0,
   max = 100,
+  step = 1,
   suffix = "%",
 }: {
   label: string;
@@ -1570,6 +1291,7 @@ function Slider({
   onChange: (n: number) => void;
   min?: number;
   max?: number;
+  step?: number;
   suffix?: string;
 }) {
   return (
@@ -1585,6 +1307,7 @@ function Slider({
         type="range"
         min={min}
         max={max}
+        step={step}
         value={v}
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-full studio-slider"
