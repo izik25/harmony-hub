@@ -7,10 +7,10 @@
  * are complementary, not redundant — this one is what keeps the raw/rawVocalUrl upload itself
  * cleaner too, which the offline pass alone never touches.
  *
- * Deliberately never touches the live "hear yourself" monitor graph in record.tsx — that stream
- * needs the shortest possible signal path to stay low-latency (see MONITOR_CONSTRAINTS there), and
- * runs through an AudioWorkletNode of its own here regardless would add a render-quantum's worth
- * of delay for no benefit, since nobody hears this copy live.
+ * The live "hear yourself" monitor in record.tsx gets its own, more aggressive processor from this
+ * same module (see createMonitorGate) rather than this one. An AudioWorkletNode adds no delay of
+ * its own — it runs synchronously inside the same render quantum as the rest of the graph — so
+ * gating the monitor costs no latency, only the gate's own (sub-millisecond) attack.
  *
  * Runs as an AudioWorkletProcessor (off the main thread) rather than a deprecated
  * ScriptProcessorNode, registered from an in-memory Blob URL so it doesn't need its own file
@@ -54,6 +54,50 @@ class MicNoiseGateProcessor extends AudioWorkletProcessor {
   }
 }
 registerProcessor("mic-noise-gate", MicNoiseGateProcessor);
+
+// The monitor's capture has NS/AGC off (they'd add latency), so without this every bit of room
+// noise goes straight into the singer's headphones. Unlike the recording gate above this one
+// follows a smoothed envelope instead of raw per-sample magnitude (so it doesn't chatter on
+// zero crossings), holds open briefly after the voice drops (so word tails survive), and dips
+// much deeper, since a quiet room between phrases is exactly what a monitor should sound like.
+class MonitorGateProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    const ms = (t) => 1 - Math.exp(-1 / (sampleRate * t / 1000));
+    this._envAttack = ms(0.5);
+    this._envRelease = ms(40);
+    this._floorDown = ms(80);
+    this._floorUp = ms(6000);
+    this._gainAttack = ms(1.5);
+    this._gainRelease = ms(180);
+    this._holdSamples = Math.round(sampleRate * 0.15);
+    this._env = 0;
+    this._floor = 0.001;
+    this._hold = 0;
+    this._gain = 0;
+  }
+  process(inputs, outputs) {
+    const inCh = inputs[0] && inputs[0][0];
+    const outCh = outputs[0] && outputs[0][0];
+    if (!inCh || !outCh) return true;
+    for (let i = 0; i < inCh.length; i++) {
+      const sample = inCh[i];
+      const mag = Math.abs(sample);
+      this._env += (mag - this._env) * (mag > this._env ? this._envAttack : this._envRelease);
+      this._floor += (this._env - this._floor) * (this._env < this._floor ? this._floorDown : this._floorUp);
+      // ~+12dB over the room, never below ~-48dBFS so a near-silent room can't make the gate
+      // twitch open on breaths and clothing rustle.
+      const threshold = Math.max(this._floor * 4, 0.004);
+      if (this._env >= threshold) this._hold = this._holdSamples;
+      else if (this._hold > 0) this._hold--;
+      const target = this._hold > 0 ? 1 : 0.06; // ~-24dB between phrases
+      this._gain += (target - this._gain) * (target > this._gain ? this._gainAttack : this._gainRelease);
+      outCh[i] = sample * this._gain;
+    }
+    return true;
+  }
+}
+registerProcessor("monitor-gate", MonitorGateProcessor);
 `;
 
 // AudioWorklet module registration is per-AudioContext and can't be undone, so this is cached per
@@ -88,15 +132,28 @@ export type LiveNoiseGate = {
  * AudioWorklet isn't available or registration fails for any reason — noise reduction is a
  * nice-to-have, not something a take should ever be lost over.
  */
-export async function createLiveNoiseGate(
+export function createLiveNoiseGate(ctx: AudioContext, source: AudioNode): Promise<LiveNoiseGate> {
+  return createGate(ctx, source, "mic-noise-gate");
+}
+
+/**
+ * The live monitor's gate — see MonitorGateProcessor above. Same fallback contract as
+ * createLiveNoiseGate: if it can't be built, `source` passes through ungated.
+ */
+export function createMonitorGate(ctx: AudioContext, source: AudioNode): Promise<LiveNoiseGate> {
+  return createGate(ctx, source, "monitor-gate");
+}
+
+async function createGate(
   ctx: AudioContext,
   source: AudioNode,
+  processorName: "mic-noise-gate" | "monitor-gate",
 ): Promise<LiveNoiseGate> {
   const fallback: LiveNoiseGate = { node: source, dispose: () => {} };
   if (typeof ctx.audioWorklet === "undefined") return fallback;
   try {
     await ensureWorkletModule(ctx);
-    const gateNode = new AudioWorkletNode(ctx, "mic-noise-gate", {
+    const gateNode = new AudioWorkletNode(ctx, processorName, {
       numberOfInputs: 1,
       numberOfOutputs: 1,
       channelCount: 1,
