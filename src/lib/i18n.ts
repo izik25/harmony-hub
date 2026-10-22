@@ -267,7 +267,6 @@ const en = {
     stageAnalyze: "Analyzing the song — key, tempo, spectrum",
     reportLoudnessFinal:
       "Final check: {{lufs}} LUFS, peak {{peak}} dB (streaming standard: −14 LUFS, peak under −1 dB)",
-    reportDelay: "Dotted-eighth echo ({{ms}} ms) on the beat, filtered behind the voice",
     reportWarmth: "Subtle harmonic saturation for warmth and density",
     reportDeEss: "De-esser at {{hz}} Hz — about {{db}} dB off harsh “s” sounds",
     stageVerify: "Rendering the mix and measuring it",
@@ -295,10 +294,14 @@ const en = {
     reportAir: "Added air on top (+{{db}} dB)",
     reportDarken: "Tamed a harsh top end (−{{db}} dB)",
     reportComp: "Compression 3.5:1 — about {{db}} dB on loud phrases for a steady, upfront voice",
-    reportReverbTempo: "Plate reverb timed to {{bpm}} BPM — {{tail}}s decay, {{pre}} ms pre-delay",
-    reportReverb: "Plate reverb — {{tail}}s decay, {{pre}} ms pre-delay",
+    reportReverbTempo:
+      "Plate reverb timed to {{bpm}} BPM — {{tail}}s decay, {{pre}} ms pre-delay, measured {{lu}} LU under your voice so it's felt, not heard",
+    reportReverb:
+      "Plate reverb — {{tail}}s decay, {{pre}} ms pre-delay, measured {{lu}} LU under your voice so it's felt, not heard",
     reportReverbRaw:
-      "Your room's own ambience kept — only a light plate ({{tail}}s, {{pre}} ms pre-delay)",
+      "Your room's own ambience kept — only a touch of plate, {{lu}} LU under your voice",
+    reportNoDelay:
+      "No echo added — it smears running lyrics; add it by hand in Manual Mastering if you want it",
     fixSection: "Fix a Section",
     fixSectionDesc:
       "Sang a line wrong somewhere in the middle? Mark where it starts and ends, re-record just that part, and it gets stitched back into the rest of your take — nothing else changes.",
@@ -1114,7 +1117,6 @@ const he = {
     stageAnalyze: "מנתח את השיר — סולם, קצב, ספקטרום",
     reportLoudnessFinal:
       "בדיקה סופית: {{lufs}} LUFS, שיא {{peak}}dB (תקן סטרימינג: −14 LUFS, שיא מתחת ל−1dB)",
-    reportDelay: "הד בשמינית מנוקדת ({{ms}}ms) על הביט, מסונן מאחורי הקול",
     reportWarmth: "סטורציה הרמונית עדינה לחום ולנוכחות",
     reportDeEss: "דה-אסר ב-{{hz}}Hz — בערך {{db}}dB פחות בצלילי ש/ס חדים",
     stageVerify: "מרנדר את המיקס ומודד אותו",
@@ -1143,10 +1145,11 @@ const he = {
     reportDarken: "רוככו גבוהים צורמים (−{{db}}dB)",
     reportComp: "קומפרסיה 3.5:1 — בערך {{db}}dB במשפטים החזקים, לקול יציב וקדמי",
     reportReverbTempo:
-      "ריוורב פלייט מתוזמן ל-{{bpm}} BPM — דעיכה {{tail}} שנ׳, pre-delay {{pre}}ms",
-    reportReverb: "ריוורב פלייט — דעיכה {{tail}} שנ׳, pre-delay {{pre}}ms",
-    reportReverbRaw:
-      "האווירה הטבעית של החדר נשמרה — רק פלייט קל ({{tail}} שנ׳, pre-delay {{pre}}ms)",
+      "ריוורב פלייט מתוזמן ל-{{bpm}} BPM — דעיכה {{tail}} שנ׳, pre-delay {{pre}}ms, נמדד {{lu}}LU מתחת לקול שלך כדי שירגישו אותו ולא ישמעו אותו",
+    reportReverb:
+      "ריוורב פלייט — דעיכה {{tail}} שנ׳, pre-delay {{pre}}ms, נמדד {{lu}}LU מתחת לקול שלך כדי שירגישו אותו ולא ישמעו אותו",
+    reportReverbRaw: "האווירה הטבעית של החדר נשמרה — רק נגיעה של פלייט, {{lu}}LU מתחת לקול שלך",
+    reportNoDelay: "לא נוסף הד — הוא מורח מילים רצופות; אפשר להוסיף אותו ידנית במאסטרינג ידני",
     fixSection: "תקן קטע",
     fixSectionDesc:
       "שרת לא נכון איפשהו באמצע? סמן איפה זה מתחיל ואיפה זה נגמר, הקלט מחדש רק את הקטע הזה, והוא יתחבר בחזרה לשאר ההקלטה — כלום אחר לא משתנה.",
@@ -1960,7 +1963,6 @@ const ar = {
     stageAnalyze: "تحليل الأغنية — المقام، الإيقاع، الطيف",
     reportLoudnessFinal:
       "الفحص النهائي: {{lufs}} LUFS، الذروة {{peak}}dB (معيار البث: −14 LUFS، الذروة تحت −1dB)",
-    reportDelay: "صدى بثُمن منقوط ({{ms}}ms) على النبض، مُرشَّح خلف الصوت",
     reportWarmth: "تشبّع توافقي خفيف للدفء والكثافة",
     reportDeEss: "مزيل السين عند {{hz}}Hz — نحو {{db}}dB أقل في أصوات السين الحادة",
     stageVerify: "تصيير المزيج وقياسه",
@@ -1988,9 +1990,13 @@ const ar = {
     reportAir: "أُضيف هواء في الترددات العالية (+{{db}}dB)",
     reportDarken: "خُفّفت الترددات العالية الحادة (−{{db}}dB)",
     reportComp: "ضغط 3.5:1 — نحو {{db}}dB على الجمل القوية لصوت ثابت وبارز",
-    reportReverbTempo: "صدى بليت متزامن مع {{bpm}} BPM — تلاشٍ {{tail}} ث، pre-delay {{pre}}ms",
-    reportReverb: "صدى بليت — تلاشٍ {{tail}} ث، pre-delay {{pre}}ms",
-    reportReverbRaw: "حُفظت أجواء غرفتك الطبيعية — بليت خفيف فقط ({{tail}} ث، pre-delay {{pre}}ms)",
+    reportReverbTempo:
+      "صدى بليت متزامن مع {{bpm}} BPM — تلاشٍ {{tail}} ث، pre-delay {{pre}}ms، مقاس {{lu}}LU تحت صوتك ليُحَسّ لا ليُسمَع",
+    reportReverb:
+      "صدى بليت — تلاشٍ {{tail}} ث، pre-delay {{pre}}ms، مقاس {{lu}}LU تحت صوتك ليُحَسّ لا ليُسمَع",
+    reportReverbRaw: "حُفظت أجواء غرفتك الطبيعية — لمسة بليت فقط، {{lu}}LU تحت صوتك",
+    reportNoDelay:
+      "لم يُضَف صدى متكرر — فهو يطمس الكلمات المتتالية؛ أضفه يدوياً في الماسترينج اليدوي إن أردت",
     fixSection: "إصلاح مقطع",
     fixSectionDesc:
       "غنّيت جملة بشكل خاطئ في مكان ما في المنتصف؟ حدّد أين تبدأ وأين تنتهي، أعد تسجيل هذا الجزء فقط، وسيتم دمجه مرة أخرى مع باقي التسجيل — لا شيء آخر يتغيّر.",

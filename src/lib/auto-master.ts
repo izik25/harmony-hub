@@ -38,7 +38,13 @@ export function planProcessing({
   isClean: boolean;
   noiseFloorDb: number;
   base: MixSettings;
-}): { settings: MixSettings; report: ReportLine[] } {
+}): {
+  settings: MixSettings;
+  report: ReportLine[];
+  /** Where the reverb should sit under the dry voice, LU. */
+  reverbTargetLu: number;
+  reverbReport: (lu: number) => ReportLine;
+} {
   const v = song.vocal.bands;
   const density = song.backing?.density ?? 0.5;
   const report: ReportLine[] = [];
@@ -99,35 +105,33 @@ export function planProcessing({
   const warmth = isClean ? 25 : 12;
   report.push({ key: "studio.reportWarmth" });
 
-  // Plate reverb: ~1.2-1.8s for up-tempo pop, 2-3s for ballads, 20-40ms pre-delay so each word
-  // starts dry, and a 10-20% send. A model-dried take needs the space put back (more in a sparse
-  // arrangement); a raw take already carries its room and only gets a light plate.
+  // Plate reverb: short tails (≈1.6s for a slow song down to 1.0s for a fast one — the lower
+  // half of the usual pop range, since a long tail on a phone take reads as echo), 20-40ms
+  // pre-delay so each word starts dry. How much is not guessed from a dial position: Studio renders
+  // the take with and without it and sets the send so the reverb lands at a fixed loudness under
+  // the dry voice (see reverbSendFor) — subtle, a little more over a sparse arrangement. A raw
+  // take already carries its own room, so it gets far less.
   const bpm = song.tempoBpm;
-  const tail = bpm ? clamp(2.4 - (bpm - 75) * 0.024, 1.2, 2.4) : 1.6;
+  const tail = bpm ? clamp(1.6 - (bpm - 75) * 0.015, 1.0, 1.6) : 1.3;
   const preDelay = bpm ? clamp(60 / bpm / 16, 0.02, 0.04) : 0.03;
-  const reverb = Math.round(
-    isClean ? clamp(26 + (1 - density) * 16, 24, 40) : clamp(16 + (1 - density) * 8, 12, 24),
-  );
+  // Subtle on purpose: listening tests have favored reverb as loud as ~9 LU under the dry voice,
+  // but on these takes anything over ~−25 LU read as "too much reverb" — the voice is the product.
+  const reverbTargetLu = isClean ? -28 + (1 - density) * 3 : -32;
   const tailText = tail.toFixed(1);
   const preMs = Math.round(preDelay * 1000);
-  report.push(
-    !isClean
-      ? { key: "studio.reportReverbRaw", values: { tail: tailText, pre: preMs } }
-      : bpm
-        ? {
-            key: "studio.reportReverbTempo",
-            values: { bpm: Math.round(bpm), tail: tailText, pre: preMs },
-          }
-        : { key: "studio.reportReverb", values: { tail: tailText, pre: preMs } },
-  );
+  const reverbReport = (lu: number): ReportLine => {
+    const values = { tail: tailText, pre: preMs, lu: Math.round(-lu) };
+    if (!isClean) return { key: "studio.reportReverbRaw", values };
+    return bpm
+      ? { key: "studio.reportReverbTempo", values: { ...values, bpm: Math.round(bpm) } }
+      : { key: "studio.reportReverb", values };
+  };
 
-  // Delay: a dotted eighth — the go-to pop vocal echo — low feedback, filtered behind the voice.
-  // Only with a detected tempo; an echo off the beat is worse than none.
+  // No echo from AI mastering: a delay on every word smears running lyrics — engineers use it as
+  // a throw on chosen words, which only a person can pick. Its time is still set to a dotted
+  // eighth of the tempo, so turning it up in Manual Mastering lands on the beat.
   const delayTime = bpm ? (60 / bpm) * 0.75 : base.delayTime;
-  const delay = bpm ? Math.round(isClean ? clamp(14 + (1 - density) * 14, 12, 28) : 8) : 0;
-  if (delay > 0) {
-    report.push({ key: "studio.reportDelay", values: { ms: Math.round(delayTime * 1000) } });
-  }
+  report.push({ key: "studio.reportNoDelay" });
 
   return {
     settings: {
@@ -144,14 +148,25 @@ export function planProcessing({
       presenceDb,
       airDb,
       warmth,
-      reverb,
+      // A probe level; the real send is measured in (reverbSendFor).
+      reverb: REVERB_PROBE,
       reverbSize: Math.round(((tail - 0.6) / 1.8) * 100),
       preDelay: Math.round(preDelay * 1000) / 1000,
-      delay,
+      delay: 0,
       delayTime: Math.round(delayTime * 1000) / 1000,
     },
     report,
+    reverbTargetLu,
+    reverbReport,
   };
+}
+
+export const REVERB_PROBE = 30;
+
+/** The reverb send that puts the reverb at `targetLu` relative to the dry voice, given that the
+ * send at REVERB_PROBE measured `probeLu` — the send is linear, so loudness moves 20·log10 with it. */
+export function reverbSendFor(probeLu: number, targetLu: number): number {
+  return Math.round(clamp(REVERB_PROBE * 10 ** ((targetLu - probeLu) / 20), 0, 60));
 }
 
 /** Streaming services normalize to about −14 LUFS with true peak under −1dB; mastering to that
@@ -160,9 +175,10 @@ export const TARGET_LUFS = -14;
 
 /**
  * Vocal/playback balance and master gain from rendered measurements: the processed vocal's
- * loudness (LUFS, rendered alone through the chain) against the backing's. Pop leads sit above
- * the music — measured on commercial records at about +1dB on average, more for clarity — so this
- * aims for +1.5 LU over a sparse arrangement up to +3 LU over a dense one. Master gain then takes
+ * loudness (LUFS, rendered dry and alone through the chain) against the backing's. Pop leads sit
+ * above the music — about +1dB on average on commercial records, but this is a singer showcasing a
+ * performance over a full produced instrumental, where being heard clearly wins — so this aims for
+ * +4 LU over a sparse arrangement up to +5.5 LU over a dense one. Master gain then takes
  * the sum to the target, capped so the limiter never has to take more than ~3dB off a peak (more
  * than that is where a limiter starts to audibly distort).
  */
@@ -184,7 +200,7 @@ export function planLevels({
   let playbackPct = base.playbackVolume;
   let gapDb: number | null = null;
   if (backingLufs != null) {
-    gapDb = round1(1.5 + density * 1.5);
+    gapDb = round1(4 + density * 1.5);
     const ratio = 10 ** ((gapDb - (vocalLufs - backingLufs)) / 20);
     // Vocal capped at 160% so the slider keeps headroom for a manual push; past that the
     // playback comes down instead.

@@ -51,6 +51,8 @@ import {
   pitchStrengthFor,
   planLevels,
   planProcessing,
+  REVERB_PROBE,
+  reverbSendFor,
   TARGET_LUFS,
   type ReportLine,
 } from "@/lib/auto-master";
@@ -713,7 +715,12 @@ function StudioPage() {
       setA(Math.round(strength * 100));
       if (!(await step("mastering"))) return;
 
-      const { settings: processed, report } = planProcessing({
+      const {
+        settings: processed,
+        report,
+        reverbTargetLu,
+        reverbReport,
+      } = planProcessing({
         song,
         pitch: pitchBefore,
         isClean,
@@ -723,10 +730,27 @@ function StudioPage() {
       lines.push(...report);
       if (!(await step("verifying"))) return;
 
-      // Balance from the processed vocal's real loudness: render it alone through the chain.
-      const vocalOnly = await renderMix(buffer, null, { ...processed, vocalVolume: 100 }, false);
+      // Measure instead of guessing: the processed voice rendered dry, then with the reverb at a
+      // probe level — the difference is the reverb alone, so the send can be set to land it at its
+      // target under this voice.
+      const dryRender = await renderMix(
+        buffer,
+        null,
+        { ...processed, reverb: 0, delay: 0, vocalVolume: 100 },
+        false,
+      );
       if (stale()) return;
-      const vocalLufs = dualMonoLufs(vocalOnly.getChannelData(0), vocalOnly.sampleRate).lufs;
+      const dry = dryRender.getChannelData(0);
+      const vocalLufs = dualMonoLufs(dry, dryRender.sampleRate).lufs;
+      const probe = (
+        await renderMix(buffer, null, { ...processed, vocalVolume: 100 }, false)
+      ).getChannelData(0);
+      if (stale()) return;
+      const reverbOnly = probe.map((x, i) => x - (dry[i] ?? 0));
+      const probeLu = dualMonoLufs(reverbOnly, dryRender.sampleRate).lufs - vocalLufs;
+      const reverb = reverbSendFor(probeLu, reverbTargetLu);
+      const spaced = { ...processed, reverb };
+      lines.push(reverbReport(reverb > 0 ? probeLu + 20 * Math.log10(reverb / REVERB_PROBE) : -99));
       const backingLufs = backingBuffer
         ? dualMonoLufs(downmix(backingBuffer), backingBuffer.sampleRate).lufs
         : null;
@@ -735,8 +759,8 @@ function StudioPage() {
         vocalLufs,
         backingLufs,
         density,
-        base: processed,
-        mixPeakDbAt: (vl, bl) => peakDbOfMix(vocalOnly, vl, backingBuffer, bl),
+        base: spaced,
+        mixPeakDbAt: (vl, bl) => peakDbOfMix(dryRender, vl, backingBuffer, bl),
       });
       if (gapDb != null) {
         lines.push({
