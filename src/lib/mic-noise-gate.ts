@@ -7,10 +7,10 @@
  * are complementary, not redundant — this one is what keeps the raw/rawVocalUrl upload itself
  * cleaner too, which the offline pass alone never touches.
  *
- * The live "hear yourself" monitor in record.tsx gets its own, more aggressive processor from this
- * same module (see createMonitorGate) rather than this one. An AudioWorkletNode adds no delay of
- * its own — it runs synchronously inside the same render quantum as the rest of the graph — so
- * gating the monitor costs no latency, only the gate's own (sub-millisecond) attack.
+ * The live "hear yourself" monitor in record.tsx gets its own processor from this same module (see
+ * createMonitorVoice) rather than this one — expander, compressor and limiter in one. An
+ * AudioWorkletNode adds no delay of its own — it runs synchronously inside the same render quantum
+ * as the rest of the graph — so processing the monitor costs no latency.
  *
  * Runs as an AudioWorkletProcessor (off the main thread) rather than a deprecated
  * ScriptProcessorNode, registered from an in-memory Blob URL so it doesn't need its own file
@@ -55,79 +55,74 @@ class MicNoiseGateProcessor extends AudioWorkletProcessor {
 }
 registerProcessor("mic-noise-gate", MicNoiseGateProcessor);
 
-// The monitor's capture has NS/AGC off (they'd add latency), so without this every bit of room
-// noise goes straight into the singer's headphones. A level-only gate isn't enough here: a shirt
-// rustle or a tap on the phone is easily as loud at the capsule as a voice. So the gate only
-// *opens* on sound that looks like singing — enough energy in the 150-1200Hz band where a voice's
-// fundamental and first formant sit (rustle/hiss/clicks are mostly above it, handling thumps below
-// it), sustained for a few milliseconds (clicks and taps are shorter). Once open it stays open on
-// level alone, with a hold, so consonants and word tails inside a phrase still come through.
-// Closed, it's fully silent.
-class MonitorGateProcessor extends AudioWorkletProcessor {
+// The live monitor's "headphone mix" voice chain, in one zero-lookahead pass — what a studio
+// engineer puts on a singer's cue feed: no gate chopping the starts of words, just a soft
+// downward expander that only tucks the room ~20dB under once you stop singing, a gentle
+// compressor so soft and belted lines sit at the same, comfortable level, makeup gain (the
+// capture has AGC off, so a raw phone capsule is quiet and uneven), and a fast peak limiter so a
+// loud note can never blast the headphones. Nothing here looks ahead, so it adds no latency.
+//
+// The old gate (fully silent until it heard ~8ms of "voice-band" energy) cut every consonant at
+// the start of a phrase and dropped out on soft notes, which is most of why monitoring sounded bad.
+class MonitorVoiceProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     const ms = (t) => 1 - Math.exp(-1 / (sampleRate * t / 1000));
-    const hz = (f) => 1 - Math.exp(-2 * Math.PI * f / sampleRate);
-    this._hp = hz(150);
-    this._lp = hz(1200);
-    this._envAttack = ms(1);
-    this._envRelease = ms(50);
-    this._floorDown = ms(100);
-    this._floorUp = ms(8000);
-    this._gainAttack = ms(3);
-    this._gainRelease = ms(120);
-    this._armSamples = Math.round(sampleRate * 0.008);
-    this._holdSamples = Math.round(sampleRate * 0.15);
-    this._lp1 = 0; this._lp2 = 0; this._b1 = 0; this._b2 = 0;
-    this._band = 0;
-    this._full = 0;
-    this._floor = 0.0005; // ~-66dB; rises to the real room level within seconds
-    this._armed = 0;
+    this._detAttack = ms(1);
+    this._detRelease = ms(60);
+    this._floorDown = ms(150);
+    this._floorRiseDb = 3 / sampleRate; // the floor creeps up at most 3dB/s
+    this._expAttack = ms(0.5);
+    this._expRelease = ms(250);
+    this._holdSamples = Math.round(sampleRate * 0.25);
+    this._compAttack = ms(4);
+    this._compRelease = ms(160);
+    this._limRelease = ms(80);
+    this._env = 0;
+    this._floorDb = -66; // a conservative guess before any real signal has arrived
     this._hold = 0;
-    this._gain = 0;
+    this._exp = 0.1;
+    this._compDb = 0;
+    this._lim = 1;
   }
   process(inputs, outputs) {
     const inCh = inputs[0] && inputs[0][0];
     const outCh = outputs[0] && outputs[0][0];
     if (!inCh || !outCh) return true;
     for (let i = 0; i < inCh.length; i++) {
-      const sample = inCh[i];
-      // Detector-only band split (the audio itself passes through unfiltered): two one-pole
-      // highpasses at 150Hz, then two one-pole lowpasses at 1200Hz.
-      this._lp1 += (sample - this._lp1) * this._hp;
-      const h1 = sample - this._lp1;
-      this._lp2 += (h1 - this._lp2) * this._hp;
-      const h2 = h1 - this._lp2;
-      this._b1 += (h2 - this._b1) * this._lp;
-      this._b2 += (this._b1 - this._b2) * this._lp;
-      const band = Math.abs(this._b2);
-      const full = Math.abs(sample);
-      this._band += (band - this._band) * (band > this._band ? this._envAttack : this._envRelease);
-      this._full += (full - this._full) * (full > this._full ? this._envAttack : this._envRelease);
-      // The floor only creeps up while the gate is closed — otherwise a long sustained note would
-      // slowly become "the room" and close the gate on itself mid-phrase.
-      if (this._band < this._floor) this._floor += (this._band - this._floor) * this._floorDown;
-      else if (this._hold === 0) this._floor += (this._band - this._floor) * this._floorUp;
-      // ~+16dB over the room's own voice-band level, and never below ~-50dBFS.
-      const threshold = Math.max(this._floor * 6, 0.003);
-      const voiced = this._band >= threshold && this._band >= this._full * 0.45;
-      if (this._hold > 0) {
-        // Already open: stays open on level alone (with some hysteresis), refreshing the hold.
-        if (this._band >= threshold * 0.7) this._hold = this._holdSamples;
-        else if (--this._hold === 0) this._armed = 0;
-      } else if (voiced) {
-        if (++this._armed >= this._armSamples) this._hold = this._holdSamples;
-      } else {
-        this._armed = 0;
-      }
-      const target = this._hold > 0 ? 1 : 0; // fully silent closed — only the voice gets through
-      this._gain += (target - this._gain) * (target > this._gain ? this._gainAttack : this._gainRelease);
-      outCh[i] = sample * this._gain;
+      const x = inCh[i];
+      const mag = Math.abs(x);
+      this._env += (mag - this._env) * (mag > this._env ? this._detAttack : this._detRelease);
+      const envDb = 20 * Math.log10(this._env + 1e-9);
+
+      // Room-level estimate: drops fast to the quiet between phrases, rises only slowly (in dB,
+      // so it can't stay stuck under a noisy room either) — a sustained note never becomes "the room".
+      if (envDb < this._floorDb) this._floorDb += (envDb - this._floorDb) * this._floorDown;
+      else this._floorDb += this._floorRiseDb;
+      // Opens instantly on anything ~10dB over the room (never below -60dBFS), then holds.
+      if (envDb >= Math.max(this._floorDb + 10, -60)) this._hold = this._holdSamples;
+      else if (this._hold > 0) this._hold--;
+      const expTarget = this._hold > 0 ? 1 : 0.1; // a -20dB dip, not a mute
+      this._exp += (expTarget - this._exp) * (expTarget > this._exp ? this._expAttack : this._expRelease);
+
+      // Soft-knee 3:1 over -28dBFS, +10dB makeup.
+      const over = envDb + 28;
+      let reduceDb = 0;
+      if (over >= 4) reduceDb = over * (2 / 3);
+      else if (over > -4) reduceDb = ((over + 4) * (over + 4)) / 16 * (2 / 3);
+      this._compDb += (reduceDb - this._compDb) * (reduceDb > this._compDb ? this._compAttack : this._compRelease);
+      const y = x * this._exp * Math.pow(10, (10 - this._compDb) / 20);
+
+      // Peak limiter at -3dBFS, leaving room for the reverb sitting on top.
+      const peak = Math.abs(y) * this._lim;
+      if (peak > 0.7) this._lim = 0.7 / Math.abs(y);
+      else this._lim += (1 - this._lim) * this._limRelease;
+      outCh[i] = y * this._lim;
     }
     return true;
   }
 }
-registerProcessor("monitor-gate", MonitorGateProcessor);
+registerProcessor("monitor-voice", MonitorVoiceProcessor);
 `;
 
 // AudioWorklet module registration is per-AudioContext and can't be undone, so this is cached per
@@ -167,17 +162,17 @@ export function createLiveNoiseGate(ctx: AudioContext, source: AudioNode): Promi
 }
 
 /**
- * The live monitor's gate — see MonitorGateProcessor above. Same fallback contract as
- * createLiveNoiseGate: if it can't be built, `source` passes through ungated.
+ * The live monitor's voice chain — see MonitorVoiceProcessor above. Same fallback contract as
+ * createLiveNoiseGate: if it can't be built, `source` passes through unprocessed.
  */
-export function createMonitorGate(ctx: AudioContext, source: AudioNode): Promise<LiveNoiseGate> {
-  return createGate(ctx, source, "monitor-gate");
+export function createMonitorVoice(ctx: AudioContext, source: AudioNode): Promise<LiveNoiseGate> {
+  return createGate(ctx, source, "monitor-voice");
 }
 
 async function createGate(
   ctx: AudioContext,
   source: AudioNode,
-  processorName: "mic-noise-gate" | "monitor-gate",
+  processorName: "mic-noise-gate" | "monitor-voice",
 ): Promise<LiveNoiseGate> {
   const fallback: LiveNoiseGate = { node: source, dispose: () => {} };
   if (typeof ctx.audioWorklet === "undefined") return fallback;

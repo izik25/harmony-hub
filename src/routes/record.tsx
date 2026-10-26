@@ -51,7 +51,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
 import { smartUploadMedia } from "@/lib/blob-upload";
 import { createDraft } from "@/functions/posts";
 import { listGiftCatalog, buyFilterForSelf } from "@/functions/wallet";
@@ -66,7 +65,8 @@ import {
   type VirtualBackgroundComposer,
 } from "@/lib/virtual-background";
 import { findHeadphoneOutput } from "@/lib/audio-output";
-import { createLiveNoiseGate, createMonitorGate, type LiveNoiseGate } from "@/lib/mic-noise-gate";
+import { createLiveNoiseGate, createMonitorVoice, type LiveNoiseGate } from "@/lib/mic-noise-gate";
+import { createVocalPlate } from "@/lib/monitor-reverb";
 
 export const Route = createFileRoute("/record")({
   // A song page's "Use this sound" button lands here with the track already picked, so recording
@@ -91,12 +91,12 @@ const BAR_COUNT = 48;
 // mix-recording.ts) doing more work than it needed to.
 const DEFAULT_VOCAL_GAIN = 1.15;
 const DEFAULT_BACKING_GAIN = 0.95;
-// Default position (0..1) of the "hear yourself" volume slider. The slider maps to gain
-// quadratically (see monitorGainFor) so its lower half — where a monitor actually sits under the
-// backing track — gets most of the travel; 0.35 lands at ~0.12x. A fixed 0.8x, then 0.65x, then a
-// 0.25x default were all still far too loud on real phones.
-const DEFAULT_MONITOR_VOLUME = 0.35;
-const monitorGainFor = (volume: number) => volume * volume;
+// How loud the processed voice (compressed, with makeup gain — see MonitorVoiceProcessor in
+// mic-noise-gate.ts) is fed into the headphones, and how much of it goes to the reverb send (see
+// monitor-reverb.ts; 0.16 is ~-16dB, a typical "voice in a nice room" amount for a cue mix).
+// Fixed, with no settings to dial in: the monitor just works as soon as headphones are on.
+const MONITOR_GAIN = 0.65;
+const MONITOR_REVERB_SEND = 0.16;
 
 // Legacy Chromium-only constraint names ("goog*") aren't in the standard MediaTrackConstraints
 // type, but are still honored today and are the only way to reach past the conservative default
@@ -139,16 +139,19 @@ const MIC_CONSTRAINTS: ChromeAudioConstraints = {
   googTypingNoiseDetection: true,
 };
 
-// The monitor's own capture. Noise suppression is ON: a raw, unprocessed capsule (the earlier
-// setup, chosen to shave NS's ~10ms frame) put every bit of room hiss, rustle and handling noise
-// straight into the singer's headphones, which was far worse than the few milliseconds it saved.
-// AGC stays off — it would pump the room back up between phrases — and AEC stays off for the same
-// Android call-mode reason as MIC_CONSTRAINTS. `latency: 0` asks the capture layer for the
-// shortest buffering it can manage. No sampleRate ask: the mic's own native rate means no
-// capture-side conversion at all, and the monitor context below is sized to the output device.
+// The monitor's own capture: the clean, unprocessed capsule, like a studio mic into a cue mix.
+// The browser's noise suppressor is built for calls, not singing — on held notes and vibrato it
+// leaves the voice watery and "underwater", and its 10ms frames add delay — so it's off, and the
+// room noise it was there for is handled by the monitor's own expander instead (see
+// MonitorVoiceProcessor in mic-noise-gate.ts), which only tucks the room under between phrases
+// and never touches the voice itself. AGC stays off — it would pump the room back up between
+// phrases — and AEC stays off for the same Android call-mode reason as MIC_CONSTRAINTS.
+// `latency: 0` asks the capture layer for the shortest buffering it can manage. No sampleRate ask:
+// the mic's own native rate means no capture-side conversion at all, and the monitor context below
+// is sized to the output device.
 const MONITOR_CONSTRAINTS: ChromeAudioConstraints & { latency?: ConstrainDouble } = {
   echoCancellation: false,
-  noiseSuppression: true,
+  noiseSuppression: false,
   autoGainControl: false,
   channelCount: { ideal: 1 },
   latency: { ideal: 0 },
@@ -156,12 +159,12 @@ const MONITOR_CONSTRAINTS: ChromeAudioConstraints & { latency?: ConstrainDouble 
   googEchoCancellation2: false,
   googAutoGainControl: false,
   googAutoGainControl2: false,
-  googNoiseSuppression: true,
-  googNoiseSuppression2: true,
-  googHighpassFilter: true,
+  googNoiseSuppression: false,
+  googNoiseSuppression2: false,
+  googHighpassFilter: false,
 };
 
-function useMicLevels(active: boolean, monitor: boolean, monitorVolume: number) {
+function useMicLevels(active: boolean, monitor: boolean) {
   const [levels, setLevels] = useState<number[]>(() => Array(BAR_COUNT).fill(6));
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -177,14 +180,6 @@ function useMicLevels(active: boolean, monitor: boolean, monitorVolume: number) 
   // makes the gated stream record pure silence after resuming a paused take.
   const ctxRef = useRef<AudioContext | null>(null);
   const monitorCtxRef = useRef<AudioContext | null>(null);
-  const monitorGainRef = useRef<GainNode | null>(null);
-  // Read once at graph-build time so a volume change doesn't tear down and reopen the monitor;
-  // later changes go straight to monitorGainRef (see the effect after the monitor one).
-  const monitorVolumeRef = useRef(monitorVolume);
-  monitorVolumeRef.current = monitorVolume;
-  // What the browser itself reports for the monitor loop's buffering (capture + output), in ms —
-  // surfaced in the monitor tray so it's visible how much of the delay is the device's own.
-  const [monitorLatencyMs, setMonitorLatencyMs] = useState<number | null>(null);
   // Bumped whenever the OS kills a mic track out from under us (app backgrounded mid-pause, an
   // incoming call) so both captures below reopen instead of a resumed take recording a dead track.
   const [restartKey, setRestartKey] = useState(0);
@@ -283,7 +278,6 @@ function useMicLevels(active: boolean, monitor: boolean, monitorVolume: number) 
     let monitorStream: MediaStream | undefined;
     let ctx: AudioContext | undefined;
     let gate: LiveNoiseGate | undefined;
-    let latencyTimer: ReturnType<typeof setTimeout> | undefined;
 
     (async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: MONITOR_CONSTRAINTS });
@@ -317,61 +311,60 @@ function useMicLevels(active: boolean, monitor: boolean, monitorVolume: number) 
       monitorCtxRef.current = ctx;
       ctx.resume().catch(() => {});
       const source = ctx.createMediaStreamSource(stream);
-      // Just a voice-band trim, no tone shaping: plain BiquadFilterNodes (single-sample IIR
-      // filters, no internal buffering, so no added latency) cutting rumble/handling thumps below
-      // the voice and hiss above it.
+      // A cue-mix voicing, all plain BiquadFilterNodes (single-sample IIR filters, no internal
+      // buffering, so no added latency): rumble/handling thumps cut below the voice before the
+      // processor ever hears them, a touch of body back into a phone capsule's thin low end, and a
+      // little presence for clarity under the backing track. No lowpass — the old 9kHz one was
+      // what made the voice sound muffled.
       const rumble = ctx.createBiquadFilter();
       rumble.type = "highpass";
-      rumble.frequency.value = 120;
+      rumble.frequency.value = 90;
       rumble.Q.value = 0.7;
-      const hiss = ctx.createBiquadFilter();
-      hiss.type = "lowpass";
-      hiss.frequency.value = 9000;
-      hiss.Q.value = 0.7;
-      // Silent unless you're actually singing — see MonitorGateProcessor in mic-noise-gate.ts.
-      // Falls back to `source` itself (ungated) if AudioWorklet isn't available.
-      gate = await createMonitorGate(ctx, source);
+      source.connect(rumble);
+      const body = ctx.createBiquadFilter();
+      body.type = "lowshelf";
+      body.frequency.value = 200;
+      body.gain.value = 2;
+      const presence = ctx.createBiquadFilter();
+      presence.type = "peaking";
+      presence.frequency.value = 3500;
+      presence.Q.value = 0.8;
+      presence.gain.value = 1.5;
+      // Expander + compressor + limiter — see MonitorVoiceProcessor in mic-noise-gate.ts.
+      // Falls back to `rumble` itself (unprocessed) if AudioWorklet isn't available.
+      gate = await createMonitorVoice(ctx, rumble);
       if (cancelled) {
         gate.dispose();
         return;
       }
       const gain = ctx.createGain();
-      gain.gain.value = monitorGainFor(monitorVolumeRef.current);
-      monitorGainRef.current = gain;
-      gate.node.connect(rumble).connect(hiss).connect(gain).connect(ctx.destination);
+      gain.gain.value = MONITOR_GAIN;
+      gate.node.connect(body).connect(presence).connect(gain).connect(ctx.destination);
+      // Parallel reverb send, highpassed so the tail doesn't get boomy; it goes through the same
+      // gain as the dry voice.
+      const reverbSend = ctx.createGain();
+      reverbSend.gain.value = MONITOR_REVERB_SEND;
+      const reverbHp = ctx.createBiquadFilter();
+      reverbHp.type = "highpass";
+      reverbHp.frequency.value = 250;
+      const reverb = ctx.createConvolver();
+      reverb.buffer = createVocalPlate(ctx);
+      presence.connect(reverbSend).connect(reverbHp).connect(reverb).connect(gain);
       // The mic permission just granted above is what makes real device labels available.
       const headphone = await findHeadphoneOutput();
       if (!cancelled && headphone && /bluetooth/i.test(headphone.label)) {
         toast.info(i18n.t("record.monitorBluetoothLatency"));
       }
-      // outputLatency is only meaningful once the output stream is actually running.
-      const inputLatency = stream.getAudioTracks()[0]?.getSettings() as { latency?: number };
-      latencyTimer = setTimeout(() => {
-        if (cancelled || !ctx) return;
-        const outputLatency = (ctx as AudioContext & { outputLatency?: number }).outputLatency;
-        const total = (inputLatency?.latency ?? 0) + (ctx.baseLatency ?? 0) + (outputLatency ?? 0);
-        setMonitorLatencyMs(total > 0 ? Math.round(total * 1000) : null);
-      }, 800);
     })().catch(() => {}); // monitor is optional — a failure here shouldn't interrupt recording
 
     return () => {
       cancelled = true;
-      clearTimeout(latencyTimer);
-      setMonitorLatencyMs(null);
       monitorCtxRef.current = null;
-      monitorGainRef.current = null;
       gate?.dispose();
       ctx?.close();
       monitorStream?.getTracks().forEach((t) => t.stop());
     };
   }, [active, monitor, restartKey]);
-
-  useEffect(() => {
-    const gain = monitorGainRef.current;
-    if (!gain) return;
-    // A short ramp rather than a jump, so dragging the slider doesn't click.
-    gain.gain.setTargetAtTime(monitorGainFor(monitorVolume), gain.context.currentTime, 0.02);
-  }, [monitorVolume]);
 
   const resumeAudio = () => {
     ctxRef.current?.resume().catch(() => {});
@@ -383,7 +376,6 @@ function useMicLevels(active: boolean, monitor: boolean, monitorVolume: number) 
     stream: streamRef,
     gatedStream: gatedStreamRef,
     resumeAudio,
-    monitorLatencyMs,
   };
 }
 
@@ -755,7 +747,7 @@ function RecordPage() {
   // TikTok-style icon rail opens one of these instead of the settings-card rows the idle/no-track
   // page still uses.
   const [openPanel, setOpenPanel] = useState<
-    "background" | "filters" | "pitch" | "looks" | "overlay" | "monitor" | null
+    "background" | "filters" | "pitch" | "looks" | "overlay" | null
   >(null);
   // The icon rail's small text labels (see the immersive stage below) are only there so a
   // first-time visitor can tell what each icon does — once you've actually used one, you know,
@@ -816,11 +808,9 @@ function RecordPage() {
   // real rewind (or answering "no" to the cut prompt) knows whether to resume or stay paused.
   const wasRecordingRef = useRef(false);
   const recording = phase === "recording";
-  const [monitorVolume, setMonitorVolume] = useState(DEFAULT_MONITOR_VOLUME);
-  const { stream, gatedStream, resumeAudio, monitorLatencyMs } = useMicLevels(
+  const { stream, gatedStream, resumeAudio } = useMicLevels(
     phase === "recording" || phase === "paused",
     monitorEnabled,
-    monitorVolume,
   );
 
   // Remember the monitor preference across visits, same as any other studio setting — but only
@@ -830,10 +820,31 @@ function RecordPage() {
     const stored = localStorage.getItem("hh:monitorEnabled");
     if (stored != null) setMonitorEnabled(stored === "1");
     else toast.info(t("record.monitorFeedbackWarning"));
-    const storedVolume = Number(localStorage.getItem("hh:monitorVolume"));
-    if (storedVolume > 0 && storedVolume <= 1) setMonitorVolume(storedVolume);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Headphones turn monitoring on by themselves — the one setup where hearing yourself can't feed
+  // back. Only when they're first seen (on this visit, or plugged in later), so switching it off
+  // with the rail button sticks until the headphones are actually reconnected. Device labels need
+  // mic permission, so this looks again when recording starts, once the mic is open.
+  const headphonesSeenRef = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    const check = () =>
+      findHeadphoneOutput().then((headphone) => {
+        if (cancelled) return;
+        if (headphone && !headphonesSeenRef.current) setMonitorEnabled(true);
+        headphonesSeenRef.current = !!headphone;
+      });
+    check();
+    const retry = recording ? setTimeout(check, 1000) : undefined;
+    navigator.mediaDevices?.addEventListener?.("devicechange", check);
+    return () => {
+      cancelled = true;
+      clearTimeout(retry);
+      navigator.mediaDevices?.removeEventListener?.("devicechange", check);
+    };
+  }, [recording]);
 
   const toggleMonitor = () => {
     setMonitorEnabled((prev) => {
@@ -842,11 +853,6 @@ function RecordPage() {
       if (next) toast.info(t("record.monitorFeedbackWarning"));
       return next;
     });
-  };
-
-  const changeMonitorVolume = (volume: number) => {
-    setMonitorVolume(volume);
-    localStorage.setItem("hh:monitorVolume", String(volume));
   };
 
   // Opens (or tears down) the camera as soon as the toggle changes — independent of `phase` —
@@ -1497,9 +1503,9 @@ function RecordPage() {
               showLabel={!railHintsSeen}
               onClick={() => {
                 setRailHintsSeen(true);
-                setOpenPanel((p) => (p === "monitor" ? null : "monitor"));
+                toggleMonitor();
               }}
-              active={openPanel === "monitor" || monitorEnabled}
+              active={monitorEnabled}
             />
             <RailControl
               icon={<ChevronsUpDown className="h-5 w-5" />}
@@ -1533,14 +1539,6 @@ function RecordPage() {
                       setOpenPanel(null);
                     }}
                     disabled={recording || phase === "paused"}
-                  />
-                ) : openPanel === "monitor" ? (
-                  <MonitorTray
-                    enabled={monitorEnabled}
-                    onToggle={toggleMonitor}
-                    volume={monitorVolume}
-                    onVolumeChange={changeMonitorVolume}
-                    latencyMs={monitorLatencyMs}
                   />
                 ) : openPanel === "pitch" ? (
                   <PitchTray
@@ -2456,57 +2454,6 @@ function BlurredVideoBackdrop({
 // The pitch rail's tray content: a real key change (± semitones, tap twice for a whole tone), not
 // just a display — every tap drives ensurePitchGraph/applyLivePitch in RecordPage, which actually
 // re-pitches the backing track's live audio via a Tone.PitchShift node.
-// The "hear yourself" tray: on/off, the monitor's own volume (separate from the recorded vocal
-// level), and the delay the browser reports for the loop, so it's clear when the remaining lag is
-// the phone's/headphones' own rather than something a setting here could change.
-function MonitorTray({
-  enabled,
-  onToggle,
-  volume,
-  onVolumeChange,
-  latencyMs,
-}: {
-  enabled: boolean;
-  onToggle: () => void;
-  volume: number;
-  onVolumeChange: (volume: number) => void;
-  latencyMs: number | null;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex flex-col gap-3 px-2 py-1">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[11px] text-white/70">{t("record.monitorHint")}</p>
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-pressed={enabled}
-          className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${
-            enabled ? "bg-primary text-primary-foreground" : "bg-white/15 text-white"
-          }`}
-        >
-          {enabled ? t("record.monitorOn") : t("record.monitorOff")}
-        </button>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="w-20 shrink-0 text-xs text-white/80">{t("record.monitorVolume")}</span>
-        <Slider
-          value={[volume]}
-          min={0.05}
-          max={1}
-          step={0.01}
-          onValueChange={([v]) => onVolumeChange(v)}
-          disabled={!enabled}
-          aria-label={t("record.monitorVolume")}
-        />
-      </div>
-      {enabled && latencyMs != null && (
-        <p className="text-[11px] text-white/60">{t("record.monitorLatency", { ms: latencyMs })}</p>
-      )}
-    </div>
-  );
-}
-
 function PitchTray({
   value,
   limit,
