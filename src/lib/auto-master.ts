@@ -19,7 +19,9 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
 /** Pitch-editor guidance is to start around 80% correction and adjust by ear — enough that every
- * note lands in tune, not so much that the voice turns robotic. A clearly pitchy take gets 90%. */
+ * note lands in tune, not so much that the voice turns robotic. A clearly pitchy take gets 90%.
+ * This is what the top of the singer's range gets; lower notes, short notes and notes already in
+ * tune get less or none (see shiftTrack in pitch-correct.ts). */
 export function pitchStrengthFor(pitch: PitchProfile): number {
   if (pitch.voicedRatio < 0.15 || pitch.noteCount < 3 || pitch.avgAbsCents < 5) return 0;
   return pitch.avgAbsCents > 30 ? 0.9 : 0.8;
@@ -115,8 +117,12 @@ export function planProcessing({
   const tail = bpm ? clamp(1.6 - (bpm - 75) * 0.015, 1.0, 1.6) : 1.3;
   const preDelay = bpm ? clamp(60 / bpm / 16, 0.02, 0.04) : 0.03;
   // Subtle on purpose: listening tests have favored reverb as loud as ~9 LU under the dry voice,
-  // but on these takes anything over ~−25 LU read as "too much reverb" — the voice is the product.
-  const reverbTargetLu = isClean ? -28 + (1 - density) * 3 : -32;
+  // but the voice is the product. When the export was mono, with a hissy noise tail folded onto
+  // the center, anything over ~−25 LU read as "too much reverb"; the decorrelated stereo plate
+  // spreads to the sides around the voice instead of over it, so it carries more space at the same
+  // clarity — −25 LU over a dense arrangement up to −22 over a sparse one, where it's most exposed
+  // yet also most needed to fill the gaps.
+  const reverbTargetLu = isClean ? -25 + (1 - density) * 3 : -30;
   const tailText = tail.toFixed(1);
   const preMs = Math.round(preDelay * 1000);
   const reverbReport = (lu: number): ReportLine => {

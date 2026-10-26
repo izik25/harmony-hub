@@ -86,7 +86,7 @@ function peakDbOf(buffer: AudioBuffer): number {
 
 // peakDbOf for what actually reaches the limiter once the vocal and backing stems are summed at
 // their current levels — the vocal's own peak alone says nothing about the headroom left after
-// the backing track lands on top of it. The backing is downmixed (L+R)/2, matching the mono export.
+// the backing track lands on top of it. Per channel, like the stereo export.
 function peakDbOfMix(
   vocal: AudioBuffer,
   vocalLevel: number,
@@ -94,14 +94,15 @@ function peakDbOfMix(
   backingLevel: number,
 ): number {
   if (!backing) return peakDbOf(vocal) + 20 * Math.log10(vocalLevel || 1e-6);
-  const v = vocal.getChannelData(0);
-  const left = backing.getChannelData(0);
-  const right = backing.numberOfChannels > 1 ? backing.getChannelData(1) : left;
-  const n = Math.min(v.length, left.length);
   let peak = 0;
-  for (let i = 0; i < n; i++) {
-    const abs = Math.abs(v[i] * vocalLevel + ((left[i] + right[i]) / 2) * backingLevel);
-    if (abs > peak) peak = abs;
+  for (let ch = 0; ch < 2; ch++) {
+    const v = vocal.getChannelData(Math.min(ch, vocal.numberOfChannels - 1));
+    const b = backing.getChannelData(Math.min(ch, backing.numberOfChannels - 1));
+    const n = Math.min(v.length, b.length);
+    for (let i = 0; i < n; i++) {
+      const abs = Math.abs(v[i] * vocalLevel + b[i] * backingLevel);
+      if (abs > peak) peak = abs;
+    }
   }
   return peak > 0 ? 20 * Math.log10(peak) : -100;
 }
@@ -142,19 +143,16 @@ const MASTER_STEP_LABELS: Record<(typeof MASTER_STEPS)[number], string> = {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-/** Stereo → mono the way the mono export does it, (L+R)/2. */
-function downmix(buffer: AudioBuffer): Float32Array {
-  if (buffer.numberOfChannels === 1) return buffer.getChannelData(0);
-  const l = buffer.getChannelData(0);
-  const r = buffer.getChannelData(1);
-  const out = new Float32Array(l.length);
-  for (let i = 0; i < l.length; i++) out[i] = (l[i] + r[i]) / 2;
-  return out;
+/** Loudness as it's actually heard on two speakers — a mono buffer plays in both. */
+function loudnessOf(buffer: AudioBuffer) {
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, ch) =>
+    buffer.getChannelData(ch),
+  );
+  return measureLoudness(
+    channels.length === 1 ? [channels[0], channels[0]] : channels,
+    buffer.sampleRate,
+  );
 }
-
-/** Loudness of a mono signal as it's actually heard — the same channel in both speakers. */
-const dualMonoLufs = (data: Float32Array, sampleRate: number) =>
-  measureLoudness([data, data], sampleRate);
 
 function StudioPage() {
   const { t } = useTranslation();
@@ -186,6 +184,9 @@ function StudioPage() {
   // The song's scale (from analyzeSong) that pitch correction aims at — undefined until AI
   // mastering has detected a confident key for this take, which means "nearest semitone".
   const pitchScaleRef = useRef<number[] | undefined>(undefined);
+  // The backing track's own A4 (from analyzeSong's tuningCents) — notes are tuned to the music,
+  // not to a standard the music may not be at.
+  const referenceA4Ref = useRef(440);
   const [fixSectionOpen, setFixSectionOpen] = useState(false);
   // Whether the "replace video with a cover image" picker is expanded — see replaceCoverMutation.
   const [replacingCover, setReplacingCover] = useState(false);
@@ -246,7 +247,9 @@ function StudioPage() {
       applyNoiseGate(buffer, noiseGateThresholdFor(analyzeSignal(buffer)));
     }
     const clamped = Math.min(1, Math.max(0, strength));
-    if (clamped > 0) applyPitchCorrection(buffer, clamped, pitchScaleRef.current);
+    if (clamped > 0) {
+      applyPitchCorrection(buffer, clamped, pitchScaleRef.current, referenceA4Ref.current);
+    }
   };
 
   // Autotune slider onChange: keeps the number responsive while dragging, but only bakes the
@@ -400,7 +403,7 @@ function StudioPage() {
       const { vocal, backing } = await prepareStems(
         raw,
         draft.backingTrackUrl || undefined,
-        { vocalGain: 1, backingStartOffsetSeconds: draft.backingStartOffsetSeconds },
+        { backingStartOffsetSeconds: draft.backingStartOffsetSeconds, finish: false },
         clean,
       );
       const toUrl = (buffer: AudioBuffer) => {
@@ -436,6 +439,7 @@ function StudioPage() {
     chainRef.current = chain;
     gateAppliedRef.current = false;
     pitchScaleRef.current = undefined;
+    referenceA4Ref.current = 440;
     masterRunRef.current++;
     setMasterStage("idle");
     setMasterReport([]);
@@ -578,7 +582,7 @@ function StudioPage() {
     if (!chain || !ready || !vocal) throw new Error(t("studio.loadTrackFirst"));
     const backing = chain.backingPlayer.loaded ? (chain.backingPlayer.buffer.get() ?? null) : null;
     try {
-      return audioBufferToWavBlob(await renderMix(vocal, backing, mix, stems));
+      return audioBufferToWavBlob(await renderMix(vocal, backing, mix, stems), 16);
     } catch {
       throw new Error(t("studio.exportFailed"));
     }
@@ -694,11 +698,20 @@ function StudioPage() {
           values: { key: keyName },
         });
       }
-      const pitchBefore = analyzePitch(buffer, scale);
+      // Small offsets are left at A440: under 3 cents nobody hears the difference, and it keeps a
+      // marginal measurement from moving anything.
+      const tuning =
+        song.tuningCents != null && Math.abs(song.tuningCents) >= 3 ? song.tuningCents : 0;
+      const referenceA4 = 440 * 2 ** (tuning / 1200);
+      referenceA4Ref.current = referenceA4;
+      if (tuning !== 0) {
+        lines.push({ key: "studio.reportTuning", values: { cents: Math.round(Math.abs(tuning)) } });
+      }
+      const pitchBefore = analyzePitch(buffer, scale, referenceA4);
       const strength = pitchStrengthFor(pitchBefore);
       if (strength > 0) {
-        applyPitchCorrection(buffer, strength, scale);
-        const pitchAfter = analyzePitch(buffer, scale);
+        applyPitchCorrection(buffer, strength, scale, referenceA4);
+        const pitchAfter = analyzePitch(buffer, scale, referenceA4);
         lines.push({
           key: "studio.reportPitchFixed",
           values: {
@@ -740,20 +753,18 @@ function StudioPage() {
         false,
       );
       if (stale()) return;
-      const dry = dryRender.getChannelData(0);
-      const vocalLufs = dualMonoLufs(dry, dryRender.sampleRate).lufs;
-      const probe = (
-        await renderMix(buffer, null, { ...processed, vocalVolume: 100 }, false)
-      ).getChannelData(0);
+      const vocalLufs = loudnessOf(dryRender).lufs;
+      const probeRender = await renderMix(buffer, null, { ...processed, vocalVolume: 100 }, false);
       if (stale()) return;
-      const reverbOnly = probe.map((x, i) => x - (dry[i] ?? 0));
-      const probeLu = dualMonoLufs(reverbOnly, dryRender.sampleRate).lufs - vocalLufs;
+      const reverbOnly = [0, 1].map((ch) => {
+        const dry = dryRender.getChannelData(ch);
+        return probeRender.getChannelData(ch).map((x, i) => x - (dry[i] ?? 0));
+      });
+      const probeLu = measureLoudness(reverbOnly, dryRender.sampleRate).lufs - vocalLufs;
       const reverb = reverbSendFor(probeLu, reverbTargetLu);
       const spaced = { ...processed, reverb };
       lines.push(reverbReport(reverb > 0 ? probeLu + 20 * Math.log10(reverb / REVERB_PROBE) : -99));
-      const backingLufs = backingBuffer
-        ? dualMonoLufs(downmix(backingBuffer), backingBuffer.sampleRate).lufs
-        : null;
+      const backingLufs = backingBuffer ? loudnessOf(backingBuffer).lufs : null;
       const density = song.backing?.density ?? 0.5;
       const { settings: leveled, gapDb } = planLevels({
         vocalLufs,
@@ -776,10 +787,7 @@ function StudioPage() {
       // estimate, so one correction pass lands it — boosts capped at +2dB so the fix never comes
       // from pushing the limiter harder.
       let final = leveled;
-      let measured = dualMonoLufs(
-        (await renderMix(buffer, backingBuffer, final, stems)).getChannelData(0),
-        buffer.sampleRate,
-      );
+      let measured = loudnessOf(await renderMix(buffer, backingBuffer, final, stems));
       if (stale()) return;
       const miss = TARGET_LUFS - measured.lufs;
       if (Math.abs(miss) > 0.5) {
@@ -787,10 +795,7 @@ function StudioPage() {
           ...final,
           gainDb: Math.round(clamp(final.gainDb + Math.min(miss, 2), -12, 9) * 10) / 10,
         };
-        measured = dualMonoLufs(
-          (await renderMix(buffer, backingBuffer, final, stems)).getChannelData(0),
-          buffer.sampleRate,
-        );
+        measured = loudnessOf(await renderMix(buffer, backingBuffer, final, stems));
         if (stale()) return;
       }
       lines.push({

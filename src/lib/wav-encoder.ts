@@ -1,17 +1,19 @@
 /**
- * Encodes an AudioBuffer as a 24-bit PCM WAV Blob — used to export every processed take (Studio's
- * mastering export, the record-page auto-mix, and the section-fix splice tool). 24-bit rather than
- * 16: quantization noise floor drops from 16-bit's ~-96dBFS to ~-144dBFS, which matters specifically
- * because these buffers have already been through a gain-riding chain (auto-leveling, makeup gain,
- * a limiter) — 16-bit truncation of that already-processed signal is exactly where dither-less
- * quantization artifacts would be most audible, on a final "mastered" export instead of the raw
- * capture. Cost is purely file size (50% bigger than 16-bit for the same duration/channel count),
- * which these mono, minutes-long vocal takes comfortably absorb.
+ * Encodes an AudioBuffer as a PCM WAV Blob — used to export every processed take (Studio's
+ * mastering export, the record-page auto-mix, and the section-fix splice tool).
+ *
+ * 24-bit by default, for intermediate files that may be processed further: its quantization floor
+ * (~−144dBFS) stays far below anything a later gain stage could lift into audibility.
+ *
+ * 16-bit for finished, mastered mixes — the CD/streaming delivery format. At −14 LUFS its ~−96dBFS
+ * floor is inaudible as long as it's dithered: TPDF dither (the sum of two uniform random values,
+ * ±1 LSB) turns truncation distortion on quiet tails into a constant, benign hiss far below the
+ * music. That keeps a stereo master the same size a mono 24-bit file was, well inside the upload cap.
  */
-export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
+export function audioBufferToWavBlob(buffer: AudioBuffer, bitDepth: 16 | 24 = 24): Blob {
   const numChannels = buffer.numberOfChannels;
   const sampleRate = buffer.sampleRate;
-  const bytesPerSample = 3;
+  const bytesPerSample = bitDepth / 8;
   const blockAlign = numChannels * bytesPerSample;
   const numFrames = buffer.length;
   const dataSize = numFrames * blockAlign;
@@ -33,12 +35,24 @@ export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   view.setUint32(24, sampleRate, true);
   view.setUint32(28, sampleRate * blockAlign, true);
   view.setUint16(32, blockAlign, true);
-  view.setUint16(34, bytesPerSample * 8, true);
+  view.setUint16(34, bitDepth, true);
   writeString(36, "data");
   view.setUint32(40, dataSize, true);
 
   const channels = Array.from({ length: numChannels }, (_, ch) => buffer.getChannelData(ch));
   let offset = 44;
+  if (bitDepth === 16) {
+    for (let i = 0; i < numFrames; i++) {
+      for (let ch = 0; ch < numChannels; ch++) {
+        const dither = Math.random() - Math.random();
+        const intSample = Math.round(channels[ch][i] * 32767 + dither);
+        view.setInt16(offset, Math.max(-32768, Math.min(32767, intSample)), true);
+        offset += 2;
+      }
+    }
+    return new Blob([arrayBuffer], { type: "audio/wav" });
+  }
+
   const maxInt = 0x7fffff; // 2^23 - 1
   for (let i = 0; i < numFrames; i++) {
     for (let ch = 0; ch < numChannels; ch++) {

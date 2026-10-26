@@ -1,6 +1,7 @@
 import { audioBufferToWavBlob } from "./wav-encoder";
 import { shiftPitchSemitones } from "./pitch-correct";
 import { estimateBleedDelaySeconds } from "./bleed-align";
+import { reduceNoiseOffThread } from "./noise-reduction";
 
 const FETCH_TIMEOUT_MS = 10_000;
 const RENDER_TIMEOUT_MS = 20_000;
@@ -102,10 +103,9 @@ export function applyNoiseGate(
   thresholdDb: number,
   attackMs = 4,
   releaseMs = 180,
-  // -24dB rather than the old -18.4dB (0.12): gated gaps were still audibly noisy at 0.12,
-  // reported directly on takes recorded through the browser's own noiseSuppression/AGC (already
-  // on in MIC_CONSTRAINTS) plus backing-track bleed. Still a dip rather than a mute — same reason
-  // as before, a hard cut chops word tails choppier than a deeper-but-gentle one.
+  // -24dB rather than the old -18.4dB (0.12): gated gaps were still audibly noisy at 0.12 with
+  // backing-track bleed. Still a dip rather than a mute — a hard cut chops word tails choppier
+  // than a deeper-but-gentle one.
   floorGain = 0.06,
 ): void {
   const thresholdLinear = 10 ** (thresholdDb / 20);
@@ -149,6 +149,12 @@ export type MixLevels = {
    * it lands seconds (sometimes minutes) out of sync with the vocal. 0 (the default) is "whole
    * song," which needs no offset. */
   backingStartOffsetSeconds?: number;
+  /** Run the fixed finishing chain (gate, EQ, de-ess, compression, limiter) on the vocal. true (the
+   * default) for the one-shot mixes record.tsx and Fix a Section upload. Studio passes false: its
+   * own chain (vocal-chain.ts) is then the only processing the voice gets — running both stacked
+   * two compressors, two de-essers and two EQs on every take, and the first one's limiter had
+   * already flattened the dynamics Studio's measurements were supposed to read. */
+  finish?: boolean;
 };
 
 export type Stems = {
@@ -207,7 +213,9 @@ function createLimiter(ctx: BaseAudioContext): DynamicsCompressorNode {
  * Turns a raw mic recording into a clean, studio-style vocal instead of the thin, boxy, dead-dry
  * sound of a phone voice memo: analyzes the actual take first (analyzeSignal) so the noise gate's
  * threshold and the auto-leveling gain both reflect what's really in this specific recording
- * rather than one fixed setting applied to everything, then runs noise gate, rumble cut, warmth +
+ * rather than one fixed setting applied to everything, then runs spectral noise reduction
+ * (noise-reduction.ts — the room removed from under the voice, not just between phrases), noise
+ * gate, rumble cut, warmth +
  * presence EQ, a de-harshing high-shelf, a de-esser, compression + makeup gain, and a limiter.
  * Deliberately no reverb/room send — a phone take already carries the room it was sung in, and
  * anything added on top here reads as echo; Studio has a manual (filtered, short) reverb for
@@ -276,7 +284,34 @@ export async function prepareStems(
         backingStartOffsetSeconds,
       ) ?? 0)
     : 0;
-  if (cleanBuffer) micBuffer = cleanBuffer;
+  if (cleanBuffer) {
+    micBuffer = cleanBuffer;
+  } else {
+    // The room comes out from under the voice itself, not just the gaps — see noise-reduction.ts.
+    // The model-cleaned take above is already dry and quiet, so it skips this.
+    for (let ch = 0; ch < micBuffer.numberOfChannels; ch++) {
+      const reduced = await reduceNoiseOffThread(micBuffer.getChannelData(ch));
+      micBuffer.copyToChannel(reduced, ch);
+    }
+  }
+
+  if (levels.finish === false) {
+    // Mono, unity gain, otherwise untouched — Studio gain-stages it and decides the rest.
+    const vocal = new AudioBuffer({
+      length: micBuffer.length,
+      numberOfChannels: 1,
+      sampleRate: micBuffer.sampleRate,
+    });
+    const out = vocal.getChannelData(0);
+    for (let ch = 0; ch < micBuffer.numberOfChannels; ch++) {
+      const data = micBuffer.getChannelData(ch);
+      for (let i = 0; i < out.length; i++) out[i] += data[i] / micBuffer.numberOfChannels;
+    }
+    const backing = backingBuffer
+      ? alignBacking(backingBuffer, vocal.length, backingStartOffsetSeconds, bleedDelaySeconds)
+      : null;
+    return { vocal, backing };
+  }
 
   // Analyze this take before touching it — the gate threshold and the auto-leveling gain below
   // both come from what's actually in the recording, not a fixed guess.
@@ -393,9 +428,16 @@ export async function processRecording(
   levels: MixLevels = {},
 ): Promise<Blob> {
   const { vocal, backing } = await prepareStems(micBlob, backingTrackUrl, levels);
-  if (!backing) return audioBufferToWavBlob(vocal);
+  if (!backing) return audioBufferToWavBlob(vocal, 16);
 
-  const offlineCtx = new OfflineAudioContext(1, vocal.length, vocal.sampleRate);
+  // Stereo whenever the backing is: the mono vocal sits in the center and the arrangement keeps
+  // its width — folding a produced instrumental to mono is a big part of what made exports sound
+  // like a phone recording instead of a record.
+  const offlineCtx = new OfflineAudioContext(
+    backing.numberOfChannels > 1 ? 2 : 1,
+    vocal.length,
+    vocal.sampleRate,
+  );
   const limiter = createLimiter(offlineCtx);
   limiter.connect(offlineCtx.destination);
   const vocalSource = offlineCtx.createBufferSource();
@@ -414,5 +456,5 @@ export async function processRecording(
     RENDER_TIMEOUT_MS,
     "Offline render",
   );
-  return audioBufferToWavBlob(rendered);
+  return audioBufferToWavBlob(rendered, 16);
 }

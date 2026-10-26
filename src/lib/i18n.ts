@@ -280,8 +280,10 @@ const en = {
     reportGate: "Removed background noise between phrases",
     reportKey: "Detected key: {{key}}",
     reportKeyScale: "Detected key: {{key}} — pitch is corrected toward the song's scale",
+    reportTuning:
+      "The track is tuned {{cents}} cents away from standard pitch — your notes are tuned to the track itself",
     reportPitchFixed:
-      "Pitch: {{off}} of {{notes}} notes were off — average {{before}} → {{after}} cents ({{pct}}% correction, vibrato kept)",
+      "Pitch: {{off}} of {{notes}} notes were off — average {{before}} → {{after}} cents ({{pct}}% on the high notes, lighter below; vibrato and note attacks kept)",
     reportPitchOk: "Pitch is accurate — left untouched",
     reportLowCut: "Low cut at {{hz}} Hz — just under your lowest note",
     reportBalance: "Voice placed {{db}} LU above the music — {{arrangement}}",
@@ -1130,8 +1132,9 @@ const he = {
     reportGate: "הוסר רעש רקע בין המשפטים",
     reportKey: "סולם שזוהה: {{key}}",
     reportKeyScale: "סולם שזוהה: {{key}} — הגובה מתוקן לפי הסולם של השיר",
+    reportTuning: "הפלייבק מכוון {{cents}} סנט מהכיוון הסטנדרטי — התווים שלך מכוונים לפלייבק עצמו",
     reportPitchFixed:
-      "גובה: {{off}} מתוך {{notes}} תווים היו לא מדויקים — ממוצע {{before}} → {{after}} סנט (תיקון {{pct}}%, הוויברטו נשמר)",
+      "גובה: {{off}} מתוך {{notes}} תווים היו לא מדויקים — ממוצע {{before}} → {{after}} סנט (תיקון {{pct}}% בגבוהים, עדין יותר בשאר; הוויברטו וכניסות התווים נשמרו)",
     reportPitchOk: "הגובה מדויק — לא נגענו",
     reportLowCut: "חיתוך נמוכים ב-{{hz}}Hz — ממש מתחת לתו הכי נמוך שלך",
     reportBalance: "הקול הוצב {{db}}LU מעל המוזיקה — {{arrangement}}",
@@ -1976,8 +1979,10 @@ const ar = {
     reportGate: "أُزيلت ضوضاء الخلفية بين الجمل",
     reportKey: "المقام المكتشف: {{key}}",
     reportKeyScale: "المقام المكتشف: {{key}} — تُصحَّح الطبقة نحو سلّم الأغنية",
+    reportTuning:
+      "المقطع الموسيقي مضبوط على بُعد {{cents}} سنت من الطبقة القياسية — نغماتك تُضبط على المقطع نفسه",
     reportPitchFixed:
-      "الطبقة: {{off}} من {{notes}} نغمات كانت غير دقيقة — المتوسط {{before}} → {{after}} سنت (تصحيح {{pct}}%، الفيبراتو محفوظ)",
+      "الطبقة: {{off}} من {{notes}} نغمات كانت غير دقيقة — المتوسط {{before}} → {{after}} سنت (تصحيح {{pct}}% في النغمات العالية، أخف في الباقي؛ الفيبراتو وبدايات النغمات محفوظة)",
     reportPitchOk: "الطبقة دقيقة — لم نلمسها",
     reportLowCut: "قطع الترددات المنخفضة عند {{hz}}Hz — أسفل أخفض نغمة لديك مباشرة",
     reportBalance: "وُضع الصوت {{db}}LU فوق الموسيقى — {{arrangement}}",

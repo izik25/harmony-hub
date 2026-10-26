@@ -65,7 +65,7 @@ import {
   type VirtualBackgroundComposer,
 } from "@/lib/virtual-background";
 import { findHeadphoneOutput } from "@/lib/audio-output";
-import { createLiveNoiseGate, createMonitorVoice, type LiveNoiseGate } from "@/lib/mic-noise-gate";
+import { createMonitorVoice, type LiveNoiseGate } from "@/lib/mic-noise-gate";
 
 export const Route = createFileRoute("/record")({
   // A song page's "Use this sound" button lands here with the track already picked, so recording
@@ -96,9 +96,8 @@ const DEFAULT_BACKING_GAIN = 0.95;
 const MONITOR_GAIN = 0.55;
 
 // Legacy Chromium-only constraint names ("goog*") aren't in the standard MediaTrackConstraints
-// type, but are still honored today and are the only way to reach past the conservative default
-// NS tuning the plain boolean flags below ask for — a second-stage noise suppressor and a
-// capture-side highpass to cut room rumble before it ever hits the gate in mix-recording.ts.
+// type, but are still honored today — and the plain boolean flags alone don't switch off every
+// stage of Chromium's voice processing, so both are set.
 type ChromeAudioConstraints = MediaTrackConstraints & {
   googEchoCancellation?: boolean;
   googEchoCancellation2?: boolean;
@@ -115,25 +114,32 @@ type ChromeAudioConstraints = MediaTrackConstraints & {
 // MIC source — that's the only way to get the phone's own hardware AEC, but that audio source
 // forces Android into a "call" audio session, and that session is what silently routes playback
 // through the phone's built-in earpiece/speaker instead of a connected Bluetooth headset, even
-// though the headset stays genuinely connected. noiseSuppression/autoGainControl don't need that
-// special audio source and can stay on safely. What we lose by dropping AEC is its help with
+// though the headset stays genuinely connected. What we lose by dropping AEC is its help with
 // backing-track bleed into the mic — already covered by ducking the karaoke video to 35% volume
 // during recording (below) and by the noise gate in mix-recording.ts, so this isn't relying on
 // AEC as the only line of defense against that.
+//
+// Noise suppression and AGC are off too: the take is captured clean, like a studio mic, and the
+// noise comes out afterward (noise-reduction.ts, run from prepareStems). The browser's suppressor
+// is built for calls — on sung notes it leaves the voice watery — and AGC turned the gain up every
+// time the singer stopped, which is what made the room come up loud between phrases. Both also
+// change from moment to moment, which is exactly what the offline noise reduction can't follow:
+// it learns the room from the whole take, so the room has to stay the same all the way through.
+// Kept in sync with FixSectionEditor.tsx's copy, so a re-recorded section matches the take.
 const MIC_CONSTRAINTS: ChromeAudioConstraints = {
   echoCancellation: false,
-  noiseSuppression: true,
-  autoGainControl: true,
+  noiseSuppression: false,
+  autoGainControl: false,
   sampleRate: { ideal: 48000 },
   channelCount: { ideal: 1 },
   googEchoCancellation: false,
   googEchoCancellation2: false,
-  googAutoGainControl: true,
-  googAutoGainControl2: true,
-  googNoiseSuppression: true,
-  googNoiseSuppression2: true,
-  googHighpassFilter: true,
-  googTypingNoiseDetection: true,
+  googAutoGainControl: false,
+  googAutoGainControl2: false,
+  googNoiseSuppression: false,
+  googNoiseSuppression2: false,
+  googHighpassFilter: false,
+  googTypingNoiseDetection: false,
 };
 
 // The monitor's own capture. Noise suppression is ON: a raw, unprocessed capsule (tried twice)
@@ -162,16 +168,10 @@ function useMicLevels(active: boolean, monitor: boolean) {
   const [levels, setLevels] = useState<number[]>(() => Array(BAR_COUNT).fill(6));
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  // The gated version of streamRef's audio — see mic-noise-gate.ts. This is what MediaRecorder
-  // should actually record from once it's ready; it lags streamRef.current by however long the
-  // AudioWorklet takes to register (usually well under the 100ms the recorder-setup effect below
-  // already polls at), so callers fall back to the raw stream until then rather than blocking the
-  // start of recording on it.
-  const gatedStreamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number>(0);
   // Both contexts below, kept so resumeAudio() can wake them from inside a tap — a phone suspends
   // (iOS: "interrupted") a page's AudioContexts while it's backgrounded, and one left suspended
-  // makes the gated stream record pure silence after resuming a paused take.
+  // stops the level meter and the monitor after resuming a paused take.
   const ctxRef = useRef<AudioContext | null>(null);
   const monitorCtxRef = useRef<AudioContext | null>(null);
   // Bumped whenever the OS kills a mic track out from under us (app backgrounded mid-pause, an
@@ -183,7 +183,6 @@ function useMicLevels(active: boolean, monitor: boolean) {
     if (!active) return;
     let ctx: AudioContext | undefined;
     let cancelled = false;
-    let gate: LiveNoiseGate | undefined;
 
     navigator.mediaDevices
       .getUserMedia({ audio: MIC_CONSTRAINTS })
@@ -205,21 +204,6 @@ function useMicLevels(active: boolean, monitor: boolean) {
         source.connect(analyser);
         analyserRef.current = analyser;
 
-        // Reduces background noise in the actual take being captured, not just the on-screen
-        // meter — see mic-noise-gate.ts for why this can't just lean on the offline gate that
-        // already runs during mixdown. Shares this same `source` node (rather than opening a
-        // second tap on the mic) so the capsule is only ever read once.
-        createLiveNoiseGate(ctx, source).then((liveGate) => {
-          if (cancelled || !ctx) {
-            liveGate.dispose();
-            return;
-          }
-          gate = liveGate;
-          const destination = ctx.createMediaStreamDestination();
-          liveGate.node.connect(destination);
-          gatedStreamRef.current = destination.stream;
-        });
-
         const data = new Uint8Array(analyser.frequencyBinCount);
         const tick = () => {
           analyser.getByteFrequencyData(data);
@@ -238,8 +222,6 @@ function useMicLevels(active: boolean, monitor: boolean) {
     return () => {
       cancelled = true;
       cancelAnimationFrame(rafRef.current);
-      gate?.dispose();
-      gatedStreamRef.current = null;
       streamRef.current?.getTracks().forEach((t) => t.stop());
       // Cleared so the recorder-setup effect waits for the reopened stream rather than starting
       // on the one just stopped.
@@ -349,7 +331,6 @@ function useMicLevels(active: boolean, monitor: boolean) {
   return {
     levels,
     stream: streamRef,
-    gatedStream: gatedStreamRef,
     resumeAudio,
   };
 }
@@ -783,7 +764,7 @@ function RecordPage() {
   // real rewind (or answering "no" to the cut prompt) knows whether to resume or stay paused.
   const wasRecordingRef = useRef(false);
   const recording = phase === "recording";
-  const { stream, gatedStream, resumeAudio } = useMicLevels(
+  const { stream, resumeAudio } = useMicLevels(
     phase === "recording" || phase === "paused",
     monitorEnabled,
   );
@@ -1075,10 +1056,9 @@ function RecordPage() {
       // Explicit bitrate — MediaRecorder's default Opus encoding is conservative enough that
       // the raw capture itself can come out sounding thin/"voice memo"-like before any
       // cleanup even runs. 128kbps is comfortably high quality for a mono voice track.
-      // Prefers the gated stream (background noise already reduced — see mic-noise-gate.ts)
-      // once it's ready; the raw stream is a safe fallback for the rare case where this
-      // recorder starts before the AudioWorklet has finished registering.
-      const recordingStream = gatedStream.current ?? stream.current;
+      // The raw, unprocessed mic stream — no live gate: a gate pumping the room up and down
+      // would break the noise reduction afterward, which needs the room to stay steady.
+      const recordingStream = stream.current;
       const usingCamera = cameraEnabled && !!effectiveCamStreamRef.current;
       const recorder = usingCamera
         ? buildCombinedRecorder(recordingStream, effectiveCamStreamRef.current!).recorder

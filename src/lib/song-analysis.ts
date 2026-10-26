@@ -51,6 +51,9 @@ export type SongKey = {
 export type SongAnalysis = {
   key: SongKey | null;
   tempoBpm: number | null;
+  /** The backing track's tuning against A440, cents (see tuningOf) — what pitch correction aims
+   * at. null with no backing, or when it can't be told; A440 is assumed then. */
+  tuningCents: number | null;
   vocal: {
     bands: Bands;
     /** Gap between the take's loud and soft sung passages (p90 − p25 of active frames, dB). */
@@ -130,7 +133,24 @@ type SpectralResult = {
   frameDb: number[];
   activeDb: number[];
   sibilancePeakDb: number;
+  tuningCents: number | null;
 };
+
+/**
+ * Where the music's notes sit relative to the A440 grid, in cents (−50..50) — null when its
+ * spectral peaks don't agree on one offset. Plenty of recordings aren't at A440 (tape-era
+ * masters, vintage instruments, a speed-adjusted karaoke rip), and tuning a voice to the A440 grid
+ * over one of those makes it consistently out of tune with the band. Every strong spectral peak's
+ * distance from its nearest semitone is a vote, its frequency refined by parabolic interpolation
+ * on the log spectrum; the votes are averaged on a circle (+49 and −49 cents are 2 cents apart)
+ * weighted by magnitude, and the resultant's length says how much they agree.
+ */
+function tuningOf(sin: number, cos: number, weight: number): number | null {
+  if (weight <= 0) return null;
+  const agreement = Math.hypot(sin, cos) / weight;
+  if (agreement < 0.25) return null;
+  return (Math.atan2(sin, cos) / (2 * Math.PI)) * 100;
+}
 
 /** One windowed-FFT sweep over a signal: per-band density and chroma, both averaged over the
  * frames that actually carry the music/voice (silence and room tone would only dilute them). */
@@ -144,7 +164,17 @@ async function spectralPass(
   const im = new Float64Array(FFT_SIZE);
   const binHz = sampleRate / FFT_SIZE;
   const half = FFT_SIZE / 2;
-  const frames: { db: number; bandPower: number[]; chroma: Float64Array; sibDb: number }[] = [];
+  const frames: {
+    db: number;
+    bandPower: number[];
+    chroma: Float64Array;
+    sibDb: number;
+    tuning: [number, number, number];
+  }[] = [];
+  // Tuning votes come from 300Hz-3kHz: low enough to be note fundamentals and their first
+  // harmonics, high enough that a bin is a small fraction of a semitone.
+  const tuneLo = Math.ceil(300 / binHz);
+  const tuneHi = Math.min(half - 3, Math.floor(3000 / binHz));
   const sibLo = Math.round(5000 / binHz);
   const sibHi = Math.min(half - 1, Math.round(10000 / binHz));
   // Parseval: a band's mean square in the signal is 2·Σ|X|² over its positive bins / (N · Σw²);
@@ -187,7 +217,33 @@ async function spectralPass(
     }
     let sib = 0;
     for (let b = sibLo; b <= sibHi; b++) sib += power[b];
-    frames.push({ db: toDb(energy / FFT_SIZE), bandPower, chroma, sibDb: toDb(sib * bandMsScale) });
+    let peakPower = 0;
+    for (let b = tuneLo; b <= tuneHi; b++) peakPower = Math.max(peakPower, power[b]);
+    const tuning: [number, number, number] = [0, 0, 0];
+    for (let b = tuneLo; b <= tuneHi; b++) {
+      const p = power[b];
+      // A clear peak: a local maximum over ±2 bins, within 20dB of the frame's strongest.
+      if (p < peakPower * 0.01 || p <= power[b - 1] || p < power[b + 1]) continue;
+      if (p <= power[b - 2] || p < power[b + 2]) continue;
+      const l = Math.log(power[b - 1] + 1e-20);
+      const c = Math.log(p + 1e-20);
+      const r = Math.log(power[b + 1] + 1e-20);
+      const denom = l - 2 * c + r;
+      const offset = denom < 0 ? (0.5 * (l - r)) / denom : 0;
+      const cents = 1200 * Math.log2(((b + offset) * binHz) / 440);
+      const angle = (2 * Math.PI * (cents - 100 * Math.round(cents / 100))) / 100;
+      const w = Math.sqrt(p);
+      tuning[0] += w * Math.sin(angle);
+      tuning[1] += w * Math.cos(angle);
+      tuning[2] += w;
+    }
+    frames.push({
+      db: toDb(energy / FFT_SIZE),
+      bandPower,
+      chroma,
+      sibDb: toDb(sib * bandMsScale),
+      tuning,
+    });
     if (f % 48 === 47) {
       onProgress(f / total);
       await tick();
@@ -207,12 +263,15 @@ async function spectralPass(
   for (const fr of active) for (let pc = 0; pc < 12; pc++) chroma[pc] += fr.chroma[pc];
   onProgress(1);
   const sibSorted = active.map((fr) => fr.sibDb).sort((a, b) => a - b);
+  const tuning = [0, 0, 0];
+  for (const fr of active) for (let i = 0; i < 3; i++) tuning[i] += fr.tuning[i];
   return {
     bands,
     chroma,
     frameDb,
     activeDb: active.map((fr) => fr.db),
     sibilancePeakDb: percentile(sibSorted, 0.97),
+    tuningCents: tuningOf(tuning[0], tuning[1], tuning[2]),
   };
 }
 
@@ -331,6 +390,7 @@ export async function analyzeSong(
     return {
       key,
       tempoBpm: null,
+      tuningCents: null,
       vocal: {
         bands: vocalSpec.bands,
         phraseSpreadDb,
@@ -356,6 +416,7 @@ export async function analyzeSong(
   return {
     key,
     tempoBpm,
+    tuningCents: backingSpec.tuningCents,
     vocal: {
       bands: vocalSpec.bands,
       phraseSpreadDb,

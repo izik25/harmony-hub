@@ -1,17 +1,25 @@
 // Real pitch detection + correction — the engine behind studio.tsx's "Autotune" slider and AI
 // mastering's automatic tuning. A live Tone.PitchShift can only apply one fixed shift to the whole
-// signal, so this works offline on the loaded buffer instead: track the sung pitch (autocorrelation,
-// median-filtered against octave errors), split it into notes the way a pitch editor does, move
-// each note's center toward its target and pull in slow drift while leaving vibrato as sung (see
-// shiftTrack), then resynthesize with TD-PSOLA, which shifts pitch without moving the voice's
-// formants (see psola). Studio bakes it in a beat after the slider stops moving, or immediately
-// when AI mastering decides a take needs it.
+// signal, so this works offline on the loaded buffer instead: track the sung pitch (YIN), split it
+// into notes the way a pitch editor does, move each note's center toward its target and pull in
+// slow drift while leaving vibrato and note attacks as sung (see shiftTrack), then resynthesize with
+// TD-PSOLA, which shifts pitch without moving the voice's formants (see psola). Only what was
+// actually moved is resynthesized; everything else is the original signal, untouched. Studio bakes
+// it in a beat after the slider stops moving, or immediately when AI mastering decides a take
+// needs it.
 
-const MIN_HZ = 80; // below typical low male singing range; also keeps the autocorrelation lag search short
-const MAX_HZ = 900; // above typical high female/falsetto singing range
-const CONFIDENCE_MIN = 0.5; // normalized autocorrelation peak below this isn't a real periodic note —
-// raised from a looser 0.35 specifically because low-confidence hits on consonants/breath were
-// exactly what fed spurious ratio jumps into the (now-fixed) warble problem above
+const MIN_HZ = 75; // under a low male singer's E2 (82Hz)
+const MAX_HZ = 1000; // over a high soprano/falsetto's B5 (988Hz)
+// YIN (de Cheveigné & Kawahara, 2002): the first lag whose normalized difference dips under this is
+// the period — taking the first dip rather than the deepest is what keeps it from locking onto
+// two or three periods (an octave or more too low).
+const YIN_THRESHOLD = 0.15;
+// No dip this deep anywhere: breath, a consonant or noise, not a note — left unvoiced rather than
+// guessed at, since a wrong pitch there is what feeds a correction a bogus target.
+const YIN_UNVOICED = 0.3;
+// The coarse lag search runs on a 4x-decimated copy (sung pitch lives well under its Nyquist once
+// low-passed), then only the lags around the winner are refined at full rate.
+const DECIM = 4;
 
 function hannWindow(size: number): Float32Array {
   // Periodic (denominator = size, not size-1) form: overlap-adding this at hop = size/2 sums to an
@@ -21,96 +29,20 @@ function hannWindow(size: number): Float32Array {
   return w;
 }
 
-/**
- * Autocorrelation pitch detection with a decimated coarse pass (search a downsampled copy first,
- * then refine only the few lags around the winner at full resolution) — a plain full-resolution
- * search over the whole voice range costs enough per frame that scanning a multi-minute take
- * frame-by-frame becomes seconds-to-minutes of work; this keeps it seconds at most. Parabolic
- * interpolation around the best lag gives sub-sample precision, and a confidence check (best
- * correlation normalized against the frame's own energy) rejects noise/consonants that have no
- * real periodicity to lock onto.
- */
-function autocorrelate(
-  frame: Float32Array | Float64Array,
-  sampleRate: number,
-  minHz: number,
-  maxHz: number,
-  silenceRms: number,
-): number | null {
-  const n = frame.length;
-  let mean = 0;
-  for (let i = 0; i < n; i++) mean += frame[i];
-  mean /= n;
-
-  const centered = new Float32Array(n);
-  let energy = 0;
-  for (let i = 0; i < n; i++) {
-    centered[i] = frame[i] - mean;
-    energy += centered[i] * centered[i];
-  }
-  const rms = Math.sqrt(energy / n);
-  if (rms < silenceRms) return null; // breath/room noise, not a note
-
-  const minLag = Math.max(1, Math.floor(sampleRate / maxHz));
-  const maxLag = Math.min(n - 2, Math.floor(sampleRate / minHz));
-  if (maxLag <= minLag) return null;
-
-  const corrAt = (lag: number) => {
-    let c = 0;
-    for (let i = 0; i < n - lag; i++) c += centered[i] * centered[i + lag];
-    return c;
-  };
-
-  // Coarse pass: every 4th sample, roughly a 16x cheaper search to narrow down the lag.
-  const decim = 4;
-  const decimLen = Math.floor(n / decim);
-  const decimated = new Float32Array(decimLen);
-  for (let i = 0; i < decimLen; i++) decimated[i] = centered[i * decim];
-  const decimMinLag = Math.max(1, Math.floor(minLag / decim));
-  const decimMaxLag = Math.max(decimMinLag + 1, Math.floor(maxLag / decim));
-
-  let bestDecimLag = -1;
-  let bestDecimCorr = 0;
-  for (let lag = decimMinLag; lag <= decimMaxLag; lag++) {
-    let c = 0;
-    for (let i = 0; i < decimLen - lag; i++) c += decimated[i] * decimated[i + lag];
-    if (c > bestDecimCorr) {
-      bestDecimCorr = c;
-      bestDecimLag = lag;
+/** Two cascaded one-pole low-passes. Detection runs on this copy: with the formants and sibilance
+ * rolled off, a period's waveform repeats cleanly and its pitch-mark peaks don't jump between
+ * formant ripples from one cycle to the next. */
+function lowpass(data: Float32Array, sampleRate: number, hz: number): Float32Array {
+  const a = 1 - Math.exp((-2 * Math.PI * hz) / sampleRate);
+  const out = Float32Array.from(data);
+  for (let pass = 0; pass < 2; pass++) {
+    let y = 0;
+    for (let i = 0; i < out.length; i++) {
+      y += (out[i] - y) * a;
+      out[i] = y;
     }
   }
-  if (bestDecimLag <= 0) return null;
-
-  // Fine pass: only the handful of full-resolution lags around the coarse winner.
-  const centerLag = bestDecimLag * decim;
-  const radius = decim * 2;
-  const fineMin = Math.max(minLag, centerLag - radius);
-  const fineMax = Math.min(maxLag, centerLag + radius);
-
-  let bestLag = -1;
-  let bestCorr = 0;
-  for (let lag = fineMin; lag <= fineMax; lag++) {
-    const c = corrAt(lag);
-    if (c > bestCorr) {
-      bestCorr = c;
-      bestLag = lag;
-    }
-  }
-  if (bestLag <= 0) return null;
-
-  let energyLag = 0;
-  for (let i = 0; i < n - bestLag; i++) energyLag += centered[i + bestLag] * centered[i + bestLag];
-  const denom = Math.sqrt(energy * energyLag);
-  const confidence = denom > 0 ? bestCorr / denom : 0;
-  if (confidence < CONFIDENCE_MIN) return null; // not confidently periodic — treat as unvoiced rather than guess
-
-  const cLeft = bestLag > fineMin ? corrAt(bestLag - 1) : bestCorr;
-  const cRight = bestLag < fineMax ? corrAt(bestLag + 1) : bestCorr;
-  const denom2 = cLeft - 2 * bestCorr + cRight;
-  const shift = denom2 !== 0 ? (0.5 * (cLeft - cRight)) / denom2 : 0;
-  const refinedLag = bestLag + Math.max(-1, Math.min(1, shift));
-
-  return sampleRate / refinedLag;
+  return out;
 }
 
 /**
@@ -139,32 +71,141 @@ function frameSizeFor(sampleRate: number): number {
   return Math.max(512, Math.floor(sampleRate * 0.023)); // ~23ms — a couple of periods even at 80Hz
 }
 
-/** Runs autocorrelate across the whole channel on a fixed hop, once — both analyzePitch and
- * applyPitchCorrection need this same raw per-frame pitch track before they can do anything else
- * with it (measure deviation, or median-filter + smooth it for correction). */
+/**
+ * Silence floor for detection, relative to the take's own loud passages (20 dB under its
+ * 90th-percentile frame RMS) instead of one absolute level — a model-cleaned or quietly recorded
+ * take spends much of its singing under −40 dBFS and would otherwise read as unvoiced.
+ */
+function silenceFloorFor(data: Float32Array, frameSize: number, hop: number): number {
+  const levels: number[] = [];
+  for (let pos = 0; pos + frameSize <= data.length; pos += hop * 4) {
+    let sum = 0;
+    for (let i = pos; i < pos + frameSize; i++) sum += data[i] * data[i];
+    levels.push(Math.sqrt(sum / frameSize));
+  }
+  levels.sort((a, b) => a - b);
+  const loud = levels[Math.floor(0.9 * (levels.length - 1))] ?? 0;
+  return Math.max(1e-4, loud * 0.1);
+}
+
+/**
+ * YIN pitch track over the whole take. Per frame: the squared-difference function of the frame
+ * against itself at every candidate lag, normalized by its own running mean (the "cumulative mean
+ * normalized difference"), and the first lag that dips under YIN_THRESHOLD is the period — refined
+ * at full resolution and to a fraction of a sample by parabolic interpolation. Accurate to well
+ * under a cent on a steady note, which correction needs: it decides how far off each note is.
+ */
 function detectPitchTrack(
-  data: Float32Array,
+  raw: Float32Array,
+  filtered: Float32Array,
   sampleRate: number,
   frameSize: number,
   hop: number,
-  silenceRms: number,
 ): (number | null)[] {
+  const silenceRms = silenceFloorFor(raw, frameSize, hop);
+  const minLag = Math.max(2, Math.floor(sampleRate / MAX_HZ));
+  const maxLag = Math.ceil(sampleRate / MIN_HZ);
+  const fullWindow = frameSize - maxLag;
+  const decMinLag = Math.max(2, Math.floor(minLag / DECIM));
+  const decMaxLag = Math.ceil(maxLag / DECIM);
+  const decWindow = Math.floor(frameSize / DECIM) - decMaxLag;
+
+  const decimated = new Float32Array(Math.floor(filtered.length / DECIM));
+  for (let k = 0; k < decimated.length; k++) {
+    let sum = 0;
+    for (let j = 0; j < DECIM; j++) sum += filtered[k * DECIM + j];
+    decimated[k] = sum / DECIM;
+  }
+
+  const diff = new Float64Array(decMaxLag + 1);
+  const fullDiffAt = (pos: number, lag: number) => {
+    let d = 0;
+    for (let j = 0; j < fullWindow; j++) {
+      const delta = filtered[pos + j] - filtered[pos + j + lag];
+      d += delta * delta;
+    }
+    return d;
+  };
+
   const track: (number | null)[] = [];
-  for (let pos = 0; pos + frameSize <= data.length; pos += hop) {
-    track.push(
-      autocorrelate(data.subarray(pos, pos + frameSize), sampleRate, MIN_HZ, MAX_HZ, silenceRms),
-    );
+  for (let pos = 0; pos + frameSize <= raw.length; pos += hop) {
+    let energy = 0;
+    for (let i = pos; i < pos + frameSize; i++) energy += raw[i] * raw[i];
+    if (Math.sqrt(energy / frameSize) < silenceRms) {
+      track.push(null); // breath/room noise, not a note
+      continue;
+    }
+
+    const d0 = Math.floor(pos / DECIM);
+    let running = 0;
+    let picked = -1;
+    let bestTau = -1;
+    let bestCmnd = Infinity;
+    const cmnd = (tau: number) => (running > 0 ? (diff[tau] * tau) / running : 1);
+    for (let tau = 1; tau <= decMaxLag; tau++) {
+      let d = 0;
+      for (let j = 0; j < decWindow; j++) {
+        const delta = decimated[d0 + j] - decimated[d0 + j + tau];
+        d += delta * delta;
+      }
+      diff[tau] = d;
+      running += d;
+      if (tau < decMinLag) continue;
+      const v = cmnd(tau);
+      if (v < bestCmnd) {
+        bestCmnd = v;
+        bestTau = tau;
+      }
+      if (picked < 0 && v < YIN_THRESHOLD) picked = tau;
+      // Inside the first dip: keep walking down it to its bottom, then stop.
+      if (picked >= 0 && tau > picked) {
+        const prevRunning = running - d;
+        const prev = prevRunning > 0 ? (diff[tau - 1] * (tau - 1)) / prevRunning : 1;
+        if (v >= prev) {
+          picked = tau - 1;
+          break;
+        }
+        picked = tau;
+      }
+    }
+    if (picked < 0) {
+      if (bestCmnd > YIN_UNVOICED) {
+        track.push(null);
+        continue;
+      }
+      picked = bestTau;
+    }
+
+    // Full-resolution refinement around the coarse winner, then sub-sample parabolic vertex.
+    const lo = Math.max(minLag, picked * DECIM - DECIM - 2);
+    const hi = Math.min(maxLag, picked * DECIM + DECIM + 2);
+    let bestLag = lo;
+    let bestD = Infinity;
+    for (let lag = lo; lag <= hi; lag++) {
+      const d = fullDiffAt(pos, lag);
+      if (d < bestD) {
+        bestD = d;
+        bestLag = lag;
+      }
+    }
+    let refined = bestLag;
+    if (bestLag > minLag && bestLag < maxLag) {
+      const left = fullDiffAt(pos, bestLag - 1);
+      const right = fullDiffAt(pos, bestLag + 1);
+      const denom = left - 2 * bestD + right;
+      if (denom > 0) refined += Math.max(-1, Math.min(1, (0.5 * (left - right)) / denom));
+    }
+    track.push(sampleRate / refined);
   }
   return track;
 }
 
 /**
- * Median-of-up-to-5 filter over a raw pitch track. Rejects the classic autocorrelation failure
- * mode — a single frame locking onto half or double the true period (an octave error) — as the
- * outlier it is, rather than as real pitch content that the correction below would otherwise try
- * to snap a grain toward a wildly wrong note over. A position only gets a filtered value when at
- * least 3 of its (up to 5) neighbors are voiced; thin/isolated voiced blips stay null rather than
- * getting invented pitch content from a mostly-silent neighborhood.
+ * Median-of-up-to-5 filter over a raw pitch track. Rejects a single frame locking onto half or
+ * double the true period (an octave error) as the outlier it is, rather than as real pitch
+ * content that the correction below would otherwise try to snap toward a wildly wrong note. A
+ * position only gets a filtered value when at least 3 of its (up to 5) neighbors are voiced;
+ * thin/isolated voiced blips stay null rather than getting invented pitch content.
  */
 function medianFilterPitch(track: (number | null)[]): (number | null)[] {
   const n = track.length;
@@ -183,41 +224,28 @@ function medianFilterPitch(track: (number | null)[]): (number | null)[] {
   return out;
 }
 
-/**
- * Silence floor for detection, relative to the take's own loud passages (20 dB under its
- * 90th-percentile frame RMS) instead of one absolute level — a model-cleaned or quietly recorded
- * take spends much of its singing under −40 dBFS and would otherwise read as unvoiced.
- */
-function silenceFloorFor(data: Float32Array, frameSize: number, hop: number): number {
-  const levels: number[] = [];
-  for (let pos = 0; pos + frameSize <= data.length; pos += hop * 4) {
-    let sum = 0;
-    for (let i = pos; i < pos + frameSize; i++) sum += data[i] * data[i];
-    levels.push(Math.sqrt(sum / frameSize));
-  }
-  levels.sort((a, b) => a - b);
-  const loud = levels[Math.floor(0.9 * (levels.length - 1))] ?? 0;
-  return Math.max(1e-4, loud * 0.1);
-}
-
 type PitchTrack = {
   frameSize: number;
   hop: number;
   /** Median-filtered f0 per frame (Hz), null where unvoiced. Frame i is centered on
    * i * hop + frameSize / 2. */
   f0: (number | null)[];
+  /** The low-passed signal detection ran on — pitch marks are placed on it too. */
+  filtered: Float32Array;
 };
 
-/** ~6ms hop: fine enough to follow vibrato and note onsets, which the per-note correction below
- * has to tell apart. */
+/** 40ms frames (YIN needs a couple of periods of the lowest note plus the lag range on top) on a
+ * 10ms hop: fine enough to follow vibrato (~17 points per 6Hz cycle) and note onsets, which the
+ * per-note correction below has to tell apart. */
 function trackPitch(data: Float32Array, sampleRate: number): PitchTrack {
-  const frameSize = frameSizeFor(sampleRate);
+  const frameSize = Math.floor(sampleRate * 0.04);
   const hop = Math.floor(frameSize / 4);
-  const floor = silenceFloorFor(data, frameSize, hop);
+  const filtered = lowpass(data, sampleRate, 1200);
   return {
     frameSize,
     hop,
-    f0: medianFilterPitch(detectPitchTrack(data, sampleRate, frameSize, hop, floor)),
+    f0: medianFilterPitch(detectPitchTrack(data, filtered, sampleRate, frameSize, hop)),
+    filtered,
   };
 }
 
@@ -227,6 +255,8 @@ type Note = {
   /** Frame range [start, end). */
   start: number;
   end: number;
+  /** Sung pitch per frame, semitones from A4. */
+  semis: number[];
   /** Median sung pitch over the note, semitones from A4. */
   centerSemis: number;
   /** Where the note should be (see targetNoteFreq), semitones from A4. */
@@ -259,7 +289,7 @@ function segmentNotes(
         targetNoteFreq(referenceA4 * 2 ** (centerSemis / 12), scale, referenceA4),
         referenceA4,
       );
-      notes.push({ start: runStart, end, centerSemis, targetSemis });
+      notes.push({ start: runStart, end, semis: run, centerSemis, targetSemis });
     }
     run = [];
     runSum = 0;
@@ -336,24 +366,55 @@ function sampleAt(data: Float32Array, x: number): number {
   return data[i0] * (1 - frac) + data[i0 + 1] * frac;
 }
 
+const smoothstep = (lo: number, hi: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
+  return t * t * (3 - 2 * t);
+};
+
 /**
- * Per-frame pitch shift (semitones) for a take, the way a pitch editor applies it — not "snap every
- * frame to the grid," which is what flattens a voice into the robotic effect:
- *  - each note's center is moved toward its target by `strength` (Melodyne's "pitch center");
- *  - slow wandering within a note (drift, the unintentional part — smoothed over ±90ms, wider than one 5-6Hz vibrato cycle) is pulled
- *    back toward the note's center by 70% of `strength` ("pitch drift");
+ * Per-frame pitch shift (semitones) for a take, the way an engineer tunes a lead vocal by hand in
+ * a pitch editor — transparent, not "snap every frame to the grid," which is what flattens a voice
+ * into the robotic effect:
+ *  - each note's center is moved toward its target (Melodyne's "pitch center"). The full `strength`
+ *    goes on the top of the singer's range, where pitch slips most (strained, usually flat high
+ *    notes) and where it's most exposed; the middle and bottom of the range get 65% of it;
+ *  - a note already within ~6 cents is left exactly where it was sung (nobody hears that; moving it
+ *    only costs naturalness), with correction phased in fully by ~15 cents off;
+ *  - short notes (under ~150ms — passing tones, runs, melisma) are eased off: correcting them hard
+ *    is what makes fast singing sound stepped;
+ *  - slow wandering within a note (drift, smoothed over ±150ms, wider than one 5-6Hz vibrato
+ *    cycle) is pulled back toward the note's center by 60% of the note's strength ("pitch drift"),
+ *    only the part beyond ±10 cents — any held note wanders that much, and whatever vibrato leaks
+ *    through the smoothing stays under it — and not over its first 80ms, the scoop/attack into the
+ *    note, which is the singer's own phrasing;
  *  - anything faster than that — vibrato, the singer's own expression — is left exactly as sung;
- *  - the shift moves between notes with a retune-speed time constant (~20ms at full strength,
- *    ~30ms at the 0.8 AI mastering uses, slower below), so note changes glide instead of snapping.
+ *  - the shift moves between notes with a retune-speed time constant (~35ms at the 0.8-0.9 AI
+ *    mastering uses, slower below), so note changes glide instead of snapping.
+ * A note whose shift never reaches MIN_CORRECTION isn't touched at all. `active` marks the frames
+ * that are being moved: corrected notes, plus the glide back to zero after each one.
  */
 function shiftTrack(track: PitchTrack, notes: Note[], strength: number, sampleRate: number) {
   const n = track.f0.length;
   const raw = new Float32Array(n);
-  const driftRadius = Math.max(1, Math.round((0.09 * sampleRate) / track.hop));
+  const active = new Uint8Array(n);
+  const frameSec = track.hop / sampleRate;
+  const driftRadius = Math.max(1, Math.round(0.15 / frameSec));
+  const attackFrames = 0.08 / frameSec;
+
+  // The singer's range, from every sung frame: the median and the 90th percentile.
+  const all = notes.flatMap((note) => note.semis).sort((a, b) => a - b);
+  const mid = all[Math.floor(all.length * 0.5)] ?? 0;
+  const top = Math.max(mid + 1, all[Math.floor(all.length * 0.9)] ?? 0);
+
   for (const note of notes) {
-    const semis: number[] = [];
-    for (let i = note.start; i < note.end; i++) semis.push(toSemis(track.f0[i]!, 440));
-    const centerShift = (note.targetSemis - note.centerSemis) * strength;
+    const { semis } = note;
+    const error = note.targetSemis - note.centerSemis;
+    const noteStrength =
+      strength *
+      (0.65 + 0.35 * smoothstep(mid, top, note.centerSemis)) *
+      smoothstep(0.06, 0.15, semis.length * frameSec);
+    const centerShift = error * noteStrength * smoothstep(0.06, 0.15, Math.abs(error));
+    let largest = 0;
     for (let i = 0; i < semis.length; i++) {
       let sum = 0;
       let count = 0;
@@ -365,35 +426,49 @@ function shiftTrack(track: PitchTrack, notes: Note[], strength: number, sampleRa
         sum += semis[j];
         count++;
       }
-      const drift = sum / count - note.centerSemis;
-      raw[note.start + i] = centerShift - drift * strength * 0.7;
+      const wander = sum / count - note.centerSemis;
+      const drift = Math.sign(wander) * Math.max(0, Math.abs(wander) - 0.1);
+      const attack = smoothstep(0, attackFrames, i);
+      const shift = centerShift - drift * noteStrength * 0.6 * attack;
+      raw[note.start + i] = shift;
+      largest = Math.max(largest, Math.abs(shift));
     }
+    if (largest < MIN_CORRECTION) raw.fill(0, note.start, note.end);
+    else active.fill(1, note.start, note.end);
   }
-  const retuneMs = 70 - 50 * strength;
-  const alpha = 1 - Math.exp(-((track.hop / sampleRate) * 1000) / retuneMs);
-  const out = new Float32Array(n);
+  const retuneMs = 80 - 50 * strength;
+  const alpha = 1 - Math.exp(-(frameSec * 1000) / retuneMs);
+  const shifts = new Float32Array(n);
   let state = 0;
   for (let i = 0; i < n; i++) {
     state += (raw[i] - state) * alpha;
-    out[i] = state;
+    shifts[i] = state;
+    if (!active[i] && i > 0 && active[i - 1] && Math.abs(state) > 0.002) active[i] = 1;
   }
-  return out;
+  return { shifts, active };
 }
+
+/** Semitones (2 cents): a note that would move less than this anywhere is left as sung — nobody
+ * hears it, and resynthesizing it would only cost naturalness. */
+const MIN_CORRECTION = 0.02;
 
 /**
  * TD-PSOLA (pitch-synchronous overlap-add) resynthesis. The voice is cut into two-period grains
  * centered on its own pitch pulses, and the grains are laid back down closer together (higher
  * pitch) or further apart (lower) — each grain itself is never resampled, so the vocal tract's
  * formants stay where they are and a shifted note still sounds like the same singer, without the
- * phasey warble of plain grain resampling. Unvoiced stretches use short fixed grains at their
- * original spacing, which reconstructs them unchanged.
+ * phasey warble of plain grain resampling. Outside the stretches being moved (`activeAt`), and
+ * through unvoiced ones, each grain goes back exactly where it came from, which reconstructs the
+ * original — and puts the output back in phase with it at the start of every corrected note, so
+ * applyPitchCorrection can crossfade between the two.
  */
 function psola(
   input: Float32Array,
   marks: Int32Array,
   periods: Float32Array,
   voiced: Uint8Array,
-  ratioAt: (sample: number) => number,
+  shiftAt: (sample: number) => number,
+  activeAt: (sample: number) => boolean,
 ): Float32Array {
   const n = input.length;
   const out = new Float32Array(n);
@@ -405,7 +480,9 @@ function psola(
     const m = marks[k];
     const period = periods[k];
     const half = Math.max(2, Math.round(period));
-    const dst = Math.round(ts);
+    const resync = !voiced[k] || !activeAt(Math.round(ts));
+    const shift = resync ? 0 : shiftAt(Math.round(ts));
+    const dst = resync ? m : Math.round(ts);
     for (let j = -half; j <= half; j++) {
       const src = m + j;
       const d = dst + j;
@@ -414,15 +491,17 @@ function psola(
       out[d] += input[src] * w;
       weight[d] += w;
     }
-    ts += voiced[k] ? period / ratioAt(dst) : period;
+    const next = (resync ? m : ts) + (resync ? period : period / 2 ** (shift / 12));
+    // Always move forward, even through a run of marks bunched closer than a period.
+    ts = Math.max(next, ts + 1);
   }
   for (let i = 0; i < n; i++) out[i] = weight[i] > 1e-3 ? out[i] / Math.max(weight[i], 0.25) : 0;
   return out;
 }
 
-/** Pitch marks: one per glottal pulse through voiced stretches (each locked to the waveform peak
- * nearest one period on from the last, so grains line up in phase), and a fixed ~6ms step through
- * unvoiced ones. */
+/** Pitch marks: one per glottal pulse through voiced stretches (each locked to the low-passed
+ * waveform's peak nearest one period on from the last, so grains line up in phase), and a fixed
+ * ~6ms step through unvoiced ones. */
 function pitchMarks(data: Float32Array, sampleRate: number, track: PitchTrack) {
   const marks: number[] = [];
   const periods: number[] = [];
@@ -446,9 +525,9 @@ function pitchMarks(data: Float32Array, sampleRate: number, track: PitchTrack) {
       continue;
     }
     // First pulse of a voiced stretch: the peak within one period; after that, the peak within a
-    // third of a period either side of where the next pulse should be.
-    const lo = lastVoiced ? Math.round(t - period / 3) : t;
-    const hi = Math.min(data.length - 1, Math.round(lastVoiced ? t + period / 3 : t + period));
+    // quarter of a period either side of where the next pulse should be.
+    const lo = lastVoiced ? Math.round(t - period / 4) : t;
+    const hi = Math.min(data.length - 1, Math.round(lastVoiced ? t + period / 4 : t + period));
     let peak = Math.max(0, lo);
     for (let i = peak; i <= hi; i++) if (data[i] > data[peak]) peak = i;
     if (marks.length > 0 && peak <= marks[marks.length - 1]) peak = marks[marks.length - 1] + 1;
@@ -467,10 +546,13 @@ function pitchMarks(data: Float32Array, sampleRate: number, track: PitchTrack) {
 
 /**
  * Destructively retunes the buffer: track the sung pitch, split it into notes, decide a per-frame
- * shift (see shiftTrack), and resynthesize with PSOLA. `strength` is 0-1 — AI mastering uses 0.8,
- * the "natural but in tune" starting point pitch-editing guides recommend; 1 is full correction.
- * Notes are aimed at the song's scale when one is given (see targetNoteFreq). Pitch marks come
- * from channel 0 and are applied to every channel, so a stereo take stays phase-coherent.
+ * shift (see shiftTrack), and resynthesize with PSOLA. `strength` is 0-1 — AI mastering uses
+ * 0.8-0.9, the "natural but in tune" range pitch-editing guides recommend; 1 is full correction.
+ * Notes are aimed at the song's scale when one is given (see targetNoteFreq), on the backing
+ * track's own tuning (`referenceA4`, see song-analysis.ts's tuningCents). Only the stretches
+ * actually being moved come from the resynthesis, crossfaded in and out over ~10ms; the rest of
+ * the take stays the original samples. Pitch marks come from channel 0 and are applied to every
+ * channel, so a stereo take stays phase-coherent.
  */
 export function applyPitchCorrection(
   buffer: AudioBuffer,
@@ -485,25 +567,41 @@ export function applyPitchCorrection(
   const track = trackPitch(data, sampleRate);
   const notes = segmentNotes(track, sampleRate, scale, referenceA4);
   if (notes.length === 0) return;
-  const shifts = shiftTrack(track, notes, clampedStrength, sampleRate);
-  const ratioAt = (sample: number) => {
-    const frame = Math.round((sample - track.frameSize / 2) / track.hop);
-    const shift = shifts[Math.min(shifts.length - 1, Math.max(0, frame))] ?? 0;
-    return 2 ** (shift / 12);
-  };
-  const { marks, periods, voiced } = pitchMarks(data, sampleRate, track);
+  const { shifts, active } = shiftTrack(track, notes, clampedStrength, sampleRate);
+  if (!active.includes(1)) return;
+  const frameOf = (sample: number) =>
+    Math.min(
+      shifts.length - 1,
+      Math.max(0, Math.round((sample - track.frameSize / 2) / track.hop)),
+    );
+  const shiftAt = (sample: number) => shifts[frameOf(sample)];
+  const activeAt = (sample: number) => active[frameOf(sample)] === 1;
+  const { marks, periods, voiced } = pitchMarks(track.filtered, sampleRate, track);
+
+  // How much of each sample comes from the resynthesis: the active mask, edges ramped over ±5ms
+  // (a moving average over prefix sums).
+  const n = data.length;
+  const radius = Math.round(0.005 * sampleRate);
+  const prefix = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) prefix[i + 1] = prefix[i] + active[frameOf(i)];
+  const mixAt = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const lo = Math.max(0, i - radius);
+    const hi = Math.min(n, i + radius + 1);
+    mixAt[i] = (prefix[hi] - prefix[lo]) / (hi - lo);
+  }
   for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
     const channel = buffer.getChannelData(ch);
-    channel.set(psola(channel, marks, periods, voiced, ratioAt));
+    const shifted = psola(channel, marks, periods, voiced, shiftAt, activeAt);
+    for (let i = 0; i < n; i++) channel[i] += (shifted[i] - channel[i]) * mixAt[i];
   }
 }
 
 /**
- * Fixed-ratio, duration-preserving pitch shift — the same grain-resample + overlap-add engine as
- * applyPitchCorrection above, but with one constant ratio for the whole buffer instead of a
- * per-frame ratio chasing a detected note. No pitch detection needed, so it's cheap and exact:
- * used to transpose a whole backing track by a fixed number of semitones (a manual key change)
- * rather than correct a vocal toward the nearest chromatic note.
+ * Fixed-ratio, duration-preserving pitch shift — grain-resample + overlap-add with one constant
+ * ratio for the whole buffer instead of a per-frame ratio chasing a detected note. No pitch
+ * detection needed, so it's cheap and exact: used to transpose a whole backing track by a fixed
+ * number of semitones (a manual key change) rather than correct a vocal toward a note.
  */
 export function shiftPitchSemitones(buffer: AudioBuffer, semitones: number): void {
   if (semitones === 0) return;

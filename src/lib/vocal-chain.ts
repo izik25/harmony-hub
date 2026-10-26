@@ -42,7 +42,7 @@ export type MixSettings = {
   warmth: number;
   /** 0-100 → reverb send. */
   reverb: number;
-  /** 0-100 → plate decay 0.6-2.4s (see reverbTailSeconds). */
+  /** 0-100 → plate RT60 0.6-2.4s (see reverbTailSeconds). */
   reverbSize: number;
   /** Reverb pre-delay, seconds. */
   preDelay: number;
@@ -342,7 +342,7 @@ export function applyMix(chain: VocalChain, s: MixSettings, stems: boolean) {
     impulseKeys.set(chain, irKey);
     const context = Tone.getContext().rawContext as unknown as BaseAudioContext;
     chain.reverbConvolver.buffer = new Tone.ToneAudioBuffer(
-      generateImpulseResponse(context, reverbTailSeconds(s.reverbSize), 3.6, s.preDelay),
+      generateImpulseResponse(context, reverbTailSeconds(s.reverbSize), s.preDelay),
     );
   }
   chain.delaySend.gain.value = (s.delay / 100) * 0.5;
@@ -383,7 +383,8 @@ const channelsOf = (buffer: AudioBuffer) =>
  * Renders the chain offline — what publish uploads, and what AI mastering measures to check its
  * own result. Works from the live buffers' samples (already gated/pitch-corrected), copied into
  * buffers the offline context owns: Chromium can silently stall an OfflineAudioContext whose
- * source references an AudioBuffer from a different context. Mono, like the published file.
+ * source references an AudioBuffer from a different context. Stereo, exactly as Studio plays it
+ * live: the voice in the center, the plate spread across both sides, the backing at its own width.
  */
 export async function renderMix(
   vocal: AudioBuffer,
@@ -410,7 +411,7 @@ export async function renderMix(
       if (backingData) chain.backingPlayer.start(0);
     },
     duration,
-    1,
+    2,
     vocal.sampleRate,
   );
   const out = rendered.get();

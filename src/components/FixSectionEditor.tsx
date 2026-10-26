@@ -13,13 +13,14 @@ import { openSelfieCamera, buildCombinedRecorder } from "@/lib/camera-capture";
 import { translateServerError } from "@/lib/i18n";
 import { LogoPulse } from "@/components/LogoPulse";
 
-// Same idea as record.tsx's MIC_CONSTRAINTS: AEC off (it forces a different, speaker-routing
-// audio session on Android), NS/AGC on, mono, 48kHz — kept consistent so a re-recorded section
-// doesn't sound like it came from a different mic setup than the rest of the take.
+// Same as record.tsx's MIC_CONSTRAINTS: AEC off (it forces a different, speaker-routing audio
+// session on Android), NS/AGC off (the noise comes out offline instead — see noise-reduction.ts),
+// mono, 48kHz — kept consistent so a re-recorded section doesn't sound like it came from a
+// different mic setup than the rest of the take.
 const MIC_CONSTRAINTS: MediaTrackConstraints = {
   echoCancellation: false,
-  noiseSuppression: true,
-  autoGainControl: true,
+  noiseSuppression: false,
+  autoGainControl: false,
   sampleRate: { ideal: 48000 },
   channelCount: { ideal: 1 },
 };

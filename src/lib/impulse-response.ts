@@ -1,49 +1,75 @@
 /**
- * Synthesizes a decaying-noise impulse response for convolution reverb — no async IR loading
- * required. Kept short and fast-decaying (a small room/plate, not a hall): a longer tail here
- * reads as a distinct slapback echo rather than ambience once it's mixed back with the dry vocal,
- * which is what the default reverb send in studio.tsx was doing at the old 2.5s/decay-2.2 setting.
+ * Synthesizes a stereo vocal-plate impulse response for convolution reverb — no async IR loading.
  *
- * Two more things separate this from plain filtered noise, which is what it was before and reads
- * as a metallic "digital hiss" tail: (1) a short pre-delay (silence before the tail starts) so the
- * reverb reads as the room responding to the voice, not as an immediate doubling of it — zero
- * pre-delay is a big part of why reverb sends get misheard as echo; (2) the noise is progressively
- * low-pass filtered as it decays, since in any real room high frequencies lose energy to air/
- * surfaces faster than lows — a tail that stays full-bandwidth all the way to silence is what
- * makes synthesized reverb sound papery/artificial next to a real room.
+ * What makes it read as a plate rather than "filtered noise":
+ *  - exponential decay to −60dB at the RT60 asked for (how real tails die away), not a curve that
+ *    sags over the buffer's length;
+ *  - frequency-dependent decay, three bands: lows ring ~10% longer than the mids and highs die in
+ *    ~55% of the time — in any real plate or room the top end is absorbed first, and a tail that
+ *    stays full-bandwidth to the end is what makes synthetic reverb sound papery and hissy;
+ *  - dense from the first millisecond (a plate has no discrete early echoes), with a 5ms fade-in so
+ *    the onset doesn't click;
+ *  - independent noise per channel, so the tail is fully decorrelated left/right — it spreads wide
+ *    around the voice instead of piling up in the center on top of it;
+ *  - pre-delay (silence before the tail) so each word's consonant lands dry and in front, and the
+ *    reverb reads as space behind the voice rather than a smear over it.
  *
- * Tuned as a short vocal plate (~1s, 30ms pre-delay) rather than a room: a phone take already
- * carries the real room it was sung in, so any synthetic space longer than this stacks a second
- * room on top of the first and reads as echo. The 30ms pre-delay keeps the consonants dry and in
- * front, so the tail reads as sheen behind the voice rather than a smear over it.
+ * Seeded, not Math.random(): AI mastering measures the reverb in one render and sets the send from
+ * it, so every render of the same settings has to produce the same tail.
  */
 export function generateImpulseResponse(
   context: BaseAudioContext,
-  duration = 1.0,
-  decay = 3.6,
+  rt60Seconds = 1.0,
   preDelaySeconds = 0.03,
 ): AudioBuffer {
   const rate = context.sampleRate;
-  const length = Math.max(1, Math.floor(rate * duration));
-  const preDelaySamples = Math.min(length - 1, Math.floor(rate * preDelaySeconds));
+  const preDelay = Math.floor(rate * preDelaySeconds);
+  const tail = Math.floor(rate * rt60Seconds * 1.1);
+  const length = Math.max(2, preDelay + tail);
   const buffer = context.createBuffer(2, length, rate);
+  const fadeIn = Math.max(1, Math.floor(rate * 0.005));
+  const fadeOut = Math.floor(rate * 0.05);
+  // ln(1000) = 6.91: amplitude down 60dB after rt seconds.
+  const decayPerSample = (rt: number) => Math.exp(-6.91 / (rt * rate));
+  const lowDecay = decayPerSample(rt60Seconds * 1.1);
+  const midDecay = decayPerSample(rt60Seconds);
+  const highDecay = decayPerSample(rt60Seconds * 0.55);
+  const onePole = (hz: number) => 1 - Math.exp((-2 * Math.PI * hz) / rate);
+  const aLow = onePole(500);
+  const aHigh = onePole(4000);
+
   for (let channel = 0; channel < 2; channel++) {
+    const random = mulberry32(0x5eed + channel * 7919);
     const data = buffer.getChannelData(channel);
-    let lp = 0;
-    for (let i = 0; i < length; i++) {
-      if (i < preDelaySamples) {
-        data[i] = 0;
-        continue;
-      }
-      const t = (i - preDelaySamples) / (length - preDelaySamples);
-      const envelope = Math.pow(1 - t, decay);
-      const raw = (Math.random() * 2 - 1) * envelope;
-      // One-pole lowpass whose smoothing grows with t: alpha near 1 early (nearly full-bandwidth,
-      // like an early reflection) down to ~0.15 late (dark, damped tail).
-      const alpha = 1 - t * 0.85;
-      lp += (raw - lp) * alpha;
-      data[i] = lp;
+    let lp500 = 0;
+    let lp4k = 0;
+    let gLow = 1;
+    let gMid = 1;
+    let gHigh = 1;
+    for (let i = 0; i < tail; i++) {
+      const x = random() * 2 - 1;
+      lp500 += (x - lp500) * aLow;
+      lp4k += (x - lp4k) * aHigh;
+      let y = lp500 * gLow + (lp4k - lp500) * gMid + (x - lp4k) * gHigh;
+      gLow *= lowDecay;
+      gMid *= midDecay;
+      gHigh *= highDecay;
+      if (i < fadeIn) y *= i / fadeIn;
+      if (i > tail - fadeOut) y *= (tail - i) / fadeOut;
+      data[preDelay + i] = y;
     }
   }
   return buffer;
+}
+
+/** Small, fast seeded PRNG (uniform in [0, 1)). */
+function mulberry32(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
