@@ -8,7 +8,7 @@
  * cleaner too, which the offline pass alone never touches.
  *
  * The live "hear yourself" monitor in record.tsx gets its own processor from this same module (see
- * createMonitorVoice) rather than this one — expander, compressor and limiter in one. An
+ * createMonitorVoice) rather than this one — a soft expander and a gentle compressor. An
  * AudioWorkletNode adds no delay of its own — it runs synchronously inside the same render quantum
  * as the rest of the graph — so processing the monitor costs no latency.
  *
@@ -55,35 +55,35 @@ class MicNoiseGateProcessor extends AudioWorkletProcessor {
 }
 registerProcessor("mic-noise-gate", MicNoiseGateProcessor);
 
-// The live monitor's "headphone mix" voice chain, in one zero-lookahead pass — what a studio
-// engineer puts on a singer's cue feed: no gate chopping the starts of words, just a soft
-// downward expander that only tucks the room ~20dB under once you stop singing, a gentle
-// compressor so soft and belted lines sit at the same, comfortable level, makeup gain (the
-// capture has AGC off, so a raw phone capsule is quiet and uneven), and a fast peak limiter so a
-// loud note can never blast the headphones. Nothing here looks ahead, so it adds no latency.
-//
-// The old gate (fully silent until it heard ~8ms of "voice-band" energy) cut every consonant at
-// the start of a phrase and dropped out on soft notes, which is most of why monitoring sounded bad.
+// The live monitor's voice processing, kept deliberately light: a soft expander that only eases
+// the room ~12dB down once you stop singing (it opens within ~2ms, so the start of a word is never
+// cut, and it never mutes) and a gentle 2:1 compressor that just takes the edge off loud notes.
+// No makeup gain and no hard limiter — boosting the capsule brought its hiss up with it, and a
+// limiter's instant gain jumps distort. Nothing here looks ahead, so it adds no latency, and the
+// gain targets are only recomputed every 16 samples (a third of a millisecond), which keeps it
+// cheap enough for the tiny low-latency render buffers phones run the monitor at.
 class MonitorVoiceProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     const ms = (t) => 1 - Math.exp(-1 / (sampleRate * t / 1000));
+    const blockMs = (t) => 1 - Math.exp(-16 / (sampleRate * t / 1000));
     this._detAttack = ms(1);
-    this._detRelease = ms(60);
-    this._floorDown = ms(150);
-    this._floorRiseDb = 3 / sampleRate; // the floor creeps up at most 3dB/s
-    this._expAttack = ms(0.5);
+    this._detRelease = ms(80);
+    this._floorDown = blockMs(200);
+    this._floorRiseDb = (3 * 16) / sampleRate; // the room estimate creeps up at most 3dB/s
+    this._holdBlocks = Math.round((sampleRate * 0.3) / 16);
+    this._expAttack = ms(2);
     this._expRelease = ms(250);
-    this._holdSamples = Math.round(sampleRate * 0.25);
-    this._compAttack = ms(4);
-    this._compRelease = ms(160);
-    this._limRelease = ms(80);
+    this._compAttack = ms(5);
+    this._compRelease = ms(150);
     this._env = 0;
     this._floorDb = -66; // a conservative guess before any real signal has arrived
     this._hold = 0;
-    this._exp = 0.1;
-    this._compDb = 0;
-    this._lim = 1;
+    this._expTarget = 1;
+    this._exp = 1;
+    this._compTarget = 1;
+    this._comp = 1;
+    this._n = 0;
   }
   process(inputs, outputs) {
     const inCh = inputs[0] && inputs[0][0];
@@ -93,31 +93,24 @@ class MonitorVoiceProcessor extends AudioWorkletProcessor {
       const x = inCh[i];
       const mag = Math.abs(x);
       this._env += (mag - this._env) * (mag > this._env ? this._detAttack : this._detRelease);
-      const envDb = 20 * Math.log10(this._env + 1e-9);
-
-      // Room-level estimate: drops fast to the quiet between phrases, rises only slowly (in dB,
-      // so it can't stay stuck under a noisy room either) — a sustained note never becomes "the room".
-      if (envDb < this._floorDb) this._floorDb += (envDb - this._floorDb) * this._floorDown;
-      else this._floorDb += this._floorRiseDb;
-      // Opens instantly on anything ~10dB over the room (never below -60dBFS), then holds.
-      if (envDb >= Math.max(this._floorDb + 10, -60)) this._hold = this._holdSamples;
-      else if (this._hold > 0) this._hold--;
-      const expTarget = this._hold > 0 ? 1 : 0.1; // a -20dB dip, not a mute
-      this._exp += (expTarget - this._exp) * (expTarget > this._exp ? this._expAttack : this._expRelease);
-
-      // Soft-knee 3:1 over -28dBFS, +10dB makeup.
-      const over = envDb + 28;
-      let reduceDb = 0;
-      if (over >= 4) reduceDb = over * (2 / 3);
-      else if (over > -4) reduceDb = ((over + 4) * (over + 4)) / 16 * (2 / 3);
-      this._compDb += (reduceDb - this._compDb) * (reduceDb > this._compDb ? this._compAttack : this._compRelease);
-      const y = x * this._exp * Math.pow(10, (10 - this._compDb) / 20);
-
-      // Peak limiter at -3dBFS, leaving room for the reverb sitting on top.
-      const peak = Math.abs(y) * this._lim;
-      if (peak > 0.7) this._lim = 0.7 / Math.abs(y);
-      else this._lim += (1 - this._lim) * this._limRelease;
-      outCh[i] = y * this._lim;
+      if (++this._n === 16) {
+        this._n = 0;
+        const envDb = 20 * Math.log10(this._env + 1e-9);
+        // Drops fast to the quiet between phrases, rises only slowly, so a held note never
+        // becomes "the room" (and a noisy room can't leave it stuck open either).
+        if (envDb < this._floorDb) this._floorDb += (envDb - this._floorDb) * this._floorDown;
+        else this._floorDb += this._floorRiseDb;
+        if (envDb >= Math.max(this._floorDb + 10, -60)) this._hold = this._holdBlocks;
+        else if (this._hold > 0) this._hold--;
+        this._expTarget = this._hold > 0 ? 1 : 0.25;
+        // 2:1 above -20dBFS with a 6dB soft knee.
+        const over = envDb + 20;
+        const reduceDb = over >= 3 ? over / 2 : over > -3 ? ((over + 3) * (over + 3)) / 24 : 0;
+        this._compTarget = Math.pow(10, -reduceDb / 20);
+      }
+      this._exp += (this._expTarget - this._exp) * (this._expTarget > this._exp ? this._expAttack : this._expRelease);
+      this._comp += (this._compTarget - this._comp) * (this._compTarget < this._comp ? this._compAttack : this._compRelease);
+      outCh[i] = x * this._exp * this._comp;
     }
     return true;
   }

@@ -66,7 +66,6 @@ import {
 } from "@/lib/virtual-background";
 import { findHeadphoneOutput } from "@/lib/audio-output";
 import { createLiveNoiseGate, createMonitorVoice, type LiveNoiseGate } from "@/lib/mic-noise-gate";
-import { createVocalPlate } from "@/lib/monitor-reverb";
 
 export const Route = createFileRoute("/record")({
   // A song page's "Use this sound" button lands here with the track already picked, so recording
@@ -91,12 +90,10 @@ const BAR_COUNT = 48;
 // mix-recording.ts) doing more work than it needed to.
 const DEFAULT_VOCAL_GAIN = 1.15;
 const DEFAULT_BACKING_GAIN = 0.95;
-// How loud the processed voice (compressed, with makeup gain — see MonitorVoiceProcessor in
-// mic-noise-gate.ts) is fed into the headphones, and how much of it goes to the reverb send (see
-// monitor-reverb.ts; 0.16 is ~-16dB, a typical "voice in a nice room" amount for a cue mix).
-// Fixed, with no settings to dial in: the monitor just works as soon as headphones are on.
-const MONITOR_GAIN = 0.65;
-const MONITOR_REVERB_SEND = 0.16;
+// How loud the monitor feeds your voice into the headphones. Fixed, with no settings to dial in:
+// the monitor just works as soon as headphones are on. A version that added +10dB of makeup gain
+// on top of this distorted and brought the room's hiss up with the voice.
+const MONITOR_GAIN = 0.55;
 
 // Legacy Chromium-only constraint names ("goog*") aren't in the standard MediaTrackConstraints
 // type, but are still honored today and are the only way to reach past the conservative default
@@ -139,19 +136,16 @@ const MIC_CONSTRAINTS: ChromeAudioConstraints = {
   googTypingNoiseDetection: true,
 };
 
-// The monitor's own capture: the clean, unprocessed capsule, like a studio mic into a cue mix.
-// The browser's noise suppressor is built for calls, not singing — on held notes and vibrato it
-// leaves the voice watery and "underwater", and its 10ms frames add delay — so it's off, and the
-// room noise it was there for is handled by the monitor's own expander instead (see
-// MonitorVoiceProcessor in mic-noise-gate.ts), which only tucks the room under between phrases
-// and never touches the voice itself. AGC stays off — it would pump the room back up between
-// phrases — and AEC stays off for the same Android call-mode reason as MIC_CONSTRAINTS.
-// `latency: 0` asks the capture layer for the shortest buffering it can manage. No sampleRate ask:
-// the mic's own native rate means no capture-side conversion at all, and the monitor context below
-// is sized to the output device.
+// The monitor's own capture. Noise suppression is ON: a raw, unprocessed capsule (tried twice)
+// put every bit of room hiss, rustle and handling noise straight into the singer's headphones,
+// which was far worse than the few milliseconds NS's frame costs. AGC stays off — it would pump
+// the room back up between phrases — and AEC stays off for the same Android call-mode reason as
+// MIC_CONSTRAINTS. `latency: 0` asks the capture layer for the shortest buffering it can manage.
+// No sampleRate ask: the mic's own native rate means no capture-side conversion at all, and the
+// monitor context below is sized to the output device.
 const MONITOR_CONSTRAINTS: ChromeAudioConstraints & { latency?: ConstrainDouble } = {
   echoCancellation: false,
-  noiseSuppression: false,
+  noiseSuppression: true,
   autoGainControl: false,
   channelCount: { ideal: 1 },
   latency: { ideal: 0 },
@@ -159,9 +153,9 @@ const MONITOR_CONSTRAINTS: ChromeAudioConstraints & { latency?: ConstrainDouble 
   googEchoCancellation2: false,
   googAutoGainControl: false,
   googAutoGainControl2: false,
-  googNoiseSuppression: false,
-  googNoiseSuppression2: false,
-  googHighpassFilter: false,
+  googNoiseSuppression: true,
+  googNoiseSuppression2: true,
+  googHighpassFilter: true,
 };
 
 function useMicLevels(active: boolean, monitor: boolean) {
@@ -311,26 +305,17 @@ function useMicLevels(active: boolean, monitor: boolean) {
       monitorCtxRef.current = ctx;
       ctx.resume().catch(() => {});
       const source = ctx.createMediaStreamSource(stream);
-      // A cue-mix voicing, all plain BiquadFilterNodes (single-sample IIR filters, no internal
-      // buffering, so no added latency): rumble/handling thumps cut below the voice before the
-      // processor ever hears them, a touch of body back into a phone capsule's thin low end, and a
-      // little presence for clarity under the backing track. No lowpass — the old 9kHz one was
-      // what made the voice sound muffled.
+      // Just a rumble/handling-thump cut below the voice: a plain BiquadFilterNode (a
+      // single-sample IIR filter, no internal buffering, so no added latency), ahead of the
+      // processor so it never reacts to thumps. No lowpass — an earlier 9kHz one made the voice
+      // sound muffled — and no reverb: a ConvolverNode was heard as an echo and was heavy enough
+      // to crackle at the monitor's tiny render buffers.
       const rumble = ctx.createBiquadFilter();
       rumble.type = "highpass";
       rumble.frequency.value = 90;
       rumble.Q.value = 0.7;
       source.connect(rumble);
-      const body = ctx.createBiquadFilter();
-      body.type = "lowshelf";
-      body.frequency.value = 200;
-      body.gain.value = 2;
-      const presence = ctx.createBiquadFilter();
-      presence.type = "peaking";
-      presence.frequency.value = 3500;
-      presence.Q.value = 0.8;
-      presence.gain.value = 1.5;
-      // Expander + compressor + limiter — see MonitorVoiceProcessor in mic-noise-gate.ts.
+      // Soft expander + gentle compressor — see MonitorVoiceProcessor in mic-noise-gate.ts.
       // Falls back to `rumble` itself (unprocessed) if AudioWorklet isn't available.
       gate = await createMonitorVoice(ctx, rumble);
       if (cancelled) {
@@ -339,17 +324,7 @@ function useMicLevels(active: boolean, monitor: boolean) {
       }
       const gain = ctx.createGain();
       gain.gain.value = MONITOR_GAIN;
-      gate.node.connect(body).connect(presence).connect(gain).connect(ctx.destination);
-      // Parallel reverb send, highpassed so the tail doesn't get boomy; it goes through the same
-      // gain as the dry voice.
-      const reverbSend = ctx.createGain();
-      reverbSend.gain.value = MONITOR_REVERB_SEND;
-      const reverbHp = ctx.createBiquadFilter();
-      reverbHp.type = "highpass";
-      reverbHp.frequency.value = 250;
-      const reverb = ctx.createConvolver();
-      reverb.buffer = createVocalPlate(ctx);
-      presence.connect(reverbSend).connect(reverbHp).connect(reverb).connect(gain);
+      gate.node.connect(gain).connect(ctx.destination);
       // The mic permission just granted above is what makes real device labels available.
       const headphone = await findHeadphoneOutput();
       if (!cancelled && headphone && /bluetooth/i.test(headphone.label)) {
