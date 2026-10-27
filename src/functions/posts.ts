@@ -209,6 +209,7 @@ export const createDraft = createServerFn({ method: "POST" })
         rawVocalUrl?: string;
         backingTrackUrl?: string;
         backingStartOffsetSeconds?: number;
+        recordLatencyMs?: number;
         videoUrl?: string;
         karaokeTrackId?: string;
       },
@@ -225,6 +226,9 @@ export const createDraft = createServerFn({ method: "POST" })
         rawVocalUrl: data.rawVocalUrl ?? "",
         backingTrackUrl: data.backingTrackUrl ?? "",
         backingStartOffsetSeconds: Math.max(0, Math.round(data.backingStartOffsetSeconds ?? 0)),
+        recordLatencyMs: Number.isFinite(data.recordLatencyMs)
+          ? Math.round(Math.min(1500, Math.max(-500, data.recordLatencyMs!)))
+          : 0,
         videoUrl: data.videoUrl ?? "",
         karaokeTrackId: data.karaokeTrackId ?? null,
         hue: Math.floor(Math.random() * 360),

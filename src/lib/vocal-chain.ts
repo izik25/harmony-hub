@@ -354,11 +354,14 @@ export function applyMix(chain: VocalChain, s: MixSettings, stems: boolean) {
 }
 
 // Both stems always start/stop/seek together on one shared timestamp — they're the same length
-// and already aligned (prepareStems), so a single position drives both.
-export function startChain(chain: VocalChain, offset: number) {
+// and already aligned (prepareStems), so a single position drives both. Start and seek return
+// that timestamp (AudioContext time): when `offset` starts playing, outputLatencySeconds() before
+// it reaches the speaker.
+export function startChain(chain: VocalChain, offset: number): number {
   const at = Tone.now() + 0.02;
   chain.player.start(at, offset);
   if (chain.backingPlayer.loaded) chain.backingPlayer.start(at, offset);
+  return at;
 }
 
 export function stopChain(chain: VocalChain) {
@@ -366,10 +369,28 @@ export function stopChain(chain: VocalChain) {
   if (chain.backingPlayer.loaded) chain.backingPlayer.stop();
 }
 
-export function seekChain(chain: VocalChain, offset: number) {
+/** A seek is a stop and a fresh start at the same instant, not Tone.Player.seek: that swaps the
+ * source but leaves the player's original end time in its state timeline, so after scrubbing back
+ * the player reports "stopped" once that time passes while it's still sounding — later seeks and
+ * stops are then silently ignored, and the next play starts a second copy over the first. Only
+ * for a chain that's playing — a paused one just starts from the new position on play. */
+export function seekChain(chain: VocalChain, offset: number): number {
   const at = Tone.now() + 0.02;
-  chain.player.seek(offset, at);
-  if (chain.backingPlayer.loaded) chain.backingPlayer.seek(offset, at);
+  for (const player of [chain.player, chain.backingPlayer]) {
+    if (!player.loaded) continue;
+    player.stop(at);
+    player.start(at, offset);
+  }
+  return at;
+}
+
+/** Seconds between the context scheduling a sample and it leaving the speaker. */
+export function outputLatencySeconds(): number {
+  const raw = Tone.getContext().rawContext as unknown as {
+    baseLatency?: number;
+    outputLatency?: number;
+  };
+  return (raw.baseLatency ?? 0) + (raw.outputLatency ?? 0);
 }
 
 export function disposeChain(chain: VocalChain) {

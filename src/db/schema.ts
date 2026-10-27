@@ -69,6 +69,12 @@ export const posts = pgTable("posts", {
   // from the song's own beginning; Studio's re-bake (Mix Balance / AI Mastering) needs it for the
   // same reason whenever it re-runs that mix later.
   backingStartOffsetSeconds: integer("backing_start_offset_seconds").notNull().default(0),
+  // How far behind the backing track the take runs, as measured on the record page while it was
+  // sung (record.tsx's measureRecordLatency): the backing video's late start plus the output and
+  // mic latency — what the singer heard late, and so sang late. prepareStems delays the backing by
+  // this whenever there's no backing-track bleed in the take to measure it from directly, which is
+  // every headphone take. Milliseconds; 0 for takes from before this was measured.
+  recordLatencyMs: integer("record_latency_ms").notNull().default(0),
   // Which curated karaoke track this take was recorded over, if any — lets the feed link a post
   // back to that track's "sound page" (usage count + every other video recorded over it), the same
   // way TikTok links a post to the sound it used. Null for original songs, plain uploads, and any

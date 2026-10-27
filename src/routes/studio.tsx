@@ -40,6 +40,7 @@ import {
   buildChain,
   DEFAULT_MIX,
   disposeChain,
+  outputLatencySeconds,
   renderMix,
   seekChain,
   startChain,
@@ -199,11 +200,16 @@ function StudioPage() {
   const draftVideoRef = useRef<HTMLVideoElement | null>(null);
   // Playback position bookkeeping for the scrubber — Tone.Player has no native currentTime/
   // timeupdate the way <audio> does, so position is hand-tracked: positionRef is the source of
-  // truth (in buffer seconds), advanced each animation frame by real elapsed time scaled by the
-  // live playback rate, and written to directly on seek so dragging and playback never fight.
+  // truth (in buffer seconds), advanced each animation frame by the AudioContext's own elapsed
+  // time scaled by the live playback rate, and written to directly on seek so dragging and
+  // playback never fight. audioClockRef is the context time positionRef is accounted up to — set
+  // to the scheduled start on play/seek, so the position only moves once the stems actually do.
   const positionRef = useRef(0);
   const durationRef = useRef(0);
-  const lastFrameRef = useRef<number | null>(null);
+  const audioClockRef = useRef<number | null>(null);
+  // Context time the stems (re)start at, until the camera video has been started to match them —
+  // see tick. null once it's running.
+  const heardFromRef = useRef<number | null>(null);
   const rafIdRef = useRef<number | null>(null);
   // Untouched copy of the currently-loaded take's channel data, captured once right after decode
   // (see the load effect below) — every destructive pass (runPitchCorrection, applyMaster)
@@ -272,26 +278,50 @@ function StudioPage() {
       cancelAnimationFrame(rafIdRef.current);
       rafIdRef.current = null;
     }
-    lastFrameRef.current = null;
+    audioClockRef.current = null;
+    heardFromRef.current = null;
   };
 
   // Playing/ticking state is managed entirely from here rather than Tone.Player's `onstop`
-  // callback — that callback also fires as a side effect of `.seek()` while actively playing
-  // (Web Audio has no live-seek primitive, so Tone swaps the underlying source node under the
-  // hood), which would otherwise be indistinguishable from a real stop and kill the tick loop
-  // mid-scrub.
-  const tick = (time: number) => {
-    if (lastFrameRef.current == null) lastFrameRef.current = time;
-    const dt = (time - lastFrameRef.current) / 1000;
-    lastFrameRef.current = time;
+  // callback — that callback also fires as a side effect of a seek's stop-and-restart (Web Audio
+  // has no live-seek primitive), which would otherwise be indistinguishable from a real stop and
+  // kill the tick loop mid-scrub.
+  const tick = () => {
+    const now = Tone.getContext().currentTime;
     const rate = mixRef.current.speed / 100;
-    positionRef.current = Math.min(positionRef.current + dt * rate, durationRef.current);
+    const from = audioClockRef.current ?? now;
+    if (now > from) {
+      positionRef.current = Math.min(
+        positionRef.current + (now - from) * rate,
+        durationRef.current,
+      );
+      audioClockRef.current = now;
+    }
     setCurrentTime(positionRef.current);
-    // The video plays on its own native clock once started (see togglePlay) — this only nudges
-    // it back in line if it's drifted noticeably, rather than fighting it every frame.
+    // The camera video follows what's actually coming out of the speaker — the stems' position
+    // minus the output latency — rather than running on its own clock: started only once the
+    // stems are audible, hard-seeked on a big jump, and steered by playback rate on small drift
+    // so lips and voice stay together without the picture stuttering.
     const video = draftVideoRef.current;
-    if (video && Math.abs(video.currentTime - positionRef.current) > 0.25) {
-      video.currentTime = positionRef.current;
+    if (video) {
+      const latency = outputLatencySeconds();
+      const heard = Math.max(0, positionRef.current - latency * rate);
+      const heardFrom = heardFromRef.current;
+      if (heardFrom != null) {
+        if (now >= heardFrom + latency) {
+          heardFromRef.current = null;
+          video.currentTime = heard;
+          video.play().catch(() => {});
+        }
+      } else if (!video.paused && !video.seeking) {
+        const drift = video.currentTime - heard;
+        if (Math.abs(drift) > 0.3) {
+          video.currentTime = heard;
+        } else {
+          const steer = Math.abs(drift) > 0.02 ? clamp(1 - drift * 2, 0.9, 1.1) : 1;
+          video.playbackRate = rate * steer;
+        }
+      }
     }
     if (positionRef.current >= durationRef.current) {
       if (chainRef.current) stopChain(chainRef.current);
@@ -403,7 +433,11 @@ function StudioPage() {
       const { vocal, backing } = await prepareStems(
         raw,
         draft.backingTrackUrl || undefined,
-        { backingStartOffsetSeconds: draft.backingStartOffsetSeconds, finish: false },
+        {
+          backingStartOffsetSeconds: draft.backingStartOffsetSeconds,
+          recordLatencySeconds: draft.recordLatencyMs / 1000,
+          finish: false,
+        },
         clean,
       );
       const toUrl = (buffer: AudioBuffer) => {
@@ -533,13 +567,12 @@ function StudioPage() {
         positionRef.current = 0;
         setCurrentTime(0);
       }
-      startChain(chain, positionRef.current);
-      if (video) {
-        video.currentTime = positionRef.current;
-        video.play().catch(() => {});
-      }
+      const at = startChain(chain, positionRef.current);
+      audioClockRef.current = at;
+      heardFromRef.current = at;
+      // Held paused at the start point until the stems are audible — tick starts it.
+      if (video) video.currentTime = positionRef.current;
       setPlaying(true);
-      lastFrameRef.current = null;
       rafIdRef.current = requestAnimationFrame(tick);
     }
   };
@@ -554,9 +587,15 @@ function StudioPage() {
     const clamped = Math.min(Math.max(value, 0), durationRef.current);
     positionRef.current = clamped;
     setCurrentTime(clamped);
-    lastFrameRef.current = null;
-    seekChain(chain, clamped);
-    if (draftVideoRef.current) draftVideoRef.current.currentTime = clamped;
+    const video = draftVideoRef.current;
+    if (playing) {
+      const at = seekChain(chain, clamped);
+      audioClockRef.current = at;
+      heardFromRef.current = at;
+      // Waits at the new spot for the stems to get there, same as on play — see tick.
+      video?.pause();
+    }
+    if (video) video.currentTime = clamped;
   };
 
   // Stops the main preview before opening Fix a Section — two audio sources (this one plus its
@@ -1033,6 +1072,7 @@ function StudioPage() {
                 rawVocalUrl={draft.rawVocalUrl}
                 backingTrackUrl={draft.backingTrackUrl}
                 backingStartOffsetSeconds={draft.backingStartOffsetSeconds}
+                recordLatencySeconds={draft.recordLatencyMs / 1000}
                 videoUrl={draft.videoUrl || undefined}
                 vocalGain={mix.vocalVolume / 100}
                 backingGain={mix.playbackVolume / 100}

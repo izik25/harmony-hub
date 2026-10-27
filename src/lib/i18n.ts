@@ -145,6 +145,11 @@ const en = {
       "Live monitoring is on — use headphones, or you'll get feedback/howling.",
     monitorBluetoothLatency:
       "Bluetooth audio has a built-in delay (100-300ms) — for real-time monitoring, try wired headphones instead.",
+    monitorDirect: "Zero Delay",
+    monitorDirectOn:
+      "Zero delay: your voice goes straight to the headphones with no processing — the shortest delay this device allows. Best with wired headphones.",
+    monitorDirectOff:
+      "Smoothed monitoring: background noise is filtered out, at the cost of a few milliseconds of delay.",
     monitorVolume: "Monitor volume",
     monitorLatency:
       "Delay reported by this device: ~{{ms}}ms. Anything over ~40ms comes from the phone, browser and headphones themselves — wired headphones keep it lowest.",
@@ -997,6 +1002,10 @@ const he = {
     monitorFeedbackWarning: "ניטור חי פעיל — השתמש באוזניות, אחרת יתקבל פידבק (צפצוף).",
     monitorBluetoothLatency:
       "לאוזניות בלוטות' יש השהיה מובנית (100-300ms) — לניטור בזמן אמת, נסה אוזניות חוטיות.",
+    monitorDirect: "ללא דיליי",
+    monitorDirectOn:
+      "ללא דיליי: הקול עובר ישר לאוזניות בלי שום עיבוד — הדיליי הכי קצר שהמכשיר מאפשר. הכי טוב עם אוזניות חוטיות.",
+    monitorDirectOff: "שמיעה מסוננת: רעשי רקע מסוננים, במחיר של כמה מילישניות דיליי.",
     monitorVolume: "עוצמת שמיעה",
     monitorLatency:
       "ההשהיה שהמכשיר מדווח: ~{{ms}}ms. כל מה שמעל ~40ms מגיע מהטלפון, מהדפדפן ומהאוזניות עצמם — אוזניות חוטיות משאירות אותה הכי נמוכה.",
@@ -1842,6 +1851,11 @@ const ar = {
     monitorFeedbackWarning: "المراقبة الحية مفعّلة — استخدم سماعات وإلا ستحصل على صدى/صفير.",
     monitorBluetoothLatency:
       "لسماعات البلوتوث تأخير مدمج (100-300ms) — للمراقبة بالوقت الفعلي، جرّب سماعات سلكية.",
+    monitorDirect: "بدون تأخير",
+    monitorDirectOn:
+      "بدون تأخير: صوتك يذهب مباشرة إلى السماعات بلا أي معالجة — أقصر تأخير يسمح به الجهاز. الأفضل مع سماعات سلكية.",
+    monitorDirectOff:
+      "مراقبة مُنقّاة: تتم تصفية ضوضاء الخلفية، مقابل بضعة أجزاء من الثانية من التأخير.",
     monitorVolume: "مستوى سماع الصوت",
     monitorLatency:
       "التأخير الذي يبلغ عنه هذا الجهاز: ~{{ms}}ms. أي شيء فوق ~40ms مصدره الهاتف والمتصفح والسماعات نفسها — السماعات السلكية تبقيه في أدنى مستوى.",

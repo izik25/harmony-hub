@@ -149,6 +149,10 @@ export type MixLevels = {
    * it lands seconds (sometimes minutes) out of sync with the vocal. 0 (the default) is "whole
    * song," which needs no offset. */
   backingStartOffsetSeconds?: number;
+  /** How late the take runs behind the backing, as measured while recording (see
+   * measureRecordLatency in record.tsx) — the fallback alignment for takes with no bleed in them
+   * to measure it from (headphones), and the center of the bleed search for those that have. */
+  recordLatencySeconds?: number;
   /** Run the fixed finishing chain (gate, EQ, de-ess, compression, limiter) on the vocal. true (the
    * default) for the one-shot mixes record.tsx and Fix a Section upload. Studio passes false: its
    * own chain (vocal-chain.ts) is then the only processing the voice gets — running both stacked
@@ -207,6 +211,42 @@ function createLimiter(ctx: BaseAudioContext): DynamicsCompressorNode {
   limiter.attack.value = 0.001;
   limiter.release.value = 0.1;
   return limiter;
+}
+
+const BAND_LOW_HZ = 80;
+const BAND_HIGH_HZ = 18_000;
+// Web Audio's high/low-pass Q is resonance in dB; −3.01 dB is Butterworth (flat, no bump at the
+// corner) — see vocal-chain.ts.
+const BUTTERWORTH_Q_DB = -3.0103;
+
+/**
+ * Trims the take to 80Hz-18kHz before anything else touches it. Below 80Hz a phone take holds
+ * only rumble, handling thumps and AC hum; above 18kHz only hiss and codec debris — neither is
+ * voice, and left in, both feed the noise profile, the gate's level reading and the compressor.
+ * One Butterworth stage (12dB/oct) per edge, not a steeper cascade: a low E2 (82Hz) loses ~3dB
+ * as it is, and the voice-specific low cut later (70-150Hz, under the singer's lowest note)
+ * does the real shaping. Biquads add no delay, so the take stays aligned with the backing.
+ */
+async function bandLimitVocal(buffer: AudioBuffer): Promise<AudioBuffer> {
+  const ctx = new OfflineAudioContext(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  const highpass = ctx.createBiquadFilter();
+  highpass.type = "highpass";
+  highpass.frequency.value = BAND_LOW_HZ;
+  highpass.Q.value = BUTTERWORTH_Q_DB;
+  let tail: AudioNode = source.connect(highpass);
+  // At a sample rate whose Nyquist is at or under 18kHz there's nothing up there to cut.
+  if (buffer.sampleRate / 2 > BAND_HIGH_HZ) {
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = BAND_HIGH_HZ;
+    lowpass.Q.value = BUTTERWORTH_Q_DB;
+    tail = tail.connect(lowpass);
+  }
+  tail.connect(ctx.destination);
+  source.start(0);
+  return withTimeout(ctx.startRendering(), RENDER_TIMEOUT_MS, "Band-limit render");
 }
 
 /**
@@ -274,19 +314,23 @@ export async function prepareStems(
     await decodeCtx.close();
   }
 
-  // Measured on the raw take, before the gate below thins out the bleed it's looking for.
+  // Measured on the raw take, before the gate below thins out the bleed it's looking for. The
+  // search is centered on the latency measured while recording, so it only has to find what that
+  // measurement missed; with no bleed to find (headphones) the measurement is the alignment.
+  const recordLatencySeconds = levels.recordLatencySeconds ?? 0;
   const bleedDelaySeconds = backingBuffer
-    ? (estimateBleedDelaySeconds(
+    ? recordLatencySeconds +
+      (estimateBleedDelaySeconds(
         micBuffer.getChannelData(0),
         micBuffer.sampleRate,
         backingBuffer.getChannelData(0),
         backingBuffer.sampleRate,
-        backingStartOffsetSeconds,
+        backingStartOffsetSeconds - recordLatencySeconds,
       ) ?? 0)
     : 0;
-  if (cleanBuffer) {
-    micBuffer = cleanBuffer;
-  } else {
+  if (cleanBuffer) micBuffer = cleanBuffer;
+  micBuffer = await bandLimitVocal(micBuffer);
+  if (!cleanBuffer) {
     // The room comes out from under the voice itself, not just the gaps — see noise-reduction.ts.
     // The model-cleaned take above is already dry and quiet, so it skips this.
     for (let ch = 0; ch < micBuffer.numberOfChannels; ch++) {

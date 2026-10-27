@@ -42,6 +42,9 @@ export function FixSectionEditor({
   rawVocalUrl,
   backingTrackUrl,
   backingStartOffsetSeconds,
+  // The original take's measured latency (see record.tsx's measureRecordLatency) — the spliced
+  // take is still mostly that recording, so it's aligned the same way.
+  recordLatencySeconds,
   vocalGain,
   backingGain,
   // Seeds the start marker from wherever the caller was already listening (the main Studio
@@ -63,6 +66,7 @@ export function FixSectionEditor({
   rawVocalUrl: string;
   backingTrackUrl?: string | null;
   backingStartOffsetSeconds?: number;
+  recordLatencySeconds?: number;
   vocalGain: number;
   backingGain: number;
   initialStartFraction?: number;
@@ -289,6 +293,7 @@ export function FixSectionEditor({
         vocalGain,
         backingGain,
         backingStartOffsetSeconds,
+        recordLatencySeconds,
       });
       const videoBlob = pendingVideoBlobRef.current;
       const [rawUp, mixedUp, videoUp] = await Promise.all([

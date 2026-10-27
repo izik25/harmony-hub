@@ -27,6 +27,7 @@ import {
   RotateCcw,
   Wand2,
   Crown,
+  Zap,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import * as Tone from "tone";
@@ -65,6 +66,7 @@ import {
   type VirtualBackgroundComposer,
 } from "@/lib/virtual-background";
 import { findHeadphoneOutput } from "@/lib/audio-output";
+import { outputLatencySeconds } from "@/lib/vocal-chain";
 import { createMonitorVoice, type LiveNoiseGate } from "@/lib/mic-noise-gate";
 
 export const Route = createFileRoute("/record")({
@@ -164,7 +166,62 @@ const MONITOR_CONSTRAINTS: ChromeAudioConstraints & { latency?: ConstrainDouble 
   googHighpassFilter: true,
 };
 
-function useMicLevels(active: boolean, monitor: boolean) {
+// "Zero delay" monitoring, for wired headphones: the exact capture settings the take itself uses
+// (every bit of browser voice processing off) plus `latency: 0`. Noise suppression is what
+// MONITOR_CONSTRAINTS pays for in delay — Chromium's processing runs in 10ms frames with its own
+// buffering on top — and with nothing switched on, Chrome skips that whole stage and hands the
+// mic's samples straight to Web Audio. Matching MIC_CONSTRAINTS also lets Chrome serve both
+// captures from the one open device instead of a second, differently-configured one.
+const DIRECT_MONITOR_CONSTRAINTS: ChromeAudioConstraints & { latency?: ConstrainDouble } = {
+  ...MIC_CONSTRAINTS,
+  latency: { ideal: 0 },
+};
+
+/**
+ * Measures how far behind the backing track a fresh take runs, from the moment the recorder
+ * started. With headphones there's no backing-track bleed in the take for prepareStems to measure
+ * this from afterward, so it's taken here, live, or the take lands off the beat by all of it:
+ *
+ * - the backing's own late start: the video is re-seeked to the segment start as the recorder
+ *   starts, and is only audible again once that seek lands — commonly 100-300ms on a phone. Read
+ *   from the video's playhead against the clock: where it was at the recorder's start is its
+ *   position now minus the time since. The browser's playhead is the audible position (it's what
+ *   video frames are synced to), so this already includes the output latency, Bluetooth included —
+ *   except once the element is routed through Web Audio for a key change (`webAudioSeconds`);
+ * - the mic's capture latency, from the track's own settings.
+ *
+ * The singer sang to what they heard, so the take runs late by exactly the sum. Reports the
+ * running median after every sample, so a take finished before the probe is done still has one.
+ */
+function measureRecordLatency(
+  video: HTMLVideoElement,
+  expectedStart: number,
+  recorderStartedAt: number,
+  inputSeconds: number,
+  webAudioSeconds: () => number,
+  report: (seconds: number) => void,
+): () => void {
+  const samples: number[] = [];
+  let last = -1;
+  const timer = setInterval(() => {
+    const elapsed = (performance.now() - recorderStartedAt) / 1000;
+    if (elapsed > 4) {
+      clearInterval(timer);
+      return;
+    }
+    // Skips the stretch where the seek hasn't landed yet: the playhead has to actually be moving.
+    if (elapsed < 0.3 || video.paused || video.seeking || video.currentTime === last) return;
+    last = video.currentTime;
+    const startedAt = video.currentTime - elapsed * video.playbackRate;
+    samples.push(expectedStart - startedAt);
+    const sorted = [...samples].sort((a, b) => a - b);
+    const lag = sorted[Math.floor(sorted.length / 2)];
+    report(Math.min(1.5, Math.max(-0.5, lag + inputSeconds + webAudioSeconds())));
+  }, 100);
+  return () => clearInterval(timer);
+}
+
+function useMicLevels(active: boolean, monitor: boolean, direct: boolean) {
   const [levels, setLevels] = useState<number[]>(() => Array(BAR_COUNT).fill(6));
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -256,7 +313,9 @@ function useMicLevels(active: boolean, monitor: boolean) {
     let gate: LiveNoiseGate | undefined;
 
     (async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: MONITOR_CONSTRAINTS });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: direct ? DIRECT_MONITOR_CONSTRAINTS : MONITOR_CONSTRAINTS,
+      });
       if (cancelled) {
         stream.getTracks().forEach((t) => t.stop());
         return;
@@ -286,7 +345,23 @@ function useMicLevels(active: boolean, monitor: boolean) {
       ctx = new AudioContext({ latencyHint: 0 });
       monitorCtxRef.current = ctx;
       ctx.resume().catch(() => {});
+      // The mic permission just granted above is what makes real device labels available. Not
+      // awaited, so the hint never holds up the monitor itself.
+      findHeadphoneOutput().then((headphone) => {
+        if (!cancelled && headphone && /bluetooth/i.test(headphone.label)) {
+          toast.info(i18n.t("record.monitorBluetoothLatency"));
+        }
+      });
       const source = ctx.createMediaStreamSource(stream);
+      const gain = ctx.createGain();
+      gain.gain.value = MONITOR_GAIN;
+      // Zero delay: mic -> volume -> headphones and nothing else in between. The filter and
+      // processor below don't buffer, but they're still work on every tiny render block, and this
+      // mode is about leaving the shortest path there is.
+      if (direct) {
+        source.connect(gain).connect(ctx.destination);
+        return;
+      }
       // Just a rumble/handling-thump cut below the voice: a plain BiquadFilterNode (a
       // single-sample IIR filter, no internal buffering, so no added latency), ahead of the
       // processor so it never reacts to thumps. No lowpass — an earlier 9kHz one made the voice
@@ -304,14 +379,7 @@ function useMicLevels(active: boolean, monitor: boolean) {
         gate.dispose();
         return;
       }
-      const gain = ctx.createGain();
-      gain.gain.value = MONITOR_GAIN;
       gate.node.connect(gain).connect(ctx.destination);
-      // The mic permission just granted above is what makes real device labels available.
-      const headphone = await findHeadphoneOutput();
-      if (!cancelled && headphone && /bluetooth/i.test(headphone.label)) {
-        toast.info(i18n.t("record.monitorBluetoothLatency"));
-      }
     })().catch(() => {}); // monitor is optional — a failure here shouldn't interrupt recording
 
     return () => {
@@ -321,7 +389,7 @@ function useMicLevels(active: boolean, monitor: boolean) {
       ctx?.close();
       monitorStream?.getTracks().forEach((t) => t.stop());
     };
-  }, [active, monitor, restartKey]);
+  }, [active, monitor, direct, restartKey]);
 
   const resumeAudio = () => {
     ctxRef.current?.resume().catch(() => {});
@@ -671,6 +739,10 @@ function RecordPage() {
   // moment you start recording rather than requiring a tap to discover. localStorage still lets
   // an explicit "no" from a previous session stick.
   const [monitorEnabled, setMonitorEnabled] = useState(true);
+  // "Zero delay" monitoring (DIRECT_MONITOR_CONSTRAINTS): the voice goes straight to the
+  // headphones with no noise suppression or processing. Switches itself on when wired headphones
+  // are found (below) unless the user has picked a mode themselves, which then sticks.
+  const [monitorDirect, setMonitorDirect] = useState(false);
   // Rewind-and-punch-in: previewSeconds tracks the live drag position while the user is
   // scrubbing the timeline backward; cutConfirm holds the target once they release, gating the
   // "delete back to here and re-record?" dialog.
@@ -731,6 +803,8 @@ function RecordPage() {
   // latency or quality cost for the common case.
   const videoSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const pitchShiftRef = useRef<Tone.PitchShift | null>(null);
+  // How late this take runs behind the backing — see measureRecordLatency. Seconds.
+  const recordLatencyRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   // Everything committed before the currently-live MediaRecorder segment — every pause, scrub
   // checkpoint, or confirmed cut folds the live segment into this (see audio-splice.ts) and
@@ -767,6 +841,7 @@ function RecordPage() {
   const { stream, resumeAudio } = useMicLevels(
     phase === "recording" || phase === "paused",
     monitorEnabled,
+    monitorDirect,
   );
 
   // Remember the monitor preference across visits, same as any other studio setting — but only
@@ -776,6 +851,8 @@ function RecordPage() {
     const stored = localStorage.getItem("hh:monitorEnabled");
     if (stored != null) setMonitorEnabled(stored === "1");
     else toast.info(t("record.monitorFeedbackWarning"));
+    const storedDirect = localStorage.getItem("hh:monitorDirect");
+    if (storedDirect != null) setMonitorDirect(storedDirect === "1");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -789,7 +866,17 @@ function RecordPage() {
     const check = () =>
       findHeadphoneOutput().then((headphone) => {
         if (cancelled) return;
-        if (headphone && !headphonesSeenRef.current) setMonitorEnabled(true);
+        if (headphone && !headphonesSeenRef.current) {
+          setMonitorEnabled(true);
+          // Wired is the one connection fast enough for zero delay to matter — Bluetooth's own
+          // 100-300ms swamps anything saved here.
+          if (
+            !/bluetooth/i.test(headphone.label) &&
+            localStorage.getItem("hh:monitorDirect") == null
+          ) {
+            setMonitorDirect(true);
+          }
+        }
         headphonesSeenRef.current = !!headphone;
       });
     check();
@@ -807,6 +894,15 @@ function RecordPage() {
       const next = !prev;
       localStorage.setItem("hh:monitorEnabled", next ? "1" : "0");
       if (next) toast.info(t("record.monitorFeedbackWarning"));
+      return next;
+    });
+  };
+
+  const toggleMonitorDirect = () => {
+    setMonitorDirect((prev) => {
+      const next = !prev;
+      localStorage.setItem("hh:monitorDirect", next ? "1" : "0");
+      toast.info(t(next ? "record.monitorDirectOn" : "record.monitorDirectOff"));
       return next;
     });
   };
@@ -979,6 +1075,7 @@ function RecordPage() {
             backingGain: DEFAULT_BACKING_GAIN,
             backingPitchSemitones: pitchSemitones,
             backingStartOffsetSeconds: segmentStart,
+            recordLatencySeconds: recordLatencyRef.current,
           }),
           new Promise<Blob>((_, reject) =>
             setTimeout(() => reject(new Error("processing timed out")), 30_000),
@@ -1010,6 +1107,7 @@ function RecordPage() {
           videoUrl: cameraEnabled ? raw.url : undefined,
           backingTrackUrl: selectedTrack?.videoUrl,
           backingStartOffsetSeconds: segmentStart,
+          recordLatencyMs: Math.round(recordLatencyRef.current * 1000),
           karaokeTrackId: selectedTrack?.id,
           title: selectedTrack
             ? [selectedTrack.artist, selectedTrack.title].filter(Boolean).join(" — ")
@@ -1036,6 +1134,7 @@ function RecordPage() {
     // afterward via an offline render (finishMutation), not mixed live while recording.
     let cancelled = false;
     let started = false;
+    let stopLatencyProbe: (() => void) | undefined;
     const tryStart = () => {
       if (cancelled || started) return;
       if (!stream.current) return;
@@ -1111,6 +1210,31 @@ function RecordPage() {
           resolveCheckpoint?.();
         });
       };
+      // Measured on a fresh take only — a resume carries on from the same backing it was
+      // already in step with.
+      const fresh = !baseBlobRef.current;
+      if (fresh) recordLatencyRef.current = 0;
+      recorder.onstart = (e) => {
+        const video = videoRef.current;
+        if (!fresh || !video || cancelled) return;
+        const settings = recordingStream.getAudioTracks()[0]?.getSettings() as
+          (MediaTrackSettings & { latency?: number }) | undefined;
+        stopLatencyProbe = measureRecordLatency(
+          video,
+          segmentStart,
+          e.timeStamp,
+          settings?.latency ?? 0,
+          () => {
+            if (!videoSourceRef.current) return 0;
+            // A key change runs the backing through Tone's context and its pitch shifter, whose
+            // grains sit about half a window behind.
+            return outputLatencySeconds() + (pitchShiftRef.current?.pitch ? 0.05 : 0);
+          },
+          (seconds) => {
+            recordLatencyRef.current = seconds;
+          },
+        );
+      };
       recorder.start();
       mediaRecorderRef.current = recorder;
       spliceRef.current = splice;
@@ -1124,6 +1248,7 @@ function RecordPage() {
     return () => {
       cancelled = true;
       clearInterval(waitForStream);
+      stopLatencyProbe?.();
     };
     // finishMutation intentionally excluded: this effect only sets up recording start/resume, and
     // onstop always reads the latest mutate function from the closure — including it here would
@@ -1462,6 +1587,18 @@ function RecordPage() {
               }}
               active={monitorEnabled}
             />
+            {monitorEnabled && (
+              <RailControl
+                icon={<Zap className="h-5 w-5" />}
+                label={t("record.monitorDirect")}
+                showLabel={!railHintsSeen}
+                onClick={() => {
+                  setRailHintsSeen(true);
+                  toggleMonitorDirect();
+                }}
+                active={monitorDirect}
+              />
+            )}
             <RailControl
               icon={<ChevronsUpDown className="h-5 w-5" />}
               label={t("record.pitchLabel")}

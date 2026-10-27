@@ -2,7 +2,8 @@
 // mastering's automatic tuning. A live Tone.PitchShift can only apply one fixed shift to the whole
 // signal, so this works offline on the loaded buffer instead: track the sung pitch (YIN), split it
 // into notes the way a pitch editor does, move each note's center toward its target and pull in
-// slow drift while leaving vibrato and note attacks as sung (see shiftTrack), then resynthesize with
+// slow drift while leaving vibrato and note attacks as sung — or, at the top of the slider, snap
+// everything flat for the robotic hard-tune effect (see shiftTrack) — then resynthesize with
 // TD-PSOLA, which shifts pitch without moving the voice's formants (see psola). Only what was
 // actually moved is resynthesized; everything else is the original signal, untouched. Studio bakes
 // it in a beat after the slider stops moving, or immediately when AI mastering decides a take
@@ -392,8 +393,20 @@ const smoothstep = (lo: number, hi: number, x: number) => {
  *    mastering uses, slower below), so note changes glide instead of snapping.
  * A note whose shift never reaches MIN_CORRECTION isn't touched at all. `active` marks the frames
  * that are being moved: corrected notes, plus the glide back to zero after each one.
+ *
+ * Over the top of the slider (HARD_TUNE_FROM → 1) all of that crossfades into hard-tune, the
+ * deliberate robotic effect: every voiced frame — vibrato, scoops, glides, short notes, notes
+ * already in tune — is snapped to its own note, and the retune speed drops to zero so note changes
+ * jump instead of gliding. At 1 the output pitch is flat on the grid, stepping between notes.
  */
-function shiftTrack(track: PitchTrack, notes: Note[], strength: number, sampleRate: number) {
+function shiftTrack(
+  track: PitchTrack,
+  notes: Note[],
+  strength: number,
+  sampleRate: number,
+  scale: readonly number[] | undefined,
+  referenceA4: number,
+) {
   const n = track.f0.length;
   const raw = new Float32Array(n);
   const active = new Uint8Array(n);
@@ -436,7 +449,39 @@ function shiftTrack(track: PitchTrack, notes: Note[], strength: number, sampleRa
     if (largest < MIN_CORRECTION) raw.fill(0, note.start, note.end);
     else active.fill(1, note.start, note.end);
   }
-  const retuneMs = 80 - 50 * strength;
+
+  const hard = smoothstep(HARD_TUNE_FROM, 1, strength);
+  if (hard > 0) {
+    // Inside a note, the snap target is the note's own — a wide vibrato swings past the halfway
+    // point to the next semitone, and following it frame by frame would warble between the two.
+    // Between notes (glides, scoops, blips too short to be one), each frame snaps on its own, held
+    // until another note is clearly closer.
+    const noteTarget = new Float32Array(n).fill(NaN);
+    for (const note of notes) noteTarget.fill(note.targetSemis, note.start, note.end);
+    let held: number | null = null;
+    for (let i = 0; i < n; i++) {
+      const f0 = track.f0[i];
+      if (f0 == null) {
+        held = null;
+        continue;
+      }
+      const s = toSemis(f0, referenceA4);
+      const candidate = Number.isNaN(noteTarget[i])
+        ? toSemis(targetNoteFreq(f0, scale, referenceA4), referenceA4)
+        : noteTarget[i];
+      if (
+        held == null ||
+        !Number.isNaN(noteTarget[i]) ||
+        Math.abs(s - candidate) < Math.abs(s - held) - HARD_TUNE_HYSTERESIS
+      ) {
+        held = candidate;
+      }
+      raw[i] += (held - s - raw[i]) * hard;
+      active[i] = 1;
+    }
+  }
+
+  const retuneMs = (80 - 50 * strength) * (1 - hard) + 0.5 * hard;
   const alpha = 1 - Math.exp(-(frameSec * 1000) / retuneMs);
   const shifts = new Float32Array(n);
   let state = 0;
@@ -451,6 +496,12 @@ function shiftTrack(track: PitchTrack, notes: Note[], strength: number, sampleRa
 /** Semitones (2 cents): a note that would move less than this anywhere is left as sung — nobody
  * hears it, and resynthesizing it would only cost naturalness. */
 const MIN_CORRECTION = 0.02;
+
+/** Strength where hard-tune starts fading in (see shiftTrack). Above AI mastering's 0.8-0.9, so its
+ * correction stays transparent; the slider's last stretch is the effect. */
+const HARD_TUNE_FROM = 0.9;
+/** Semitones: in hard-tune, how much closer another note must be before the snap moves to it. */
+const HARD_TUNE_HYSTERESIS = 0.2;
 
 /**
  * TD-PSOLA (pitch-synchronous overlap-add) resynthesis. The voice is cut into two-period grains
@@ -567,7 +618,14 @@ export function applyPitchCorrection(
   const track = trackPitch(data, sampleRate);
   const notes = segmentNotes(track, sampleRate, scale, referenceA4);
   if (notes.length === 0) return;
-  const { shifts, active } = shiftTrack(track, notes, clampedStrength, sampleRate);
+  const { shifts, active } = shiftTrack(
+    track,
+    notes,
+    clampedStrength,
+    sampleRate,
+    scale,
+    referenceA4,
+  );
   if (!active.includes(1)) return;
   const frameOf = (sample: number) =>
     Math.min(
