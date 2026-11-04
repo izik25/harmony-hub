@@ -1,9 +1,24 @@
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { formatDistanceToNow } from "date-fns";
-import { ar, enUS, he } from "date-fns/locale";
+import { ar, de, enUS, es, fr, he, hi, it, ja, ko, ptBR, ru, tr, zhCN } from "date-fns/locale";
 
-const LOCALES = { ar, en: enUS, he } as const;
+const LOCALES = {
+  ar,
+  de,
+  en: enUS,
+  es,
+  fr,
+  he,
+  hi,
+  it,
+  ja,
+  ko,
+  pt: ptBR,
+  ru,
+  tr,
+  zh: zhCN,
+} as const;
 
 function useLang() {
   const { i18n } = useTranslation();

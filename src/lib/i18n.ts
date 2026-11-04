@@ -1,6 +1,45 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
+import { de } from "./locales/de";
+import { es } from "./locales/es";
+import { fr } from "./locales/fr";
+import { hi } from "./locales/hi";
+import { it } from "./locales/it";
+import { ja } from "./locales/ja";
+import { ko } from "./locales/ko";
+import { pt } from "./locales/pt";
+import { ru } from "./locales/ru";
+import { tr } from "./locales/tr";
+import { zh } from "./locales/zh";
+
+/**
+ * Every language the app ships, in menu order. Each is named in its own script so a user stuck in
+ * the wrong language can still find theirs. `short` is the compact label for tight spots.
+ */
+export const LANGUAGES = [
+  { code: "en", name: "English", short: "EN" },
+  { code: "he", name: "עברית", short: "עב" },
+  { code: "ar", name: "العربية", short: "عر" },
+  { code: "es", name: "Español", short: "ES" },
+  { code: "fr", name: "Français", short: "FR" },
+  { code: "pt", name: "Português", short: "PT" },
+  { code: "de", name: "Deutsch", short: "DE" },
+  { code: "it", name: "Italiano", short: "IT" },
+  { code: "tr", name: "Türkçe", short: "TR" },
+  { code: "ru", name: "Русский", short: "RU" },
+  { code: "hi", name: "हिन्दी", short: "हि" },
+  { code: "zh", name: "简体中文", short: "中文" },
+  { code: "ja", name: "日本語", short: "日本" },
+  { code: "ko", name: "한국어", short: "한" },
+] as const;
+
+export const SUPPORTED_LANGS: ReadonlyArray<string> = LANGUAGES.map((l) => l.code);
+
+/** Resolves any i18next language value ("pt-BR", "ja") to one of our codes, defaulting to English. */
+export function currentLangCode(lng: string | undefined): string {
+  return LANGUAGES.find((l) => lng?.startsWith(l.code))?.code ?? "en";
+}
 
 const en = {
   nav: {
@@ -823,7 +862,7 @@ const en = {
       },
       languages: {
         title: "Built multilingual",
-        desc: "Full Hebrew, English and Arabic — including right-to-left layout, not just translated labels.",
+        desc: "14 languages — including English, Spanish, French, Russian, Chinese, Japanese and Korean — plus Hebrew and Arabic with a real right-to-left layout, not just translated labels.",
       },
       live: {
         title: "Live streaming",
@@ -1675,7 +1714,7 @@ const he = {
       },
       languages: {
         title: "בנוי רב-לשוני",
-        desc: "עברית, אנגלית וערבית מלאות — כולל פריסת RTL אמיתית, לא רק תוויות מתורגמות.",
+        desc: "14 שפות — ביניהן עברית, אנגלית, ערבית, ספרדית, צרפתית, רוסית, סינית, יפנית וקוריאנית — כולל פריסת RTL אמיתית, לא רק תוויות מתורגמות.",
       },
       live: {
         title: "שידור חי",
@@ -2529,7 +2568,7 @@ const ar = {
       },
       languages: {
         title: "مبني متعدد اللغات",
-        desc: "عربية وعبرية وإنجليزية كاملة — بما في ذلك تخطيط RTL حقيقي، وليس مجرد تسميات مترجمة.",
+        desc: "14 لغة — منها العربية والعبرية والإنجليزية والإسبانية والفرنسية والروسية والصينية واليابانية والكورية — بما في ذلك تخطيط RTL حقيقي، وليس مجرد تسميات مترجمة.",
       },
       live: {
         title: "بث مباشر",
@@ -2563,6 +2602,19 @@ const ar = {
   },
 };
 
+/** The shape of the English source: every key, any string value. */
+type TranslationShape<T> = {
+  [K in keyof T]: T[K] extends string ? string : TranslationShape<T[K]>;
+};
+export type Translation = TranslationShape<typeof en>;
+
+/**
+ * Languages kept in their own files under ./locales. Typing them against the English shape makes a
+ * missing key a compile error. Extra plural forms (Russian `_few`/`_many`) are still allowed,
+ * because these are variables rather than object literals.
+ */
+const addedLocales: Record<string, Translation> = { es, fr, pt, de, it, tr, ru, hi, zh, ja, ko };
+
 /**
  * Country → default language mapping (TikTok-style: detect region, pick language).
  * Overridden by explicit user selection (persisted in localStorage).
@@ -2587,14 +2639,57 @@ const countryToLang: Record<string, string> = {
   TN: "ar",
   LY: "ar",
   SD: "ar",
+  ES: "es",
+  MX: "es",
+  AR: "es",
+  CO: "es",
+  CL: "es",
+  PE: "es",
+  VE: "es",
+  EC: "es",
+  GT: "es",
+  CU: "es",
+  BO: "es",
+  DO: "es",
+  HN: "es",
+  PY: "es",
+  SV: "es",
+  NI: "es",
+  CR: "es",
+  PA: "es",
+  UY: "es",
+  FR: "fr",
+  MC: "fr",
+  SN: "fr",
+  CI: "fr",
+  BR: "pt",
+  PT: "pt",
+  AO: "pt",
+  MZ: "pt",
+  DE: "de",
+  AT: "de",
+  LI: "de",
+  RU: "ru",
+  BY: "ru",
+  KZ: "ru",
+  KG: "ru",
+  JP: "ja",
+  IT: "it",
+  SM: "it",
+  TR: "tr",
+  CN: "zh",
+  KR: "ko",
 };
 
 function guessFromLanguageTags(tags: Array<string>): string {
   for (const l of tags) {
-    const lower = l.toLowerCase();
-    if (lower.startsWith("he") || lower.startsWith("iw")) return "he";
-    if (lower.startsWith("ar")) return "ar";
-    const region = lower.split("-")[1]?.toUpperCase();
+    const [primary, rawRegion] = l.toLowerCase().split("-");
+    // "iw" is the legacy code for Hebrew that some older Android builds still send.
+    const lang = primary === "iw" ? "he" : primary;
+    // English is the fallback, so an English tag doesn't win outright — a later tag or the
+    // region can still pick a more specific language (e.g. "en-IL" → Hebrew).
+    if (lang !== "en" && SUPPORTED_LANGS.includes(lang)) return lang;
+    const region = rawRegion?.toUpperCase();
     if (region && countryToLang[region]) return countryToLang[region];
   }
   return "en";
@@ -2632,9 +2727,12 @@ if (!i18n.isInitialized) {
         en: { translation: en },
         he: { translation: he },
         ar: { translation: ar },
+        ...Object.fromEntries(
+          Object.entries(addedLocales).map(([code, translation]) => [code, { translation }]),
+        ),
       },
       fallbackLng: "en",
-      supportedLngs: ["en", "he", "ar"],
+      supportedLngs: [...SUPPORTED_LANGS],
       // The client's very first render must hydrate against whatever the server actually
       // rendered, not an independent guess — Accept-Language (server) and navigator.language
       // (client) are two separate browser-maintained signals that can legitimately disagree

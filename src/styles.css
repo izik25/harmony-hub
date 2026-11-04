@@ -93,6 +93,8 @@
   h1, h2, h3, h4, .font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
   /* Any letter-spacing breaks the joining of connected Arabic script. */
   :lang(ar) * { letter-spacing: 0 !important; }
+  /* Tight display tracking crowds CJK characters and breaks Devanagari's joined headline. */
+  :is(:lang(ja), :lang(zh), :lang(ko), :lang(hi)) :is(h1, h2, h3, h4, .font-display) { letter-spacing: 0; }
 }
 
 /* Brand fills (deep shades, for white labels) and brand text (light shades, for dark surfaces) */

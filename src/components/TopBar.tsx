@@ -4,15 +4,17 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { setLanguage } from "@/lib/i18n";
+import { LANGUAGES, currentLangCode, setLanguage } from "@/lib/i18n";
 import { logout } from "@/functions/auth";
 import { unreadNotificationCount } from "@/functions/notifications";
 import { unreadMessageCount } from "@/functions/messages";
@@ -38,13 +40,6 @@ export function TopBar({ transparent = false }: { transparent?: boolean }) {
       navigate({ to: "/login" });
     },
   });
-  // Each language is named in its own script, so a user stuck in the wrong one can still find theirs.
-  const langs = [
-    { code: "en", name: "English" },
-    { code: "he", name: "עברית" },
-    { code: "ar", name: "العربية" },
-  ];
-
   // 44px hit area (Apple HIG minimum). The bar keeps only the high-frequency destinations inline —
   // everything else lives in the "more" menu so the row fits a 360px phone without overflowing.
   const iconBtn = `grid h-11 w-11 place-items-center rounded-full transition-colors ${
@@ -52,7 +47,7 @@ export function TopBar({ transparent = false }: { transparent?: boolean }) {
       ? "text-white drop-shadow-md hover:text-brand-gold"
       : "text-foreground/80 hover:bg-muted hover:text-brand-coral"
   }`;
-  const currentLang = langs.find((l) => i18n.language?.startsWith(l.code))?.code ?? "en";
+  const currentLang = currentLangCode(i18n.language);
 
   return (
     <div
@@ -109,17 +104,25 @@ export function TopBar({ transparent = false }: { transparent?: boolean }) {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              <Languages className="h-3.5 w-3.5" />
-              {t("nav.language")}
-            </DropdownMenuLabel>
-            <DropdownMenuRadioGroup value={currentLang} onValueChange={setLanguage}>
-              {langs.map((l) => (
-                <DropdownMenuRadioItem key={l.code} value={l.code} className="rounded-xl py-2">
-                  {l.name}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
+            {/* Fourteen languages would make this menu taller than a phone screen, so they live one level down. */}
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="gap-2 rounded-xl py-2.5">
+                <Languages className="h-4 w-4" />
+                <span className="flex-1">{t("nav.language")}</span>
+                <span className="text-xs text-muted-foreground">
+                  {LANGUAGES.find((l) => l.code === currentLang)?.name}
+                </span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-44 rounded-2xl p-1.5">
+                <DropdownMenuRadioGroup value={currentLang} onValueChange={setLanguage}>
+                  {LANGUAGES.map((l) => (
+                    <DropdownMenuRadioItem key={l.code} value={l.code} className="rounded-xl py-2">
+                      {l.name}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onSelect={() => logoutMutation.mutate()}

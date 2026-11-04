@@ -24,16 +24,10 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { setLanguage } from "@/lib/i18n";
+import { LANGUAGES as LANGS, currentLangCode, setLanguage } from "@/lib/i18n";
 import { logout } from "@/functions/auth";
 import { unreadNotificationCount } from "@/functions/notifications";
 import { unreadMessageCount } from "@/functions/messages";
-
-const LANGS = [
-  { code: "en", name: "English" },
-  { code: "he", name: "עברית" },
-  { code: "ar", name: "العربية" },
-];
 
 // Desktop (lg+) navigation rail. Replaces both the TopBar and the BottomNav at that width, the way
 // TikTok/Instagram web do, so wide screens get a real layout instead of a phone in the middle.
@@ -60,7 +54,7 @@ export function SideNav() {
       navigate({ to: "/login" });
     },
   });
-  const currentLang = LANGS.find((l) => i18n.language?.startsWith(l.code))?.code ?? "en";
+  const currentLang = currentLangCode(i18n.language);
 
   const items = [
     { to: "/", icon: Home, label: t("nav.home") },

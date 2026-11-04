@@ -6,6 +6,7 @@ import {
   BadgeCheck,
   Gift,
   Heart,
+  Languages,
   MessageCircle,
   Music,
   Share2,
@@ -14,7 +15,14 @@ import {
   VolumeX,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { setLanguage } from "@/lib/i18n";
+import { LANGUAGES, currentLangCode, setLanguage } from "@/lib/i18n";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { PostCoverBg } from "@/components/PostCoverBg";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatCount } from "@/lib/mock-data";
@@ -24,18 +32,13 @@ export const Route = createFileRoute("/welcome")({
   component: WelcomePage,
 });
 
-const LANGS = [
-  { code: "en", label: "EN" },
-  { code: "he", label: "עב" },
-  { code: "ar", label: "عر" },
-];
-
 // The welcome screen for a signed-out visitor is the real feed itself — same posts a logged-in
 // user sees, autoplaying, full screen. Any interaction that would actually change something
 // (like, comment, follow, gift, share) opens the AuthGateSheet instead of doing it, same as
 // browsing TikTok logged out.
 function WelcomePage() {
   const { t, i18n } = useTranslation();
+  const currentLang = currentLangCode(i18n.language);
   const { data: posts } = useQuery({ queryKey: ["publicFeed"], queryFn: () => listPublicFeed() });
   const [gateOpen, setGateOpen] = useState(false);
   const openGate = () => setGateOpen(true);
@@ -51,21 +54,25 @@ function WelcomePage() {
           className="h-8 w-auto drop-shadow-md"
         />
         <div className="flex items-center gap-1.5">
-          <div className="hidden items-center gap-0.5 rounded-full border border-white/15 p-0.5 sm:flex">
-            {LANGS.map((l) => (
-              <button
-                key={l.code}
-                onClick={() => setLanguage(l.code)}
-                className={`rounded-full px-2 py-1 text-[11px] font-semibold transition-colors ${
-                  i18n.language?.startsWith(l.code)
-                    ? "bg-brand-coral/25 text-brand-coral"
-                    : "text-white/60 hover:text-white"
-                }`}
-              >
-                {l.label}
-              </button>
-            ))}
-          </div>
+          {/* Fourteen languages don't fit as a pill row, so it's a compact menu, on phones too. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label={t("nav.language")}
+              className="flex h-8 items-center gap-1 rounded-full border border-white/15 px-2.5 text-[11px] font-semibold text-white/80 transition-colors hover:text-white"
+            >
+              <Languages className="h-3.5 w-3.5" />
+              {LANGUAGES.find((l) => l.code === currentLang)?.short}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44 rounded-2xl p-1.5">
+              <DropdownMenuRadioGroup value={currentLang} onValueChange={setLanguage}>
+                {LANGUAGES.map((l) => (
+                  <DropdownMenuRadioItem key={l.code} value={l.code} className="rounded-xl py-2">
+                    {l.name}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Link
             to="/login"
             className="rounded-full px-3 py-1.5 text-xs font-semibold text-white/85 hover:text-white"

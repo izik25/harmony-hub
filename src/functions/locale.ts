@@ -1,8 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getCookie, getRequestHeader } from "@tanstack/react-start/server";
-import { guessFromAcceptLanguageHeader } from "@/lib/i18n";
+import { SUPPORTED_LANGS, guessFromAcceptLanguageHeader } from "@/lib/i18n";
 
-const SUPPORTED = new Set(["en", "he", "ar"]);
+const SUPPORTED = new Set(SUPPORTED_LANGS);
 
 /**
  * Resolves which language to render on the very first SSR pass, so a fresh
