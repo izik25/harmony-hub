@@ -48,7 +48,14 @@ const ARTISTS: Record<string, Array<string>> = {
     "עדן בן זקן",
     "ששון שאולוב",
     "פאר טסי",
+    "רואי אדם",
+    "אודיה",
+    "אופק אדנק",
+    "בר צברי",
   ],
+  es: ["Luis Fonsi"],
+  fr: ["Stromae"],
+  ru: ["Ласковый май"],
 };
 
 async function main() {
