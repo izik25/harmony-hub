@@ -35,6 +35,8 @@ import i18n, { translateServerError } from "@/lib/i18n";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { LogoPulse } from "@/components/LogoPulse";
+import { KaraokeLanguageTabs } from "@/components/KaraokeLanguageTabs";
+import { useKaraokeLanguage } from "@/hooks/use-karaoke-language";
 import { BackgroundPicker } from "@/components/BackgroundPicker";
 import { LookPicker } from "@/components/LookPicker";
 import { OverlayPicker } from "@/components/OverlayPicker";
@@ -2095,8 +2097,12 @@ function KaraokeArtistGrid({
     queryFn: () => listKaraokeArtists(),
     enabled: open,
   });
+  const language = useKaraokeLanguage(artists);
+  const q = query.trim().toLowerCase();
+  // Browsing shows one language's singers; a search looks across every language, since someone
+  // typing a name already knows who they want.
   const filtered = artists?.filter((a) =>
-    a.name.toLowerCase().includes(query.trim().toLowerCase()),
+    q ? a.name.toLowerCase().includes(q) : a.language === language.active,
   );
 
   return (
@@ -2110,6 +2116,13 @@ function KaraokeArtistGrid({
           className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
       </label>
+      {!q && (
+        <KaraokeLanguageTabs
+          languages={language.available}
+          value={language.active}
+          onChange={language.setActive}
+        />
+      )}
       <div className="mt-3 flex-1 overflow-y-auto">
         {filtered?.length === 0 && (
           <div className="p-4 text-center text-sm text-muted-foreground">

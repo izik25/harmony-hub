@@ -378,6 +378,9 @@ export const karaokeTracks = pgTable("karaoke_tracks", {
   title: text("title").notNull(),
   artist: text("artist").notNull().default(""),
   videoUrl: text("video_url").notNull().unique(),
+  // UI language code ("he", "es"…) the song is sung in, so the picker opens on playbacks in the
+  // viewer's language. Set by sync-karaoke.ts from the file's language folder, or its script.
+  language: text("language").notNull().default(""),
   durationSeconds: integer("duration_seconds"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -391,6 +394,9 @@ export const karaokeArtists = pgTable("karaoke_artists", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull().unique(),
   imageUrl: text("image_url").notNull().default(""),
+  // Which language tab the singer appears under. Empty means "work it out" — listKaraokeArtists
+  // falls back to their tracks' language, then to the script of their name.
+  language: text("language").notNull().default(""),
   position: integer("position").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

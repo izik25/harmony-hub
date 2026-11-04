@@ -6,6 +6,7 @@ import { eq, notInArray } from "drizzle-orm";
 import { put, head, del } from "@vercel/blob";
 import { db } from "./client";
 import { karaokeTracks } from "./schema";
+import { isKaraokeLanguage, languageFromScript } from "../lib/karaoke-language";
 
 const KARAOKE_DIR = path.join(process.cwd(), "public", "karaoke");
 const SERVED_DIR = path.join(KARAOKE_DIR, "files");
@@ -40,7 +41,39 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
-async function ensureServed(file: string): Promise<string> {
+// One .mp4 to sync. `file` is the bare filename (what the served name is hashed from, so moving a
+// file into a language folder keeps its URL and its row); `source` is where it actually sits.
+type KaraokeSource = { file: string; source: string; language: string };
+
+// public/karaoke/<lang>/*.mp4 is sung in <lang>. Files loose in public/karaoke/ predate the
+// folders: their language comes from the name's script (Hebrew letters → "he"), and Latin-script
+// names default to English. Other subfolders (files/, _duplicates/) are never read.
+async function collectSources(): Promise<Array<KaraokeSource>> {
+  const isMp4 = (name: string) => name.toLowerCase().endsWith(".mp4");
+  const sources: Array<KaraokeSource> = [];
+  for (const entry of await readdir(KARAOKE_DIR, { withFileTypes: true })) {
+    if (entry.isFile() && isMp4(entry.name)) {
+      sources.push({
+        file: entry.name,
+        source: path.join(KARAOKE_DIR, entry.name),
+        language: languageFromScript(entry.name) ?? "en",
+      });
+    } else if (entry.isDirectory() && isKaraokeLanguage(entry.name)) {
+      const dir = path.join(KARAOKE_DIR, entry.name);
+      for (const inner of await readdir(dir, { withFileTypes: true })) {
+        if (!inner.isFile() || !isMp4(inner.name)) continue;
+        sources.push({
+          file: inner.name,
+          source: path.join(dir, inner.name),
+          language: entry.name,
+        });
+      }
+    }
+  }
+  return sources;
+}
+
+async function ensureServed({ file, source }: KaraokeSource): Promise<string> {
   const served = safeFilename(file);
 
   if (USE_BLOB) {
@@ -49,7 +82,7 @@ async function ensureServed(file: string): Promise<string> {
       const info = await head(pathname);
       return info.url;
     } catch {
-      const buffer = await readFile(path.join(KARAOKE_DIR, file));
+      const buffer = await readFile(source);
       const blob = await put(pathname, buffer, {
         access: "public",
         addRandomSuffix: false,
@@ -61,7 +94,7 @@ async function ensureServed(file: string): Promise<string> {
 
   const servedPath = path.join(SERVED_DIR, served);
   if (!(await exists(servedPath))) {
-    await copyFile(path.join(KARAOKE_DIR, file), servedPath);
+    await copyFile(source, servedPath);
   }
   return `/karaoke/files/${served}`;
 }
@@ -69,34 +102,44 @@ async function ensureServed(file: string): Promise<string> {
 async function main() {
   await mkdir(KARAOKE_DIR, { recursive: true });
   if (!USE_BLOB) await mkdir(SERVED_DIR, { recursive: true });
-  const entries = await readdir(KARAOKE_DIR, { withFileTypes: true });
-  const files = entries
-    .filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".mp4"))
-    .map((e) => e.name);
+  const files = await collectSources();
 
   if (files.length === 0) {
     console.log(`No .mp4 files found in ${KARAOKE_DIR}`);
     console.log(
-      'Drop karaoke videos there, named like "Artist - Song Title.mp4", then re-run this.',
+      'Drop karaoke videos into a language folder (e.g. public/karaoke/es/), named like "Artist - Song Title.mp4", then re-run this.',
     );
   }
   console.log(`Uploading via: ${USE_BLOB ? "Vercel Blob" : "local public/karaoke/files/"}\n`);
 
   const videoUrls: Array<string> = [];
   let added = 0;
-  for (const file of files) {
-    const videoUrl = await ensureServed(file);
+  let relabeled = 0;
+  for (const src of files) {
+    const videoUrl = await ensureServed(src);
     videoUrls.push(videoUrl);
 
     const [existing] = await db
-      .select({ id: karaokeTracks.id })
+      .select({ id: karaokeTracks.id, language: karaokeTracks.language })
       .from(karaokeTracks)
       .where(eq(karaokeTracks.videoUrl, videoUrl));
-    if (existing) continue;
-    const { title, artist } = parseFilename(file);
-    await db.insert(karaokeTracks).values({ title, artist, videoUrl });
+    if (existing) {
+      // Moving a file into a language folder relabels its existing row in place, so posts
+      // already recorded over it keep pointing at the same track.
+      if (existing.language !== src.language) {
+        await db
+          .update(karaokeTracks)
+          .set({ language: src.language })
+          .where(eq(karaokeTracks.id, existing.id));
+        relabeled++;
+        console.log(`~ ${src.file}: language ${existing.language || "(none)"} → ${src.language}`);
+      }
+      continue;
+    }
+    const { title, artist } = parseFilename(src.file);
+    await db.insert(karaokeTracks).values({ title, artist, videoUrl, language: src.language });
     added++;
-    console.log(`+ added: ${artist ? `${artist} — ` : ""}${title}`);
+    console.log(`+ added [${src.language}]: ${artist ? `${artist} — ` : ""}${title}`);
   }
 
   const removed = videoUrls.length
@@ -123,7 +166,7 @@ async function main() {
   }
 
   console.log(
-    `\nDone. ${added} added, ${removed.length} removed, ${files.length} total in folder.`,
+    `\nDone. ${added} added, ${relabeled} relabeled, ${removed.length} removed, ${files.length} total.`,
   );
   process.exit(0);
 }

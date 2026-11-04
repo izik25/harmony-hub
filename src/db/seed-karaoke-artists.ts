@@ -28,32 +28,40 @@ async function fetchArtistPhoto(name: string): Promise<string | null> {
   }
 }
 
-// Phase 1: 10 singers to prove out the artist-grid flow end-to-end. Add the rest of the roster
-// here later — sync-karaoke.ts matches karaoke_tracks.artist to this table's `name` by plain text,
-// so a singer can be added here (and shows up, with 0 songs) before any .mp4 exists for them yet.
-const ARTISTS = [
-  "איתי לוי",
-  "עומר אדם",
-  "אייל גולן",
-  "שרית חדד",
-  "נינט טייב",
-  "עדן חסון",
-  "סטטיק ובן אל תבורי",
-  "נסרין קדרי",
-  "קובי פרץ",
-  "חנן בן ארי",
-  "עדן בן זקן",
-  "ששון שאולוב",
-  "פאר טסי",
-];
+// The roster, grouped by the language tab each singer appears under in the karaoke picker (keys
+// are UI language codes — see LANGUAGES in lib/i18n.ts). sync-karaoke.ts matches
+// karaoke_tracks.artist to this table's `name` by plain text, so a singer can be added here (and
+// shows up, with 0 songs) before any .mp4 exists for them yet. Latin-script singers (English,
+// Spanish, French…) need to be listed under their language: their name alone can't tell us.
+const ARTISTS: Record<string, Array<string>> = {
+  he: [
+    "איתי לוי",
+    "עומר אדם",
+    "אייל גולן",
+    "שרית חדד",
+    "נינט טייב",
+    "עדן חסון",
+    "סטטיק ובן אל תבורי",
+    "נסרין קדרי",
+    "קובי פרץ",
+    "חנן בן ארי",
+    "עדן בן זקן",
+    "ששון שאולוב",
+    "פאר טסי",
+  ],
+};
 
 async function main() {
   console.log("Looking up real artist photos on Deezer...");
+  // Position is the order within the singer's own language tab.
+  const roster = Object.entries(ARTISTS).flatMap(([language, names]) =>
+    names.map((name, position) => ({ name, language, position })),
+  );
   const rows = await Promise.all(
-    ARTISTS.map(async (name, i) => {
+    roster.map(async ({ name, language, position }) => {
       const photo = await fetchArtistPhoto(name);
       console.log(photo ? `+ ${name} -> found photo` : `+ ${name} -> no match, using placeholder`);
-      return { name, imageUrl: photo ?? placeholderPhoto(name), position: i };
+      return { name, language, imageUrl: photo ?? placeholderPhoto(name), position };
     }),
   );
 
@@ -63,7 +71,11 @@ async function main() {
     .values(rows)
     .onConflictDoUpdate({
       target: karaokeArtists.name,
-      set: { imageUrl: sql`excluded.image_url`, position: sql`excluded.position` },
+      set: {
+        imageUrl: sql`excluded.image_url`,
+        position: sql`excluded.position`,
+        language: sql`excluded.language`,
+      },
     });
 
   console.log(`Done. ${rows.length} artists seeded.`);

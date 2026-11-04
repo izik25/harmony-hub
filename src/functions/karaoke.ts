@@ -1,22 +1,51 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { karaokeArtists, karaokeTracks, posts, users } from "@/db/schema";
+import { languageFromScript } from "@/lib/karaoke-language";
 import { requireUserId } from "./auth";
 
 export const listKaraokeArtists = createServerFn({ method: "GET" }).handler(async () => {
   await requireUserId();
-  return db
-    .select({
-      id: karaokeArtists.id,
-      name: karaokeArtists.name,
-      imageUrl: karaokeArtists.imageUrl,
-      trackCount: sql<number>`count(${karaokeTracks.id})`.mapWith(Number),
-    })
-    .from(karaokeArtists)
-    .leftJoin(karaokeTracks, eq(karaokeTracks.artist, karaokeArtists.name))
-    .groupBy(karaokeArtists.id)
-    .orderBy(asc(karaokeArtists.position), asc(karaokeArtists.name));
+  const [artists, trackLanguages] = await Promise.all([
+    db
+      .select({
+        id: karaokeArtists.id,
+        name: karaokeArtists.name,
+        imageUrl: karaokeArtists.imageUrl,
+        language: karaokeArtists.language,
+        trackCount: sql<number>`count(${karaokeTracks.id})`.mapWith(Number),
+      })
+      .from(karaokeArtists)
+      .leftJoin(karaokeTracks, eq(karaokeTracks.artist, karaokeArtists.name))
+      .groupBy(karaokeArtists.id)
+      .orderBy(asc(karaokeArtists.position), asc(karaokeArtists.name)),
+    db
+      .select({
+        artist: karaokeTracks.artist,
+        language: karaokeTracks.language,
+        n: sql<number>`count(*)`.mapWith(Number),
+      })
+      .from(karaokeTracks)
+      .where(ne(karaokeTracks.language, ""))
+      .groupBy(karaokeTracks.artist, karaokeTracks.language),
+  ]);
+
+  // The language most of each artist's songs are in.
+  const mainTrackLanguage = new Map<string, { language: string; n: number }>();
+  for (const row of trackLanguages) {
+    const best = mainTrackLanguage.get(row.artist);
+    if (!best || row.n > best.n) mainTrackLanguage.set(row.artist, row);
+  }
+
+  // Which language tab a singer sits under: their own setting if the roster gives one, else what
+  // their songs are sung in, else their name's alphabet. Latin-script names with neither fall to
+  // English — give those a language in seed-karaoke-artists.ts.
+  return artists.map((a) => ({
+    ...a,
+    language:
+      a.language || mainTrackLanguage.get(a.name)?.language || languageFromScript(a.name) || "en",
+  }));
 });
 
 export const listKaraokeTracks = createServerFn({ method: "GET" })
@@ -51,6 +80,7 @@ export const getKaraokeTrack = createServerFn({ method: "GET" })
         title: karaokeTracks.title,
         artist: karaokeTracks.artist,
         videoUrl: karaokeTracks.videoUrl,
+        language: karaokeTracks.language,
         durationSeconds: karaokeTracks.durationSeconds,
         createdAt: karaokeTracks.createdAt,
         artistImageUrl: sql<string>`coalesce(${karaokeArtists.imageUrl}, '')`,
