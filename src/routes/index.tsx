@@ -1,7 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useRef, useState, type RefObject } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+  type QueryClient,
+} from "@tanstack/react-query";
 import {
   Heart,
   MessageCircle,
@@ -33,25 +40,57 @@ import {
   type FeedPostDTO,
 } from "@/functions/posts";
 import { listGiftCatalog, sendGift } from "@/functions/wallet";
+import { useViewTracker } from "@/hooks/use-view-tracker";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
 });
 
+// The wall is an infinite, personalized feed: every page is ranked server-side against the
+// viewer's interest profile as it stands *now* (functions/recommendations.ts), excluding what's
+// already loaded — so what you watch on page 1 shapes page 2.
+type FeedPages = InfiniteData<FeedPostDTO[], string[]>;
+
+/** Applies `fn` to every loaded feed post (optimistic like/follow/comment/... updates). */
+function patchFeed(queryClient: QueryClient, fn: (p: FeedPostDTO) => FeedPostDTO) {
+  queryClient.setQueryData<FeedPages>(["feed"], (old) =>
+    old ? { ...old, pages: old.pages.map((page) => page.map(fn)) } : old,
+  );
+}
+
 function HomePage() {
-  const { data } = useQuery({ queryKey: ["feed"], queryFn: () => listFeed() });
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+    queryKey: ["feed"],
+    queryFn: ({ pageParam }) => listFeed({ data: { excludeIds: pageParam } }),
+    initialPageParam: [] as string[],
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === 0 ? undefined : allPages.flat().map((p) => p.id),
+    // A re-rank while you're mid-scroll would reshuffle the posts under your thumb.
+    refetchOnWindowFocus: false,
+    staleTime: 5 * 60_000,
+  });
+
+  const posts = useMemo(() => {
+    const seen = new Set<string>();
+    return (data?.pages.flat() ?? []).filter((p) => !seen.has(p.id) && !!seen.add(p.id));
+  }, [data]);
 
   return (
     <AppShell overlayNav width="feed">
       <TopBar transparent />
       <div className="relative -mt-14 lg:mt-0">
-        <FeedSlider posts={data ?? []} />
+        <FeedSlider
+          posts={posts}
+          onNearEnd={() => {
+            if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+          }}
+        />
       </div>
     </AppShell>
   );
 }
 
-function FeedSlider({ posts }: { posts: FeedPostDTO[] }) {
+function FeedSlider({ posts, onNearEnd }: { posts: FeedPostDTO[]; onNearEnd: () => void }) {
   const [commentsFor, setCommentsFor] = useState<string | null>(null);
   const [giftFor, setGiftFor] = useState<FeedPostDTO | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -91,6 +130,12 @@ function FeedSlider({ posts }: { posts: FeedPostDTO[] }) {
     return () => observer.disconnect();
   }, [posts]);
 
+  // Fetch the next ranked page a few posts before the end, so scrolling never hits a wall.
+  const activeIndex = posts.findIndex((x) => x.id === activeId);
+  useEffect(() => {
+    if (activeIndex >= 0 && activeIndex >= posts.length - 4) onNearEnd();
+  }, [activeIndex, posts.length, onNearEnd]);
+
   const unmute = () => {
     setHasInteracted(true);
     setMuted(false);
@@ -105,7 +150,6 @@ function FeedSlider({ posts }: { posts: FeedPostDTO[] }) {
       className="h-dvh snap-y snap-mandatory overflow-y-auto no-scrollbar"
     >
       {posts.map((p, i) => {
-        const activeIndex = posts.findIndex((x) => x.id === activeId);
         // Full preload for the playing post, a lightweight metadata head-start for its immediate
         // neighbor (whichever way the user scrolls next), nothing for everything else — loading
         // audio for all 50 feed posts at once (the old blanket "metadata" preload) is exactly
@@ -159,6 +203,7 @@ function FeedItem({
   const audioRef = useRef<HTMLMediaElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  useViewTracker(post.id, active, audioRef);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -197,12 +242,10 @@ function FeedItem({
   const likeMutation = useMutation({
     mutationFn: () => toggleLike({ data: { postId: post.id } }),
     onMutate: async () => {
-      queryClient.setQueryData<FeedPostDTO[]>(["feed"], (old) =>
-        old?.map((p) =>
-          p.id === post.id
-            ? { ...p, likedByMe: !p.likedByMe, likes: p.likes + (p.likedByMe ? -1 : 1) }
-            : p,
-        ),
+      patchFeed(queryClient, (p) =>
+        p.id === post.id
+          ? { ...p, likedByMe: !p.likedByMe, likes: p.likes + (p.likedByMe ? -1 : 1) }
+          : p,
       );
     },
   });
@@ -210,10 +253,8 @@ function FeedItem({
   const followMutation = useMutation({
     mutationFn: () => toggleFollow({ data: { userId: post.user.id } }),
     onMutate: async () => {
-      queryClient.setQueryData<FeedPostDTO[]>(["feed"], (old) =>
-        old?.map((p) =>
-          p.user.id === post.user.id ? { ...p, followingAuthor: !p.followingAuthor } : p,
-        ),
+      patchFeed(queryClient, (p) =>
+        p.user.id === post.user.id ? { ...p, followingAuthor: !p.followingAuthor } : p,
       );
     },
   });
@@ -228,9 +269,7 @@ function FeedItem({
     },
     onSuccess: (result) => {
       if (result === "cancelled") return;
-      queryClient.setQueryData<FeedPostDTO[]>(["feed"], (old) =>
-        old?.map((p) => (p.id === post.id ? { ...p, shares: p.shares + 1 } : p)),
-      );
+      patchFeed(queryClient, (p) => (p.id === post.id ? { ...p, shares: p.shares + 1 } : p));
       if (result === "copied") toast.success(t("common.linkCopied"));
     },
   });
@@ -575,9 +614,7 @@ function CommentsSheet({ postId, onClose }: { postId: string | null; onClose: ()
     onSuccess: () => {
       setBody("");
       queryClient.invalidateQueries({ queryKey: ["comments", postId] });
-      queryClient.setQueryData<FeedPostDTO[]>(["feed"], (old) =>
-        old?.map((p) => (p.id === postId ? { ...p, comments: p.comments + 1 } : p)),
-      );
+      patchFeed(queryClient, (p) => (p.id === postId ? { ...p, comments: p.comments + 1 } : p));
     },
   });
 
@@ -639,9 +676,7 @@ function GiftSheet({ post, onClose }: { post: FeedPostDTO | null; onClose: () =>
     mutationFn: (giftId: string) =>
       sendGift({ data: { toUserId: post!.user.id, giftId, postId: post!.id } }),
     onSuccess: () => {
-      queryClient.setQueryData<FeedPostDTO[]>(["feed"], (old) =>
-        old?.map((p) => (p.id === post!.id ? { ...p, gifts: p.gifts + 1 } : p)),
-      );
+      patchFeed(queryClient, (p) => (p.id === post!.id ? { ...p, gifts: p.gifts + 1 } : p));
       queryClient.invalidateQueries({ queryKey: ["currentUser"] });
       queryClient.invalidateQueries({ queryKey: ["wallet"] });
       toast.success(t("feed.giftSentTo", { name: post!.user.name }));

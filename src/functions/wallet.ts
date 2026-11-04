@@ -12,6 +12,8 @@ import {
 } from "@/db/schema";
 import { requireUserId } from "./auth";
 import { insertNotification } from "./notifications";
+import { recordPostSignal } from "./recommendations";
+import { SIGNAL } from "@/lib/feed-ranking";
 import { pushLiveData } from "@/lib/livekit-server";
 
 export const COIN_PACKAGES = [
@@ -237,6 +239,7 @@ export const sendGift = createServerFn({ method: "POST" })
       postId: data.postId,
       extra: { giftKey: gift.key, giftEmoji: gift.emoji, coins: gift.coins },
     });
+    if (data.postId) await recordPostSignal(fromUserId, data.postId, SIGNAL.gift);
 
     if (pkUpdate) {
       const [updated] = await db

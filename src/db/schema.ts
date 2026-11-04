@@ -6,6 +6,7 @@ import {
   boolean,
   timestamp,
   jsonb,
+  real,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
@@ -99,8 +100,55 @@ export const posts = pgTable("posts", {
   commentsCount: integer("comments_count").notNull().default(0),
   sharesCount: integer("shares_count").notNull().default(0),
   giftsCount: integer("gifts_count").notNull().default(0),
+  // Feed watch stats (functions/recommendations.ts recordView): every recorded view bumps
+  // viewsCount and adds that view's watch ratio (capped at 1) to watchRatioSum, so
+  // watchRatioSum / viewsCount is the post's average completion — a quality signal for ranking.
+  viewsCount: integer("views_count").notNull().default(0),
+  watchRatioSum: real("watch_ratio_sum").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// One row per (viewer, post) the viewer has actually dwelt on in the feed — what the ranking uses
+// to avoid re-serving things you've already seen (and to bury things you swiped straight past).
+export const postViews = pgTable(
+  "post_views",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    viewCount: integer("view_count").notNull().default(0),
+    totalWatchMs: integer("total_watch_ms").notNull().default(0),
+    lastWatchRatio: real("last_watch_ratio").notNull().default(0),
+    // Whether the most recent view was a quick swipe-past.
+    skipped: boolean("skipped").notNull().default(false),
+    firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }).notNull().defaultNow(),
+    lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("post_views_user_post_uq").on(t.userId, t.postId)],
+);
+
+// The viewer's interest profile: one decaying score per content feature (author:<id>,
+// tag:<tag>, artist:<name>, ... — see lib/feed-ranking.ts postFeatures). Watching, liking,
+// commenting, sharing, gifting and following push scores up; skipping and unliking push them
+// down. The stored score is as of updatedAt and halves every 14 days after that, so the profile
+// follows the viewer's current taste instead of what they liked a year ago.
+export const userAffinities = pgTable(
+  "user_affinities",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    feature: text("feature").notNull(),
+    score: real("score").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("user_affinities_user_feature_uq").on(t.userId, t.feature)],
+);
 
 export const likes = pgTable(
   "likes",

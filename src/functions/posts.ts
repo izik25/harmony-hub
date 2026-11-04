@@ -4,6 +4,8 @@ import { db } from "@/db/client";
 import { posts, users, likes, follows, comments } from "@/db/schema";
 import { requireUserId } from "./auth";
 import { insertNotification } from "./notifications";
+import { rankFeed, recordAuthorSignal, recordPostSignal } from "./recommendations";
+import { SIGNAL } from "@/lib/feed-ranking";
 
 export type FeedPostDTO = {
   id: string;
@@ -75,38 +77,46 @@ async function hydrateFeed(
   }));
 }
 
-export const listFeed = createServerFn({ method: "GET" }).handler(
-  async (): Promise<FeedPostDTO[]> => {
-    const userId = await requireUserId();
-    const rows = await db
-      .select()
-      .from(posts)
-      .innerJoin(users, eq(users.id, posts.userId))
-      .where(and(eq(posts.status, "published"), eq(posts.visibility, "public")))
-      .orderBy(desc(posts.createdAt))
-      .limit(50);
-    return hydrateFeed(
-      rows.map((r) => ({ ...r.posts, author: r.users })),
-      userId,
-    );
-  },
-);
+const FEED_PAGE_SIZE = 12;
 
-// Unauthenticated preview of the feed (the welcome screen) — same published/public posts, no
-// per-viewer like/follow state since there's no logged-in viewer yet.
+async function loadFeedPosts(ids: string[], viewerId: string | null): Promise<FeedPostDTO[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select()
+    .from(posts)
+    .innerJoin(users, eq(users.id, posts.userId))
+    .where(inArray(posts.id, ids));
+  const byId = new Map(rows.map((r) => [r.posts.id, { ...r.posts, author: r.users }]));
+  const ordered = ids.flatMap((id) => {
+    const row = byId.get(id);
+    return row ? [row] : [];
+  });
+  return hydrateFeed(ordered, viewerId);
+}
+
+function parseExcludeIds(input: unknown): string[] {
+  const ids = (input as { excludeIds?: unknown } | undefined)?.excludeIds;
+  return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : [];
+}
+
+// The personalized "For You" wall — one page at a time, ranked against the viewer's interest
+// profile (see functions/recommendations.ts + lib/feed-ranking.ts). `excludeIds` are the posts
+// the client already has, so each next page is fresh content. POST rather than GET only because
+// that list can get long for a query string.
+export const listFeed = createServerFn({ method: "POST" })
+  .validator((input: unknown) => ({ excludeIds: parseExcludeIds(input) }))
+  .handler(async ({ data }): Promise<FeedPostDTO[]> => {
+    const userId = await requireUserId();
+    const ids = await rankFeed(userId, data.excludeIds, FEED_PAGE_SIZE);
+    return loadFeedPosts(ids, userId);
+  });
+
+// Unauthenticated preview of the feed (the welcome screen) — same published/public posts, ranked
+// without a profile (quality + freshness), no per-viewer like/follow state.
 export const listPublicFeed = createServerFn({ method: "GET" }).handler(
   async (): Promise<FeedPostDTO[]> => {
-    const rows = await db
-      .select()
-      .from(posts)
-      .innerJoin(users, eq(users.id, posts.userId))
-      .where(and(eq(posts.status, "published"), eq(posts.visibility, "public")))
-      .orderBy(desc(posts.createdAt))
-      .limit(20);
-    return hydrateFeed(
-      rows.map((r) => ({ ...r.posts, author: r.users })),
-      null,
-    );
+    const ids = await rankFeed(null, [], 20);
+    return loadFeedPosts(ids, null);
   },
 );
 
@@ -127,6 +137,7 @@ export const toggleLike = createServerFn({ method: "POST" })
           .set({ likesCount: sql`${posts.likesCount} - 1` })
           .where(eq(posts.id, data.postId));
       });
+      await recordPostSignal(userId, data.postId, SIGNAL.unlike);
       return { liked: false };
     }
 
@@ -146,6 +157,7 @@ export const toggleLike = createServerFn({ method: "POST" })
       type: "like",
       postId: post.id,
     });
+    await recordPostSignal(userId, post.id, SIGNAL.like);
     return { liked: true };
   });
 
@@ -162,22 +174,25 @@ export const toggleFollow = createServerFn({ method: "POST" })
 
     if (existing) {
       await db.delete(follows).where(eq(follows.id, existing.id));
+      await recordAuthorSignal(followerId, data.userId, SIGNAL.unfollow);
       return { following: false };
     }
 
     await db.insert(follows).values({ followerId, followeeId: data.userId });
     await insertNotification({ userId: data.userId, actorId: followerId, type: "follow" });
+    await recordAuthorSignal(followerId, data.userId, SIGNAL.follow);
     return { following: true };
   });
 
 export const sharePost = createServerFn({ method: "POST" })
   .validator((input: unknown) => input as { postId: string })
   .handler(async ({ data }) => {
-    await requireUserId();
+    const userId = await requireUserId();
     await db
       .update(posts)
       .set({ sharesCount: sql`${posts.sharesCount} + 1` })
       .where(eq(posts.id, data.postId));
+    await recordPostSignal(userId, data.postId, SIGNAL.share);
     return { ok: true };
   });
 
@@ -386,6 +401,7 @@ export const addComment = createServerFn({ method: "POST" })
       type: "comment",
       postId: post.id,
     });
+    await recordPostSignal(userId, post.id, SIGNAL.comment);
     return { ok: true };
   });
 
