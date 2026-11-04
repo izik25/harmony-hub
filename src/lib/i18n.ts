@@ -1329,7 +1329,7 @@ const he = {
   profile: {
     edit: "עריכת פרופיל",
     followers: "עוקבים",
-    following: "עוקב",
+    following: "במעקב",
     likes: "לייקים",
     videos: "וידאו",
     songs: "שירים",
