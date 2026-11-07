@@ -117,7 +117,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Rubik:wght@500;600;700&family=Heebo:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap",
+        // Rubik covers Latin, Cyrillic, Hebrew and Arabic in one family, so every language reads
+        // in the same voice. Unbounded is only for numeric readouts (counts, coins, timers).
+        href: "https://fonts.googleapis.com/css2?family=Rubik:wght@400..800&family=Unbounded:wght@500..800&display=swap",
       },
     ],
   }),
@@ -161,7 +163,7 @@ function RootComponent() {
     <DirectionProvider dir={isRTL(activeI18n.language) ? "rtl" : "ltr"}>
       <QueryClientProvider client={queryClient}>
         <Outlet />
-        <Toaster richColors position="top-center" />
+        <Toaster position="top-center" />
       </QueryClientProvider>
     </DirectionProvider>
   );

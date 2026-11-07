@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { LANGUAGES, currentLangCode, setLanguage } from "@/lib/i18n";
+import { LevelMeter } from "@/components/LevelMeter";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,51 +45,86 @@ function WelcomePage() {
   const openGate = () => setGateOpen(true);
 
   return (
-    <div className="relative mx-auto h-dvh w-full max-w-[520px] overflow-hidden bg-black text-white">
-      <header className="fixed left-1/2 top-0 z-30 flex w-full max-w-[520px] -translate-x-1/2 items-center justify-between bg-gradient-to-b from-black/70 via-black/25 to-transparent px-4 py-3">
+    <div className="flex h-dvh w-full justify-center bg-black text-white lg:gap-16 lg:bg-background lg:px-10">
+      {/* Desktop only: the pitch beside the live feed, instead of a phone floating in black. */}
+      <aside className="hidden max-w-[34rem] flex-1 flex-col justify-center lg:flex">
         <img
           src="/brand/logo-wordmark-alpha.png"
-          alt="Studio26"
+          alt=""
           width={701}
           height={216}
-          className="h-8 w-auto drop-shadow-md"
+          className="h-12 w-auto self-start"
         />
-        <div className="flex items-center gap-1.5">
-          {/* Fourteen languages don't fit as a pill row, so it's a compact menu, on phones too. */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label={t("nav.language")}
-              className="flex h-8 items-center gap-1 rounded-full border border-white/15 px-2.5 text-[11px] font-semibold text-white/80 transition-colors hover:text-white"
-            >
-              <Languages className="h-3.5 w-3.5" />
-              {LANGUAGES.find((l) => l.code === currentLang)?.short}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44 rounded-2xl p-1.5">
-              <DropdownMenuRadioGroup value={currentLang} onValueChange={setLanguage}>
-                {LANGUAGES.map((l) => (
-                  <DropdownMenuRadioItem key={l.code} value={l.code} className="rounded-xl py-2">
-                    {l.name}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Link
-            to="/login"
-            className="rounded-full px-3 py-1.5 text-xs font-semibold text-white/85 hover:text-white"
-          >
-            {t("landing.nav.login")}
-          </Link>
+        <h1 className="mt-10 text-5xl leading-[1.05] xl:text-6xl">{t("landing.hero.title")}</h1>
+        <p className="mt-5 max-w-[46ch] text-lg leading-relaxed text-muted-foreground">
+          {t("landing.hero.subtitle")}
+        </p>
+        <div className="mt-8 flex gap-3">
           <Link
             to="/signup"
-            className="rounded-full bg-brand-coral px-3.5 py-1.5 text-xs font-bold text-white shadow-pop-coral press-scale hover-lift"
+            className="inline-flex h-12 items-center rounded-xl bg-brand-coral px-6 text-sm font-bold text-white shadow-pop-coral transition-[filter] hover:brightness-110 press-scale"
           >
-            {t("landing.nav.signup")}
+            {t("landing.hero.ctaPrimary")}
+          </Link>
+          <Link
+            to="/login"
+            className="inline-flex h-12 items-center rounded-xl border border-[var(--hairline-strong)] px-6 text-sm font-semibold transition-colors hover:bg-card press-scale"
+          >
+            {t("landing.hero.ctaSecondary")}
           </Link>
         </div>
-      </header>
+        <div className="mt-12 flex items-end gap-5">
+          <LevelMeter live bars={16} className="h-12 w-40" />
+          <p className="pb-1 text-sm text-muted-foreground">{t("landing.hero.trust")}</p>
+        </div>
+      </aside>
 
-      <PublicFeed posts={posts ?? []} onGate={openGate} />
+      <div className="relative h-dvh w-full max-w-[520px] shrink-0 overflow-hidden bg-black lg:my-6 lg:h-[calc(100dvh-3rem)] lg:rounded-[28px] lg:border lg:border-border">
+        <header className="absolute inset-x-0 top-0 z-30 flex items-center justify-between bg-gradient-to-b from-black/70 via-black/25 to-transparent px-4 py-3">
+          <img
+            src="/brand/logo-wordmark-alpha.png"
+            alt="Studio26"
+            width={701}
+            height={216}
+            className="h-8 w-auto drop-shadow-md"
+          />
+          <div className="flex items-center gap-1.5">
+            {/* Fourteen languages don't fit as a pill row, so it's a compact menu, on phones too. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label={t("nav.language")}
+                className="flex h-8 items-center gap-1 rounded-full border border-white/15 px-2.5 text-[11px] font-semibold text-white/80 transition-colors hover:text-white"
+              >
+                <Languages className="h-3.5 w-3.5" />
+                {LANGUAGES.find((l) => l.code === currentLang)?.short}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44 rounded-2xl p-1.5">
+                <DropdownMenuRadioGroup value={currentLang} onValueChange={setLanguage}>
+                  {LANGUAGES.map((l) => (
+                    <DropdownMenuRadioItem key={l.code} value={l.code} className="rounded-xl py-2">
+                      {l.name}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Link
+              to="/login"
+              className="rounded-full px-3 py-1.5 text-xs font-semibold text-white/85 hover:text-white"
+            >
+              {t("landing.nav.login")}
+            </Link>
+            <Link
+              to="/signup"
+              className="inline-flex h-8 items-center rounded-lg bg-brand-coral px-3.5 text-xs font-bold text-white press-scale"
+            >
+              {t("landing.nav.signup")}
+            </Link>
+          </div>
+        </header>
+
+        <PublicFeed posts={posts ?? []} onGate={openGate} />
+      </div>
 
       <AuthGateSheet open={gateOpen} onClose={() => setGateOpen(false)} />
     </div>
@@ -129,7 +165,7 @@ function PublicFeed({ posts, onGate }: { posts: FeedPostDTO[]; onGate: () => voi
   }, [posts]);
 
   if (posts.length === 0) {
-    return <div className="h-dvh w-full animate-pulse bg-white/5" />;
+    return <div className="h-full w-full animate-pulse bg-white/5" />;
   }
 
   return (
@@ -141,7 +177,7 @@ function PublicFeed({ posts, onGate }: { posts: FeedPostDTO[]; onGate: () => voi
           setMuted(false);
         }
       }}
-      className="h-dvh snap-y snap-mandatory overflow-y-auto no-scrollbar"
+      className="h-full snap-y snap-mandatory overflow-y-auto no-scrollbar"
     >
       {posts.map((p, i) => {
         const activeIndex = posts.findIndex((x) => x.id === activeId);
@@ -252,7 +288,7 @@ function PublicFeedItem({
     <section
       data-post-id={post.id}
       style={{ scrollSnapStop: "always" }}
-      className="relative h-dvh snap-start overflow-hidden"
+      className="relative h-full snap-start overflow-hidden"
     >
       <motion.div
         onClick={handleCoverTap}

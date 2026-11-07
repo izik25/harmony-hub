@@ -87,7 +87,7 @@ export function SideNav() {
             <Link
               key={it.to}
               to={it.to as "/"}
-              className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] transition-colors ${
+              className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                 active
                   ? "bg-muted font-semibold text-foreground"
                   : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
@@ -109,7 +109,7 @@ export function SideNav() {
       </nav>
 
       <DropdownMenu>
-        <DropdownMenuTrigger className="mt-5 flex items-center justify-center gap-2 rounded-full bg-brand-coral py-3 text-sm font-bold text-white shadow-pop-coral press-scale">
+        <DropdownMenuTrigger className="mt-5 flex h-12 items-center justify-center gap-2 rounded-xl bg-brand-coral text-sm font-bold text-white shadow-pop-coral transition-[filter] hover:brightness-110 press-scale">
           <Plus className="h-5 w-5" strokeWidth={2.5} />
           {t("createMenu.title")}
         </DropdownMenuTrigger>

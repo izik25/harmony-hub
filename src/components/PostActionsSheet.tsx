@@ -365,7 +365,6 @@ function EditPostDialog({
             {t("common.save")}
           </button>
         </DialogFooter>
-        <style>{`.input { width: 100%; border-radius: 12px; background: var(--color-input); padding: 10px 12px; font-size: 14px; outline: none; border: 1px solid var(--color-border); }`}</style>
       </DialogContent>
     </Dialog>
   );

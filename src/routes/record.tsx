@@ -35,6 +35,8 @@ import i18n, { translateServerError } from "@/lib/i18n";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { LogoPulse } from "@/components/LogoPulse";
+import { LevelMeter } from "@/components/LevelMeter";
+import { Segmented } from "@/components/Segmented";
 import { KaraokeLanguageTabs } from "@/components/KaraokeLanguageTabs";
 import { useKaraokeLanguage } from "@/hooks/use-karaoke-language";
 import { BackgroundPicker } from "@/components/BackgroundPicker";
@@ -652,47 +654,6 @@ const BRAND_COLOR_ROTATION = [
   "bg-brand-gold",
   "bg-brand-teal",
 ];
-const DECOR_COLOR_ROTATION = [
-  "text-brand-coral",
-  "text-brand-indigo",
-  "text-brand-gold",
-  "text-brand-teal",
-];
-
-// Purely decorative: a handful of tiny note/mic glyphs drifting upward behind the page content at
-// low opacity, never intercepting taps. Same idea as the landing page's AmbientNotes, scaled down
-// to fit inside a single mobile-width screen instead of a full marketing page.
-function FloatingDecor({ count = 6 }: { count?: number }) {
-  const items = Array.from({ length: count }).map((_, i) => ({
-    Icon: i % 2 === 0 ? Music2 : Mic,
-    color: DECOR_COLOR_ROTATION[i % DECOR_COLOR_ROTATION.length],
-    left: `${6 + ((i * 71) % 88)}%`,
-    size: 13 + (i % 3) * 5,
-    duration: 8 + (i % 4) * 2,
-    delay: i * 0.7,
-  }));
-  return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-      {items.map((it, i) => (
-        <motion.span
-          key={i}
-          className={`absolute bottom-0 ${it.color}`}
-          style={{ left: it.left }}
-          animate={{ y: ["6%", "-580%"], opacity: [0, 0.16, 0], rotate: [0, 14, -10, 0] }}
-          transition={{
-            duration: it.duration,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: it.delay,
-          }}
-        >
-          <it.Icon style={{ width: it.size, height: it.size }} />
-        </motion.span>
-      ))}
-    </div>
-  );
-}
-
 function RecordPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -849,13 +810,15 @@ function RecordPage() {
   // Remember the monitor preference across visits, same as any other studio setting — but only
   // once someone's actually made a choice. No stored value yet means "first time here," which
   // keeps the on-by-default above rather than snapping it back off.
+  // First visit (no stored choice): the feedback warning waits for the stage to open, where it
+  // means something, instead of covering the chooser before anything can make a sound.
+  const firstMonitorVisitRef = useRef(false);
   useEffect(() => {
     const stored = localStorage.getItem("hh:monitorEnabled");
     if (stored != null) setMonitorEnabled(stored === "1");
-    else toast.info(t("record.monitorFeedbackWarning"));
+    else firstMonitorVisitRef.current = true;
     const storedDirect = localStorage.getItem("hh:monitorDirect");
     if (storedDirect != null) setMonitorDirect(storedDirect === "1");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Headphones turn monitoring on by themselves — the one setup where hearing yourself can't feed
@@ -1437,7 +1400,16 @@ function RecordPage() {
             setSegmentStart(startSeconds);
             setSelectedTrack(pendingTrack);
             setPendingTrack(null);
-            toast.info(t("record.headphonesHint"));
+            // One headphones nudge per stage entry: the more specific feedback warning the first
+            // time (monitoring is on by default), the general bleed hint after that.
+            toast.info(
+              t(
+                firstMonitorVisitRef.current
+                  ? "record.monitorFeedbackWarning"
+                  : "record.headphonesHint",
+              ),
+            );
+            firstMonitorVisitRef.current = false;
           }}
         />
       ) : selectedTrack ? (
@@ -1778,56 +1750,54 @@ function RecordPage() {
         // freestyle "just record over a mic, no song" stage used to live on this screen too, but
         // it had nothing to do with either path below, so it's gone: every take now starts from
         // one of these two doors, straight into the full-screen stage or into /upload.
-        <div className="relative flex min-h-[calc(100vh-4rem)] flex-col justify-center px-4 pb-6">
-          <FloatingDecor />
-          <div className="relative text-center animate-fade-up">
-            <h1 className="font-display text-2xl font-bold">{t("record.title")}</h1>
+        <div className="flex flex-col px-4 pb-8 pt-6 lg:pt-12">
+          <header className="animate-fade-up">
+            <h1 className="page-title">{t("record.title")}</h1>
             <p className="mt-1 text-sm text-muted-foreground">{t("record.chooserSubtitle")}</p>
-          </div>
+          </header>
 
-          <div className="relative mt-8 flex flex-col gap-3">
-            <motion.button
-              onClick={() => setKaraokeOpen(true)}
-              whileTap={{ scale: 0.97 }}
-              className="hover-lift relative flex items-center gap-4 overflow-hidden rounded-3xl border border-border bg-card p-4 text-start shadow-pop animate-fade-up stagger-1"
-            >
-              <div
-                aria-hidden
-                className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-brand-indigo opacity-[0.12] blur-2xl"
-              />
-              <div className="relative grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-brand-indigo shadow-pop">
-                <Music2 className="h-7 w-7 text-white" />
-              </div>
-              <div className="relative flex-1 overflow-hidden">
-                <p className="line-clamp-1 text-base font-bold">{t("record.karaoke")}</p>
-                <p className="line-clamp-1 mt-0.5 text-xs text-muted-foreground">
+          {/* The main door is a stage, not a list row: karaoke is how most takes start. */}
+          <motion.button
+            onClick={() => setKaraokeOpen(true)}
+            whileTap={{ scale: 0.985 }}
+            className="group relative mt-6 flex min-h-[18rem] flex-col overflow-hidden rounded-[22px] border border-border bg-card text-start shadow-pop outline-none transition-colors hover:border-[var(--hairline-strong)] focus-visible:ring-2 focus-visible:ring-ring animate-fade-up stagger-1"
+          >
+            <div className="relative flex-1 bg-[var(--surface-sunken)] px-5 pt-5">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-coral/15 px-2.5 py-1 text-xs font-semibold text-brand-coral">
+                <span className="h-1.5 w-1.5 rounded-full bg-brand-coral" />
+                {t("common.record")}
+              </span>
+              <LevelMeter live className="absolute inset-x-5 bottom-0 h-[62%] opacity-90" />
+            </div>
+            <div className="flex items-center gap-4 border-t border-border p-5">
+              <div className="min-w-0 flex-1">
+                <p className="text-xl font-bold">{t("record.karaoke")}</p>
+                <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
                   {t("record.karaokeDesc")}
                 </p>
               </div>
-              <ChevronRight className="relative h-5 w-5 shrink-0 text-muted-foreground rtl:rotate-180" />
-            </motion.button>
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-coral text-white shadow-pop-coral transition-transform duration-200 ease-(--ease-snappy) group-hover:scale-105">
+                <Mic className="h-5 w-5" />
+              </span>
+            </div>
+          </motion.button>
 
-            <Link
-              to="/upload"
-              search={{}}
-              className="hover-lift relative flex items-center gap-4 overflow-hidden rounded-3xl border border-border bg-card p-4 text-start shadow-pop animate-fade-up stagger-2"
-            >
-              <div
-                aria-hidden
-                className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-brand-teal opacity-[0.12] blur-2xl"
-              />
-              <div className="relative grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-brand-teal shadow-pop">
-                <Upload className="h-7 w-7 text-white" />
-              </div>
-              <div className="relative flex-1 overflow-hidden">
-                <p className="line-clamp-1 text-base font-bold">{t("upload.title")}</p>
-                <p className="line-clamp-1 mt-0.5 text-xs text-muted-foreground">
-                  {t("record.uploadDesc")}
-                </p>
-              </div>
-              <ChevronRight className="relative h-5 w-5 shrink-0 text-muted-foreground rtl:rotate-180" />
-            </Link>
-          </div>
+          <Link
+            to="/upload"
+            search={{}}
+            className="group mt-3 flex items-center gap-4 rounded-[18px] border border-border px-4 py-3.5 transition-colors hover:bg-card focus-visible:ring-2 focus-visible:ring-ring outline-none animate-fade-up stagger-2"
+          >
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-muted text-brand-teal">
+              <Upload className="h-5 w-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold">{t("upload.title")}</span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {t("record.uploadDesc")}
+              </span>
+            </span>
+            <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5" />
+          </Link>
         </div>
       )}
 
@@ -1886,6 +1856,7 @@ function ScrubBar({
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
+  const pendingRef = useRef<{ id: number; x: number; y: number } | null>(null);
 
   const seekFromClientX = (clientX: number) => {
     const el = trackRef.current;
@@ -1910,16 +1881,45 @@ function ScrubBar({
         ref={trackRef}
         onPointerDown={(e) => {
           if (totalSeconds < 1) return;
+          // A finger only becomes a rewind once it clearly moves sideways — otherwise a scroll
+          // that happens to start on the bar would pause the take and offer to cut it.
+          if (e.pointerType !== "mouse") {
+            pendingRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+            return;
+          }
           e.currentTarget.setPointerCapture(e.pointerId);
           draggingRef.current = true;
           onDragStart();
           onDragMove(seekFromClientX(e.clientX));
         }}
         onPointerMove={(e) => {
+          const pending = pendingRef.current;
+          if (pending && pending.id === e.pointerId) {
+            const dx = e.clientX - pending.x;
+            const dy = e.clientY - pending.y;
+            if (Math.abs(dx) >= 8 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+              pendingRef.current = null;
+              try {
+                if (!e.currentTarget.hasPointerCapture(e.pointerId)) {
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                }
+              } catch {
+                /* pointer already gone */
+              }
+              draggingRef.current = true;
+              onDragStart();
+            } else if (Math.abs(dy) >= 8) {
+              pendingRef.current = null;
+              return;
+            } else {
+              return;
+            }
+          }
           if (!draggingRef.current) return;
           onDragMove(seekFromClientX(e.clientX));
         }}
         onPointerUp={(e) => {
+          pendingRef.current = null;
           if (!draggingRef.current) return;
           draggingRef.current = false;
           onDragEnd(seekFromClientX(e.clientX));
@@ -1929,11 +1929,12 @@ function ScrubBar({
         // the caller's "no real rewind" case, so it snaps back to "now" and resumes recording if
         // it was running, instead of leaving the bar stuck mid-drag with the take paused.
         onPointerCancel={() => {
+          pendingRef.current = null;
           if (!draggingRef.current) return;
           draggingRef.current = false;
           onDragEnd(totalSeconds);
         }}
-        className="relative h-8 w-full touch-none"
+        className="relative h-8 w-full touch-pan-y"
       >
         {/* Floating readout above the drag point — the exact time being previewed, plus a
             scissors cue so the gesture reads as "cut here" rather than an ordinary seek. */}
@@ -2336,24 +2337,15 @@ function KaraokeSegmentPicker({
           </button>
         </div>
 
-        <div className="mt-4 grid shrink-0 grid-cols-2 gap-1 rounded-full bg-muted/60 p-1">
-          <button
-            onClick={() => selectMode("full")}
-            className={`rounded-full py-2 text-sm font-semibold transition-colors ${
-              mode === "full" ? "bg-card text-foreground shadow-pop" : "text-muted-foreground"
-            }`}
-          >
-            {t("record.fullSong")}
-          </button>
-          <button
-            onClick={() => selectMode("part")}
-            className={`rounded-full py-2 text-sm font-semibold transition-colors ${
-              mode === "part" ? "bg-card text-foreground shadow-pop" : "text-muted-foreground"
-            }`}
-          >
-            {t("record.selectPart")}
-          </button>
-        </div>
+        <Segmented
+          className="mt-4 shrink-0"
+          value={mode}
+          onChange={selectMode}
+          options={[
+            { value: "full", label: t("record.fullSong") },
+            { value: "part", label: t("record.selectPart") },
+          ]}
+        />
 
         {mode === "part" && duration > 0 && (
           <div className="mt-5 shrink-0">
@@ -2657,7 +2649,7 @@ function RailControl({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.18 }}
-            className="whitespace-nowrap rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm"
+            className="whitespace-nowrap rounded-full bg-black/70 px-2 py-0.5 text-[11px] font-semibold text-white ring-1 ring-white/15 backdrop-blur-sm"
           >
             {label}
           </motion.span>

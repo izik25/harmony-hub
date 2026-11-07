@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Search, TrendingUp, Flame, BadgeCheck } from "lucide-react";
+import { Search, TrendingUp, Flame, BadgeCheck, Heart } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -15,19 +15,19 @@ export const Route = createFileRoute("/explore")({
 
 const tabs = ["artists", "songs", "djs", "producers", "genres"] as const;
 
-// Each fill carries its own label color: white fails contrast on the marigold tile (2:1).
-const BRAND_TILE_CLASSES = [
-  "bg-brand-coral text-white",
-  "bg-brand-indigo text-white",
-  "bg-brand-gold text-accent-foreground",
-  "bg-brand-teal text-white",
-];
+// Genres are quiet tiles; colour is a small cue dot, not a wall of saturated fills.
+const GENRE_DOT = ["bg-brand-coral", "bg-indigo-text", "bg-brand-gold", "bg-teal-text"];
 
 function ExplorePage() {
   const { t } = useTranslation();
   const [tab, setTab] = useState<(typeof tabs)[number]>("artists");
   const [query, setQuery] = useState("");
   const hasQuery = query.trim().length > 0;
+  // A genre tile searches that genre across songs.
+  const pickGenre = (g: string) => {
+    setQuery(g);
+    setTab("songs");
+  };
 
   const { data: tags } = useQuery({ queryKey: ["trendingTags"], queryFn: () => trendingTags() });
   const { data: topPosts } = useQuery({
@@ -67,8 +67,8 @@ function ExplorePage() {
               onClick={() => setTab(k)}
               className={`shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-200 ease-out press-scale ${
                 tab === k
-                  ? "bg-brand-coral text-white shadow-pop-coral"
-                  : "border border-border bg-card text-muted-foreground"
+                  ? "bg-brand-coral text-white"
+                  : "border border-border bg-card text-muted-foreground hover:text-foreground"
               }`}
             >
               {t(`explore.${k}`)}
@@ -78,7 +78,7 @@ function ExplorePage() {
 
         {!hasQuery && (
           <>
-            <div className="mt-5 flex items-center gap-2 text-xs uppercase tracking-widest text-muted-foreground">
+            <div className="section-label mt-6 flex items-center gap-2">
               <Flame className="h-3.5 w-3.5 text-brand-coral" /> {t("common.trending")}
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -96,7 +96,7 @@ function ExplorePage() {
               )}
             </div>
 
-            <div className="mt-6 flex items-center gap-2 text-xs uppercase tracking-widest text-muted-foreground">
+            <div className="section-label mt-8 flex items-center gap-2">
               <TrendingUp className="h-3.5 w-3.5 text-accent" /> {t("common.top")}
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -108,23 +108,23 @@ function ExplorePage() {
                   <PostCoverBg hue={p.hue} seed={p.id} imageUrl={p.coverUrl} />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent" />
                   <div className="absolute inset-x-0 bottom-0 p-3">
-                    <p className="bidi-auto line-clamp-1 text-sm font-semibold text-white">{p.title}</p>
-                    <p className="text-[11px] text-white/70">{formatCount(p.likesCount)} ❤</p>
+                    <p className="bidi-auto line-clamp-1 text-sm font-semibold text-white">
+                      {p.title}
+                    </p>
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-white/75">
+                      <Heart className="h-3 w-3 fill-current" aria-hidden />
+                      {formatCount(p.likesCount)}
+                    </p>
                   </div>
                 </article>
               ))}
             </div>
 
             <div className="mt-6 mb-8">
-              <h3 className="mb-2 font-display text-lg font-bold">{t("explore.genres")}</h3>
+              <h2 className="section-label mb-3">{t("explore.genres")}</h2>
               <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                 {genres.map((g, i) => (
-                  <div
-                    key={g}
-                    className={`rounded-xl p-3 text-sm font-semibold press-scale hover-lift ${BRAND_TILE_CLASSES[i % 4]}`}
-                  >
-                    {g}
-                  </div>
+                  <GenreTile key={g} genre={g} dot={GENRE_DOT[i % 4]} onPick={pickGenre} />
                 ))}
               </div>
             </div>
@@ -167,7 +167,9 @@ function ExplorePage() {
                     <PostCoverBg hue={p.hue} seed={p.id} imageUrl={p.coverUrl} />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent" />
                     <div className="absolute inset-x-0 bottom-0 p-3">
-                      <p className="bidi-auto line-clamp-1 text-sm font-semibold text-white">{p.title}</p>
+                      <p className="bidi-auto line-clamp-1 text-sm font-semibold text-white">
+                        {p.title}
+                      </p>
                     </div>
                   </article>
                 ))}
@@ -178,12 +180,7 @@ function ExplorePage() {
                 {genres
                   .filter((g) => g.toLowerCase().includes(query.toLowerCase()))
                   .map((g, i) => (
-                    <div
-                      key={g}
-                      className={`rounded-xl p-3 text-sm font-semibold press-scale hover-lift ${BRAND_TILE_CLASSES[i % 4]}`}
-                    >
-                      {g}
-                    </div>
+                    <GenreTile key={g} genre={g} dot={GENRE_DOT[i % 4]} onPick={pickGenre} />
                   ))}
               </div>
             )}
@@ -191,5 +188,26 @@ function ExplorePage() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+function GenreTile({
+  genre,
+  dot,
+  onPick,
+}: {
+  genre: string;
+  dot: string;
+  onPick: (g: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onPick(genre)}
+      className="flex h-14 items-center gap-3 rounded-xl border border-border bg-card px-4 text-start text-sm font-semibold transition-colors hover:border-[var(--hairline-strong)] hover:bg-muted/50 press-scale"
+    >
+      <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} />
+      {genre}
+    </button>
   );
 }

@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
   Sliders,
+  Trophy,
   Wand2,
   Send,
   Play,
@@ -24,6 +25,7 @@ import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { EmptyState } from "@/components/EmptyState";
+import { ScrollSafeRange } from "@/components/ScrollSafeRange";
 import { getDraft, updateDraftAudio } from "@/functions/posts";
 import { getVocalCleanupStatus, startVocalCleanup } from "@/functions/vocal-cleanup";
 import { smartUploadMedia } from "@/lib/blob-upload";
@@ -69,7 +71,26 @@ interface StudioSearch {
 // Flat brand colors rotated across the decorative waveform bars — same idiom as the equalizer
 // bars on the landing page — so the strip reads as a lively flat-color equalizer instead of the
 // old neon rainbow gradient sweep.
-const BRAND_BAR_COLORS = ["bg-brand-coral", "bg-brand-indigo", "bg-brand-gold", "bg-brand-teal"];
+const WAVE_BARS = 72;
+
+/** Peak amplitude per bucket, normalised to the loudest bucket (0..1). */
+function computePeaks(buf: AudioBuffer, bars: number): number[] {
+  const data = buf.getChannelData(0);
+  const size = Math.max(1, Math.floor(data.length / bars));
+  const peaks: number[] = [];
+  for (let b = 0; b < bars; b++) {
+    let max = 0;
+    const end = Math.min(data.length, (b + 1) * size);
+    // Stride through the bucket: exact peaks don't matter at this resolution, speed does.
+    for (let i = b * size; i < end; i += 16) {
+      const v = Math.abs(data[i]);
+      if (v > max) max = v;
+    }
+    peaks.push(max);
+  }
+  const top = Math.max(...peaks, 1e-6);
+  return peaks.map((p) => p / top);
+}
 
 // Sample peak, not RMS — vocal takes routinely have a 10dB+ crest factor, so loudness alone says
 // nothing about how hard a gain change would hit the limiter.
@@ -179,6 +200,7 @@ function StudioPage() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [manualOpen, setManualOpen] = useState(false);
+  const [cleanupDescOpen, setCleanupDescOpen] = useState(false);
   // Whether AI mastering's noise gate is baked into the loaded buffer — runPitchCorrection
   // re-applies it after restoring the original, since gating changes what pitch detection sees.
   const gateAppliedRef = useRef(false);
@@ -222,6 +244,8 @@ function StudioPage() {
   // What the chain is playing — see the stems effect below. null while stems are being prepared.
   const [sources, setSources] = useState<Sources | null>(null);
   const stems = sources?.stems ?? false;
+  // The take's real envelope (vocal stem), drawn as the player's waveform.
+  const [wavePeaks, setWavePeaks] = useState<number[] | null>(null);
   // Mirrors the settings without being a dependency of the chain-(re)build effect below — a Fix a
   // Section save swaps the stems and rebuilds the chain, which should keep the current settings.
   const mixRef = useRef<MixSettings>(mix);
@@ -504,6 +528,7 @@ function StudioPage() {
           originalChannelsRef.current = Array.from({ length: buf.numberOfChannels }, (_, ch) =>
             buf.getChannelData(ch).slice(),
           );
+          setWavePeaks(computePeaks(buf, WAVE_BARS));
         }
         // Gain staging: the take's loud passages to −18 dBFS before the chain (see vocal-chain.ts).
         const inputTrimDb = buf
@@ -917,12 +942,8 @@ function StudioPage() {
   return (
     <AppShell>
       <TopBar />
-      <div className="px-4 pt-3 pb-6">
-        <div className="flex items-center gap-2">
-          <Wand2 className="h-6 w-6 text-accent" />
-          <h1 className="font-display text-2xl font-bold">{t("studio.title")}</h1>
-        </div>
-        <p className="text-xs text-muted-foreground">{t("studio.subtitle")}</p>
+      <div className="px-4 pb-8 pt-6">
+        <h1 className="page-title">{t("studio.title")}</h1>
 
         {!draftId ? (
           <EmptyState
@@ -961,9 +982,9 @@ function StudioPage() {
                 finishMutation in record.tsx and the video-aware Fix a Section save below), so the
                 full DSP/Mastering/Fix-a-Section UI further down applies to it exactly like any
                 audio-only draft. */}
-            <div className="mt-4 rounded-3xl border border-border bg-card p-4 shadow-pop">
+            <section className="mt-5 overflow-hidden rounded-[22px] border border-border bg-card shadow-pop">
               <div
-                className={`relative overflow-hidden rounded-xl bg-muted ${draft?.videoUrl ? "aspect-[9/16]" : "h-24"}`}
+                className={`relative bg-[var(--surface-sunken)] ${draft?.videoUrl ? "mx-auto aspect-[9/16] max-h-[68vh]" : "h-32"}`}
               >
                 {draft?.videoUrl ? (
                   <video
@@ -974,58 +995,72 @@ function StudioPage() {
                     className="h-full w-full bg-black object-contain"
                   />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-around px-2">
-                    {Array.from({ length: 60 }).map((_, i) => (
-                      <span
-                        key={i}
-                        className={`w-0.5 rounded-full ${BRAND_BAR_COLORS[i % BRAND_BAR_COLORS.length]}`}
-                        style={{ height: `${12 + Math.abs(Math.sin(i / 3)) * 60}%` }}
-                      />
-                    ))}
+                  // The take's own envelope; the played part lights up coral. Time runs LTR in
+                  // every language, like the scrubber under it.
+                  <div
+                    dir="ltr"
+                    aria-hidden
+                    className="absolute inset-x-4 inset-y-5 flex items-center gap-[2px]"
+                  >
+                    {(wavePeaks ?? Array.from({ length: WAVE_BARS }, () => 0.12)).map((peak, i) => {
+                      const played =
+                        duration > 0 && (i + 0.5) / WAVE_BARS <= currentTime / duration;
+                      return (
+                        <span
+                          key={i}
+                          className={`flex-1 rounded-full transition-colors duration-150 ${
+                            played ? "bg-brand-coral" : "bg-white/20"
+                          } ${wavePeaks ? "" : "animate-pulse"}`}
+                          style={{ height: `${Math.max(5, peak * 100)}%` }}
+                        />
+                      );
+                    })}
                   </div>
                 )}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <motion.button
-                    onClick={togglePlay}
-                    disabled={!ready}
-                    whileTap={{ scale: 0.92 }}
-                    whileHover={{ scale: 1.05 }}
-                    transition={{ type: "spring", stiffness: 450, damping: 25 }}
-                    className="grid h-14 w-14 place-items-center rounded-full bg-brand-coral shadow-pop-coral disabled:opacity-50"
-                  >
-                    {playing ? (
-                      <Pause className="h-6 w-6 text-white" />
-                    ) : (
-                      <Play className="h-6 w-6 text-white" />
-                    )}
-                  </motion.button>
-                </div>
               </div>
-              <div dir="ltr" className="relative mt-3">
-                <div className="relative h-2 w-full rounded-full bg-muted">
-                  <div
-                    className="absolute top-0 h-2 rounded-full bg-brand-coral"
-                    style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
-                  />
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 0}
-                  step={0.05}
-                  value={currentTime}
+              <div className="flex items-center gap-3 border-t border-border px-4 py-3">
+                <motion.button
+                  onClick={togglePlay}
                   disabled={!ready}
-                  onChange={(e) => handleSeek(Number(e.target.value))}
-                  className="absolute inset-x-0 top-0 h-2 w-full cursor-pointer opacity-0 disabled:cursor-default"
-                />
-              </div>
-              <div className="mt-2 flex justify-between text-[11px] text-muted-foreground font-mono">
-                <span>{ready ? formatTime(currentTime) : t("studio.loading")}</span>
-                <span>{ready ? formatTime(duration) : ""}</span>
+                  aria-label={playing ? t("common.pause") : t("record.previewPlay")}
+                  whileTap={{ scale: 0.92 }}
+                  transition={{ type: "spring", stiffness: 450, damping: 25 }}
+                  className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-foreground text-background transition-opacity disabled:opacity-40"
+                >
+                  {ready ? (
+                    playing ? (
+                      <Pause className="h-5 w-5 fill-current" />
+                    ) : (
+                      <Play className="h-5 w-5 translate-x-px fill-current" />
+                    )
+                  ) : (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  )}
+                </motion.button>
+                <div dir="ltr" className="min-w-0 flex-1">
+                  <ScrollSafeRange
+                    value={currentTime}
+                    min={0}
+                    max={duration || 0}
+                    step={0.05}
+                    onChange={handleSeek}
+                    disabled={!ready}
+                    tapToJump
+                    ariaLabel={t("record.seekBar")}
+                    ariaValueText={formatTime(currentTime)}
+                    className="h-7"
+                    trackClassName="h-1.5"
+                    thumbClassName="[--thumb:14px]"
+                  />
+                  <div className="flex justify-between font-mono text-xs text-muted-foreground">
+                    <span>{ready ? formatTime(currentTime) : t("studio.loading")}</span>
+                    <span>{ready ? formatTime(duration) : ""}</span>
+                  </div>
+                </div>
               </div>
 
               {draft?.videoUrl && (
-                <div className="mt-3 border-t border-border pt-3">
+                <div className="border-t border-border p-3">
                   {replacingCover ? (
                     <div className="space-y-2">
                       <CoverImagePicker
@@ -1056,7 +1091,7 @@ function StudioPage() {
                   )}
                 </div>
               )}
-            </div>
+            </section>
 
             {/* Right under the scrubber, not buried below the mix/master sections — scrub to the
                 spot that needs fixing, open this, and the start marker is already sitting there. */}
@@ -1090,11 +1125,27 @@ function StudioPage() {
             {/* One action for a finished track: Replicate cleans the take, then our own analysis
                 masters it (reverb, balance, loudness…) — see runAiMaster. Manual Mastering below
                 is where anything it decided can be overridden by hand. */}
-            <section className="mt-5 rounded-3xl border border-accent/40 bg-accent/5 p-4">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-accent">
-                <Sparkles className="h-4 w-4" /> {t("studio.cleanupTitle")}
+            <section className="mt-5 rounded-[22px] border border-border bg-card p-4 shadow-pop">
+              <h2 className="flex items-center gap-2 text-base">
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-gold/15 text-brand-gold">
+                  <Sparkles className="h-4 w-4" />
+                </span>
+                {t("studio.cleanupTitle")}
               </h2>
-              <p className="mt-1 text-xs text-muted-foreground">{t("studio.cleanupDesc")}</p>
+              {/* The full explanation is long; three lines say enough until someone asks for more. */}
+              <p
+                className={`mt-2 text-sm leading-relaxed text-muted-foreground ${cleanupDescOpen ? "" : "line-clamp-3"}`}
+              >
+                {t("studio.cleanupDesc")}
+              </p>
+              {!cleanupDescOpen && (
+                <button
+                  onClick={() => setCleanupDescOpen(true)}
+                  className="mt-1 text-xs font-semibold text-brand-gold hover:underline"
+                >
+                  {t("nav.more")}
+                </button>
+              )}
               {aiMasterBusy ? (
                 <ol className="mt-3 space-y-2 rounded-2xl border border-border bg-card/60 p-3">
                   {steps.map((step) => (
@@ -1190,9 +1241,8 @@ function StudioPage() {
                     onClick={runAiMaster}
                     disabled={!ready}
                     whileTap={ready ? { scale: 0.97 } : undefined}
-                    whileHover={ready ? { scale: 1.01, y: -1 } : undefined}
                     transition={{ type: "spring", stiffness: 450, damping: 28 }}
-                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral disabled:opacity-50"
+                    className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-[color-mix(in_oklab,var(--brand-gold)_45%,transparent)] bg-brand-gold/12 text-sm font-bold text-brand-gold transition-colors hover:bg-brand-gold/20 disabled:opacity-50"
                   >
                     <Sparkles className="h-4 w-4" /> {t("studio.cleanupStart")}
                   </motion.button>
@@ -1200,13 +1250,17 @@ function StudioPage() {
               )}
             </section>
 
-            <section className="mt-4 rounded-3xl border border-border bg-card p-4 shadow-pop">
+            <section className="mt-3 rounded-[22px] border border-border bg-card px-4 shadow-pop">
               <button
                 onClick={() => setManualOpen((v) => !v)}
-                className="flex w-full items-center justify-between text-sm font-semibold"
+                aria-expanded={manualOpen}
+                className="flex min-h-14 w-full items-center justify-between text-base font-semibold"
               >
                 <span className="flex items-center gap-2">
-                  <Sliders className="h-4 w-4 text-accent" /> {t("record.manualEdit")}
+                  <span className="grid h-8 w-8 place-items-center rounded-lg bg-muted text-foreground">
+                    <Sliders className="h-4 w-4" />
+                  </span>
+                  {t("record.manualEdit")}
                 </span>
                 {manualOpen ? (
                   <ChevronUp className="h-4 w-4 text-muted-foreground" />
@@ -1215,7 +1269,7 @@ function StudioPage() {
                 )}
               </button>
               {manualOpen && (
-                <div className="mt-3">
+                <div className="border-t border-border pb-2 pt-3">
                   {/* Live levels on the separate stems — what you hear is what publish renders.
                       On an already-mixed file there's nothing separate to balance. */}
                   {stems && (
@@ -1313,35 +1367,34 @@ function StudioPage() {
               )}
             </section>
 
-            <div className="mt-5 grid grid-cols-2 gap-2">
+            {/* The screen's one coral action. Competition entry is the quieter alternative. */}
+            <div className="mt-6 flex gap-2">
               <motion.button
                 onClick={() => publishMutation.mutate(false)}
                 disabled={!ready || publishMutation.isPending}
-                whileTap={!ready || publishMutation.isPending ? undefined : { scale: 0.95 }}
-                whileHover={
-                  !ready || publishMutation.isPending ? undefined : { scale: 1.03, y: -1 }
-                }
+                whileTap={!ready || publishMutation.isPending ? undefined : { scale: 0.97 }}
                 transition={{ type: "spring", stiffness: 450, damping: 28 }}
-                className="flex flex-col items-center gap-1 rounded-2xl bg-brand-coral p-3 text-[11px] font-bold text-white shadow-pop-coral disabled:opacity-50"
+                className="flex h-14 flex-[1.6] items-center justify-center gap-2 rounded-xl bg-brand-coral text-base font-bold text-white shadow-pop-coral transition-[filter] hover:brightness-110 disabled:opacity-50"
               >
-                <Send className="h-4 w-4" /> {t("common.continueToPublish")}
+                {publishMutation.isPending ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Send className="h-5 w-5 rtl:-scale-x-100" />
+                )}
+                {t("common.continueToPublish")}
               </motion.button>
               <button
                 onClick={() => publishMutation.mutate(true)}
                 disabled={!ready || publishMutation.isPending}
-                className="press-scale flex flex-col items-center gap-1 rounded-2xl border border-border bg-card/60 p-3 text-[11px] font-semibold disabled:opacity-50"
+                className="press-scale flex h-14 flex-1 items-center justify-center gap-2 rounded-xl border border-[var(--hairline-strong)] px-3 text-sm font-semibold transition-colors hover:bg-card disabled:opacity-50"
               >
-                <Send className="h-4 w-4" /> {t("record.sendComp")}
+                <Trophy className="h-4 w-4 shrink-0 text-brand-gold" />
+                <span className="truncate">{t("record.sendComp")}</span>
               </button>
             </div>
           </>
         )}
       </div>
-      <style>{`.studio-slider { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 999px; background: var(--color-muted); }
-      .studio-slider::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 999px; background: var(--brand-coral); box-shadow: var(--shadow-pop); cursor: pointer; transition: transform 0.15s var(--ease-snappy); }
-      .studio-slider::-webkit-slider-thumb:active { transform: scale(0.9); }
-      .studio-slider::-moz-range-thumb { height: 16px; width: 16px; border: 0; border-radius: 999px; background: var(--brand-coral); box-shadow: var(--shadow-pop); cursor: pointer; }
-      .studio-slider::-moz-range-progress { background: color-mix(in oklab, var(--brand-coral) 60%, transparent); border-radius: 999px; }`}</style>
     </AppShell>
   );
 }
@@ -1364,22 +1417,26 @@ function Slider({
   suffix?: string;
 }) {
   return (
-    <div className="mb-3">
-      <div className="mb-1 flex justify-between text-xs">
+    <div className="mb-2">
+      <div className="flex justify-between text-xs">
         <span>{label}</span>
-        <span className="font-mono text-accent">
+        <span className="font-mono tabular-nums text-accent">
           {v}
           {suffix}
         </span>
       </div>
-      <input
-        type="range"
+      {/* Tall hit row, thin visible track: easy to grab on purpose, impossible to change by
+          scrolling past it (see ScrollSafeRange). */}
+      <ScrollSafeRange
+        value={v}
         min={min}
         max={max}
         step={step}
-        value={v}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full studio-slider"
+        onChange={onChange}
+        ariaLabel={label}
+        ariaValueText={`${v}${suffix}`}
+        className="h-9"
+        trackClassName="h-1.5"
       />
     </div>
   );

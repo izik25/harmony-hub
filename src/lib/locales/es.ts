@@ -79,6 +79,8 @@ export const es = {
     mute: "Silenciar",
     unmute: "Activar sonido",
     viewSound: "Ver sonido",
+    emptyTitle: "El escenario está libre",
+    emptyBody: "Todavía no hay grabaciones en el feed. Graba la primera.",
   },
   explore: {
     search: "Busca artistas, canciones, DJs...",
@@ -174,6 +176,7 @@ export const es = {
     opensStudioHint:
       "Al terminar se abre el Estudio IA, donde puedes equilibrar y pulir la toma antes de guardarla o publicarla.",
     scrubHint: "Arrastra hacia atrás para corregir un error",
+    seekBar: "Posición de reproducción",
     cutConfirmTitle: "¿Borrar hasta este punto?",
     cutConfirmBody:
       "Se borrará todo lo que haya después de {{time}} y podrás volver a grabar desde ahí.",

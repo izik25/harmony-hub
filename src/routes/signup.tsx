@@ -3,7 +3,6 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
-import { Music2, Sparkles, Music4, Waves } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { GoogleAuthButton } from "@/components/GoogleAuthButton";
 import { PhoneAuthForm } from "@/components/PhoneAuthForm";
@@ -13,38 +12,6 @@ import { translateServerError } from "@/lib/i18n";
 export const Route = createFileRoute("/signup")({
   component: SignupPage,
 });
-
-const AMBIENT_ICONS = [Music2, Sparkles, Music4, Waves] as const;
-
-function AmbientNotes({ count = 5 }: { count?: number }) {
-  const notes = Array.from({ length: count }).map((_, i) => ({
-    Icon: AMBIENT_ICONS[i % AMBIENT_ICONS.length],
-    left: `${8 + ((i * 97) % 84)}%`,
-    size: 12 + (i % 3) * 4,
-    duration: 6 + (i % 4) * 1.6,
-    delay: i * 0.55,
-  }));
-  return (
-    // Hidden via CSS rather than useReducedMotion(): that hook is false during SSR and true on the
-    // client for reduced-motion users, which made the page fail hydration.
-    <div
-      aria-hidden
-      className="pointer-events-none absolute inset-0 z-0 overflow-hidden motion-reduce:hidden"
-    >
-      {notes.map((n, i) => (
-        <motion.span
-          key={i}
-          className="absolute bottom-0 text-primary/40"
-          style={{ left: n.left }}
-          animate={{ y: ["0%", "-380%"], opacity: [0, 0.75, 0], rotate: [0, 20, -12, 0] }}
-          transition={{ duration: n.duration, repeat: Infinity, ease: "easeInOut", delay: n.delay }}
-        >
-          <n.Icon style={{ width: n.size, height: n.size }} />
-        </motion.span>
-      ))}
-    </div>
-  );
-}
 
 function SignupPage() {
   const { t } = useTranslation();
@@ -74,8 +41,6 @@ function SignupPage() {
   return (
     <AppShell hideNav>
       <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-10">
-        <AmbientNotes />
-
         <div className="relative z-10 flex w-full flex-col items-center">
           <h1 className="sr-only">Studio26</h1>
           <img
@@ -88,7 +53,7 @@ function SignupPage() {
           <p className="mt-3 text-sm text-muted-foreground">{t("auth.welcome")}</p>
 
           <div className="mt-8 w-full max-w-sm space-y-3">
-            <h2 className="animate-fade-up stagger-1 text-center font-display text-xl font-bold">
+            <h2 className="animate-fade-up stagger-1 text-center text-2xl">
               {t("auth.signupTitle")}
             </h2>
 
@@ -107,18 +72,18 @@ function SignupPage() {
             )}
 
             {providers?.phone && (
-              <div className="flex rounded-full bg-input p-1 text-sm font-semibold">
+              <div className="flex gap-1 rounded-xl bg-[var(--surface-sunken)] p-1 text-sm font-semibold ring-1 ring-border">
                 <button
                   type="button"
                   onClick={() => setMethod("email")}
-                  className={`flex-1 rounded-full py-2 transition ${method === "email" ? "bg-brand-coral text-white shadow-pop-coral" : "text-muted-foreground"}`}
+                  className={`h-10 flex-1 rounded-lg transition ${method === "email" ? "bg-muted text-foreground shadow-pop ring-1 ring-[var(--hairline-strong)]" : "text-muted-foreground hover:text-foreground"}`}
                 >
                   {t("auth.methodEmail")}
                 </button>
                 <button
                   type="button"
                   onClick={() => setMethod("phone")}
-                  className={`flex-1 rounded-full py-2 transition ${method === "phone" ? "bg-brand-coral text-white shadow-pop-coral" : "text-muted-foreground"}`}
+                  className={`h-10 flex-1 rounded-lg transition ${method === "phone" ? "bg-muted text-foreground shadow-pop ring-1 ring-[var(--hairline-strong)]" : "text-muted-foreground hover:text-foreground"}`}
                 >
                   {t("auth.methodPhone")}
                 </button>
@@ -137,6 +102,7 @@ function SignupPage() {
               >
                 <input
                   className="input animate-fade-up stagger-2"
+                  aria-label={t("auth.name")}
                   placeholder={t("auth.name")}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -145,6 +111,7 @@ function SignupPage() {
                 />
                 <input
                   className="input animate-fade-up stagger-3"
+                  aria-label={t("auth.handle")}
                   placeholder={t("auth.handle")}
                   value={handle}
                   onChange={(e) => setHandle(e.target.value)}
@@ -154,6 +121,7 @@ function SignupPage() {
                 <input
                   className="input animate-fade-up stagger-4"
                   type="email"
+                  aria-label={t("auth.email")}
                   placeholder={t("auth.email")}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -163,6 +131,7 @@ function SignupPage() {
                 <input
                   className="input animate-fade-up stagger-5"
                   type="password"
+                  aria-label={t("auth.password")}
                   placeholder={t("auth.password")}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -181,9 +150,8 @@ function SignupPage() {
                   type="submit"
                   disabled={mutation.isPending}
                   whileTap={mutation.isPending ? undefined : { scale: 0.97 }}
-                  whileHover={mutation.isPending ? undefined : { scale: 1.02, y: -1 }}
                   transition={{ type: "spring", stiffness: 450, damping: 28 }}
-                  className="animate-fade-up stagger-6 w-full rounded-full bg-brand-coral py-3 text-sm font-bold text-white shadow-pop-coral disabled:opacity-60"
+                  className="animate-fade-up stagger-6 h-12 w-full rounded-xl bg-brand-coral text-sm font-bold text-white shadow-pop-coral transition-[filter] hover:brightness-110 disabled:opacity-60"
                 >
                   {mutation.isPending ? "…" : t("auth.signupCta")}
                 </motion.button>
@@ -199,9 +167,6 @@ function SignupPage() {
           </p>
         </div>
       </div>
-
-      <style>{`.input { width: 100%; border-radius: 9999px; background: var(--color-input); padding: 12px 16px; font-size: 14px; outline: none; border: 1px solid var(--color-border); }
-      .input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 25%, transparent); }`}</style>
     </AppShell>
   );
 }

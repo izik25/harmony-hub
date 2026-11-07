@@ -12,6 +12,7 @@ import * as videoSplice from "@/lib/video-splice";
 import { openSelfieCamera, buildCombinedRecorder } from "@/lib/camera-capture";
 import { translateServerError } from "@/lib/i18n";
 import { LogoPulse } from "@/components/LogoPulse";
+import { ScrollSafeRange } from "@/components/ScrollSafeRange";
 
 // Same as record.tsx's MIC_CONSTRAINTS: AEC off (it forces a different, speaker-routing audio
 // session on Android), NS/AGC off (the noise comes out offline instead — see noise-reduction.ts),
@@ -439,8 +440,26 @@ export function FixSectionEditor({
               >
                 {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
               </button>
-              <div dir="ltr" className="relative flex-1">
-                <div className="relative h-2 w-full rounded-full bg-muted/60">
+              <div dir="ltr" className="flex-1">
+                <ScrollSafeRange
+                  value={currentTime}
+                  min={0}
+                  max={duration || 0}
+                  step={0.05}
+                  disabled={phase === "cueing"}
+                  tapToJump
+                  onChange={(v) => {
+                    if (audioRef.current) audioRef.current.currentTime = v;
+                    if (backingRef.current) backingRef.current.currentTime = v;
+                    setCurrentTime(v);
+                  }}
+                  ariaLabel={t("record.seekBar")}
+                  ariaValueText={formatTime(currentTime)}
+                  className="h-8"
+                  trackClassName="h-2 bg-muted/60"
+                  fillClassName="bg-primary/70"
+                  thumbClassName="[--thumb:14px]"
+                >
                   {canPunchIn ? (
                     <div
                       className="absolute top-0 h-2 rounded-full bg-destructive/40"
@@ -460,26 +479,7 @@ export function FixSectionEditor({
                       />
                     )
                   )}
-                  <div
-                    className="absolute top-0 h-2 rounded-full bg-primary/70"
-                    style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
-                  />
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 0}
-                  step={0.05}
-                  value={currentTime}
-                  disabled={phase === "cueing"}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (audioRef.current) audioRef.current.currentTime = v;
-                    if (backingRef.current) backingRef.current.currentTime = v;
-                    setCurrentTime(v);
-                  }}
-                  className="absolute inset-x-0 top-0 h-2 w-full cursor-pointer opacity-0"
-                />
+                </ScrollSafeRange>
               </div>
               <span className="w-10 shrink-0 text-end text-[11px] font-mono text-muted-foreground">
                 {formatTime(currentTime)}
@@ -621,9 +621,9 @@ export function FixSectionToggle({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="press-scale mt-1 flex w-full items-center justify-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-accent"
+      className="press-scale flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-border text-sm font-semibold transition-colors hover:bg-card"
     >
-      <Wand2 className="h-4 w-4" />
+      <Wand2 className="h-4 w-4 text-brand-gold" />
       {t("studio.fixSection")}
     </button>
   );

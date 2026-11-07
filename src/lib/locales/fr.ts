@@ -79,6 +79,8 @@ export const fr = {
     mute: "Couper le son",
     unmute: "Activer le son",
     viewSound: "Voir le son",
+    emptyTitle: "La scène est libre",
+    emptyBody: "Aucun enregistrement dans le fil pour l’instant. Enregistre le premier.",
   },
   explore: {
     search: "Recherche artistes, chansons, DJ...",
@@ -174,6 +176,7 @@ export const fr = {
     opensStudioHint:
       "En terminant, le Studio IA s'ouvre : tu pourras équilibrer et façonner ta prise avant de l'enregistrer ou de la publier.",
     scrubHint: "Fais glisser en arrière pour corriger une erreur",
+    seekBar: "Position de lecture",
     cutConfirmTitle: "Supprimer jusqu'à ce point ?",
     cutConfirmBody:
       "Tout ce qui suit {{time}} sera supprimé, et tu pourras réenregistrer à partir de là.",

@@ -20,12 +20,17 @@ import {
   Volume2,
   VolumeX,
   Send,
+  Check,
+  Plus,
+  Mic,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { PostCoverBg } from "@/components/PostCoverBg";
+import { LevelMeter } from "@/components/LevelMeter";
+import { GiftGlyph } from "@/components/GiftGlyph";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatCount } from "@/lib/mock-data";
 import { translateServerError } from "@/lib/i18n";
@@ -59,7 +64,7 @@ function patchFeed(queryClient: QueryClient, fn: (p: FeedPostDTO) => FeedPostDTO
 }
 
 function HomePage() {
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isPending } = useInfiniteQuery({
     queryKey: ["feed"],
     queryFn: ({ pageParam }) => listFeed({ data: { excludeIds: pageParam } }),
     initialPageParam: [] as string[],
@@ -79,14 +84,51 @@ function HomePage() {
     <AppShell overlayNav width="feed">
       <TopBar transparent />
       <div className="relative -mt-14 lg:mt-0">
-        <FeedSlider
-          posts={posts}
-          onNearEnd={() => {
-            if (hasNextPage && !isFetchingNextPage) fetchNextPage();
-          }}
-        />
+        {isPending ? (
+          <FeedStage>
+            <LevelMeter live bars={14} className="h-16 w-40 opacity-80" />
+          </FeedStage>
+        ) : posts.length === 0 ? (
+          <FeedEmpty />
+        ) : (
+          <FeedSlider
+            posts={posts}
+            onNearEnd={() => {
+              if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+            }}
+          />
+        )}
       </div>
     </AppShell>
+  );
+}
+
+/** Full-height dark stage the feed's non-post states sit on. */
+function FeedStage({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-dvh flex-col items-center justify-center bg-[var(--surface-sunken)] px-8 text-center">
+      {children}
+    </div>
+  );
+}
+
+// Pre-launch the feed is genuinely empty. Say so plainly and hand over the one useful action,
+// instead of a black screen that looks broken.
+function FeedEmpty() {
+  const { t } = useTranslation();
+  return (
+    <FeedStage>
+      <LevelMeter bars={14} className="h-20 w-44" />
+      <h1 className="mt-8 text-2xl">{t("feed.emptyTitle")}</h1>
+      <p className="mt-2 max-w-xs text-sm text-muted-foreground">{t("feed.emptyBody")}</p>
+      <Link
+        to="/record"
+        className="mt-6 inline-flex h-12 items-center gap-2 rounded-xl bg-brand-coral px-6 text-sm font-bold text-white shadow-pop-coral transition-[filter] hover:brightness-110 press-scale"
+      >
+        <Mic className="h-4 w-4" />
+        {t("common.record")}
+      </Link>
+    </FeedStage>
   );
 }
 
@@ -407,28 +449,41 @@ function FeedItem({
             alt=""
             className="h-12 w-12 rounded-full border-2 border-white/80"
           />
+          {/* Small visible badge, 32px hit area around it. */}
           <motion.button
             onClick={() => followMutation.mutate()}
             whileTap={{ scale: 0.85 }}
-            className={`absolute -bottom-2 left-1/2 -translate-x-1/2 grid h-5 w-5 place-items-center overflow-hidden rounded-full text-[12px] font-bold text-white ${
-              post.followingAuthor ? "bg-secondary" : "bg-brand-coral shadow-pop-coral"
-            }`}
+            aria-label={t(post.followingAuthor ? "common.following" : "common.follow")}
+            aria-pressed={post.followingAuthor}
+            className="absolute -bottom-3.5 left-1/2 grid h-8 w-8 -translate-x-1/2 place-items-center"
           >
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={post.followingAuthor ? "on" : "off"}
-                initial={{ scale: 0.4, opacity: 0, rotate: -90 }}
-                animate={{ scale: 1, opacity: 1, rotate: 0 }}
-                exit={{ scale: 0.4, opacity: 0, rotate: 90 }}
-                transition={{ duration: 0.2 }}
-              >
-                {post.followingAuthor ? "✓" : "+"}
-              </motion.span>
-            </AnimatePresence>
+            <span
+              className={`grid h-5 w-5 place-items-center overflow-hidden rounded-full text-white ring-2 ring-black/30 ${
+                post.followingAuthor ? "bg-secondary" : "bg-brand-coral"
+              }`}
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={post.followingAuthor ? "on" : "off"}
+                  initial={{ scale: 0.4, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.4, opacity: 0 }}
+                  transition={{ duration: 0.18 }}
+                >
+                  {post.followingAuthor ? (
+                    <Check className="h-3 w-3" strokeWidth={3} />
+                  ) : (
+                    <Plus className="h-3 w-3" strokeWidth={3} />
+                  )}
+                </motion.span>
+              </AnimatePresence>
+            </span>
           </motion.button>
         </div>
         <ActionButton
           onClick={() => likeMutation.mutate()}
+          label={t("common.like")}
+          pressed={post.likedByMe}
           icon={
             <motion.span
               key={post.likes}
@@ -437,23 +492,28 @@ function FeedItem({
               transition={{ type: "spring", stiffness: 500, damping: 15 }}
               className="block"
             >
-              <Heart className={`h-7 w-7 ${post.likedByMe ? "fill-primary text-brand-coral" : ""}`} />
+              <Heart
+                className={`h-7 w-7 ${post.likedByMe ? "fill-primary text-brand-coral" : ""}`}
+              />
             </motion.span>
           }
           count={formatCount(post.likes)}
         />
         <ActionButton
           onClick={onOpenComments}
+          label={t("feed.comments")}
           icon={<MessageCircle className="h-7 w-7" />}
           count={formatCount(post.comments)}
         />
         <ActionButton
           onClick={onOpenGift}
+          label={t("common.gift")}
           icon={<Gift className="h-7 w-7 text-accent" />}
           count={formatCount(post.gifts)}
         />
         <ActionButton
           onClick={() => shareMutation.mutate()}
+          label={t("common.share")}
           icon={<Share2 className="h-7 w-7" />}
           count={formatCount(post.shares)}
         />
@@ -467,11 +527,13 @@ function FeedItem({
             <Music className="h-5 w-5 text-white" />
           </Link>
         ) : (
-          <button
+          // No sound page to open: a spinning disc that shows playback, not a dead button.
+          <span
+            aria-hidden
             className={`grid h-10 w-10 place-items-center rounded-full glass ${isPlaying ? "animate-spin-fast" : ""}`}
           >
             <Music className="h-5 w-5 text-white" />
-          </button>
+          </span>
         )}
       </motion.div>
 
@@ -523,16 +585,20 @@ function FeedItem({
           )}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
+          {/* Was a button on every post that did nothing; now a real way into competitions,
+              loud only on competition entries. */}
+          <Link
+            to="/competitions"
+            onClick={(e) => e.stopPropagation()}
             className={
               post.type === "competition"
-                ? "rounded-full bg-brand-coral px-4 py-1.5 text-xs font-bold text-white shadow-pop-coral press-scale"
-                : "rounded-full glass border border-white/20 px-4 py-1.5 text-xs font-bold text-white"
+                ? "inline-flex h-8 items-center rounded-lg bg-brand-coral px-3 text-xs font-bold text-white press-scale"
+                : "inline-flex h-8 items-center rounded-lg border border-white/20 bg-black/25 px-3 text-xs font-semibold text-white backdrop-blur-sm press-scale"
             }
           >
-            <Trophy className="me-1 inline h-3.5 w-3.5" />
+            <Trophy className="me-1 h-3.5 w-3.5" />
             {t("feed.competition")}
-          </button>
+          </Link>
           <CreditsPop credits={post.credits} />
         </div>
       </motion.div>
@@ -544,15 +610,21 @@ function ActionButton({
   icon,
   count,
   onClick,
+  label,
+  pressed,
 }: {
   icon: React.ReactNode;
   count?: string;
   onClick?: () => void;
+  label: string;
+  pressed?: boolean;
 }) {
   return (
     <motion.button
       whileTap={{ scale: 0.85 }}
       onClick={onClick}
+      aria-label={count ? `${label} · ${count}` : label}
+      aria-pressed={pressed}
       className="flex flex-col items-center gap-1 text-white"
     >
       <div className="grid h-11 w-11 place-items-center rounded-full glass">{icon}</div>
@@ -632,7 +704,7 @@ function CommentsSheet({ postId, onClose }: { postId: string | null; onClose: ()
             <div key={c.id} className="flex items-start gap-2">
               <img src={c.user.avatar} className="h-8 w-8 rounded-full" alt="" />
               <div>
-                <p className="text-xs font-semibold">{c.user.name}</p>
+                <p className="text-sm font-semibold">{c.user.name}</p>
                 <p className="bidi-auto text-sm">{c.body}</p>
               </div>
             </div>
@@ -649,13 +721,16 @@ function CommentsSheet({ postId, onClose }: { postId: string | null; onClose: ()
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder={t("feed.addComment")}
-            className="flex-1 rounded-full bg-background/70 px-4 py-2 text-sm outline-none ring-1 ring-border"
+            aria-label={t("feed.addComment")}
+            className="input flex-1"
           />
           <button
             type="submit"
-            className="grid h-10 w-10 place-items-center rounded-full bg-brand-coral press-scale"
+            aria-label={t("common.send")}
+            disabled={!body.trim() || addMutation.isPending}
+            className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand-coral transition-opacity press-scale disabled:opacity-40"
           >
-            <Send className="h-4 w-4 text-white" />
+            <Send className="h-5 w-5 text-white rtl:-scale-x-100" />
           </button>
         </form>
       </SheetContent>
@@ -691,18 +766,23 @@ function GiftSheet({ post, onClose }: { post: FeedPostDTO | null; onClose: () =>
         <SheetHeader>
           <SheetTitle>{t("feed.sendGiftTo", { name: post?.user.name ?? "" })}</SheetTitle>
         </SheetHeader>
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded-[18px] border border-border bg-border">
           {gifts?.map((g) => (
             <button
               key={g.id}
               disabled={giftMutation.isPending}
               onClick={() => giftMutation.mutate(g.id)}
-              className="flex flex-col items-center gap-1 rounded-2xl border border-border bg-card/60 p-3 hover:border-accent/50 disabled:opacity-60"
+              aria-label={`${t(`wallet.gifts.${g.key}`)} · ${g.coins}`}
+              className="flex flex-col items-center gap-1.5 bg-card px-2 py-4 transition-colors hover:bg-muted active:bg-muted disabled:opacity-60"
             >
-              <span className="text-3xl">{g.emoji}</span>
-              <span className="text-[11px] font-mono text-accent">{g.coins}</span>
+              <GiftGlyph giftKey={g.key} emoji={g.emoji} />
+              <span className="font-numeric text-xs font-bold text-brand-gold">{g.coins}</span>
             </button>
           ))}
+          {gifts &&
+            Array.from({ length: (3 - (gifts.length % 3)) % 3 }).map((_, i) => (
+              <div key={`pad-${i}`} aria-hidden className="bg-card" />
+            ))}
         </div>
       </SheetContent>
     </Sheet>

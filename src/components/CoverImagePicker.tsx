@@ -74,7 +74,7 @@ export function CoverImagePicker({
             whileTap={coverMutation.isPending ? undefined : { scale: 0.95 }}
             whileHover={coverMutation.isPending ? undefined : { scale: 1.03 }}
             transition={{ type: "spring", stiffness: 450, damping: 28 }}
-            className="inline-flex items-center gap-1.5 rounded-full bg-brand-coral px-4 py-2 text-xs font-bold text-white shadow-pop-coral disabled:opacity-60"
+            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-brand-gold px-4 text-sm font-bold text-accent-foreground transition-[filter] hover:brightness-105 disabled:opacity-60"
           >
             {coverMutation.isPending ? (
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -104,7 +104,7 @@ export function CoverImagePicker({
             whileTap={uploadMutation.isPending ? undefined : { scale: 0.95 }}
             whileHover={uploadMutation.isPending ? undefined : { scale: 1.03 }}
             transition={{ type: "spring", stiffness: 450, damping: 28 }}
-            className="inline-flex items-center gap-1.5 rounded-full border border-white/40 bg-white/10 px-4 py-2 text-xs font-bold text-white backdrop-blur-sm disabled:opacity-60"
+            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-white/30 bg-black/25 px-4 text-sm font-semibold text-white backdrop-blur-sm disabled:opacity-60"
           >
             {uploadMutation.isPending ? (
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />

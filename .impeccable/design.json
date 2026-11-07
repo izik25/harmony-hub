@@ -1,0 +1,303 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-07T16:23:11.246Z",
+  "title": "Design System: Studio26",
+  "extensions": {
+    "colorMeta": {
+      "night-ink": {
+        "role": "neutral",
+        "displayName": "Night Ink",
+        "canonical": "oklch(0.155 0.014 280)"
+      },
+      "stage-panel": {
+        "role": "neutral",
+        "displayName": "Stage Panel",
+        "canonical": "oklch(0.205 0.016 280)"
+      },
+      "raised-panel": {
+        "role": "neutral",
+        "displayName": "Raised Panel",
+        "canonical": "oklch(0.225 0.016 280)"
+      },
+      "quiet-panel": {
+        "role": "neutral",
+        "displayName": "Quiet Panel",
+        "canonical": "oklch(0.25 0.016 280)"
+      },
+      "paper-white": {
+        "role": "neutral",
+        "displayName": "Paper White",
+        "canonical": "oklch(0.965 0.006 85)"
+      },
+      "haze-text": {
+        "role": "neutral",
+        "displayName": "Haze",
+        "canonical": "oklch(0.74 0.016 275)"
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(1 0 0 / 0.09)"
+      },
+      "coral-fill": {
+        "role": "primary",
+        "displayName": "Record-Light Coral (fill)",
+        "canonical": "oklch(0.57 0.2 25)",
+        "tonalRamp": [
+          "oklch(0.25 0.09 25)",
+          "oklch(0.35 0.13 25)",
+          "oklch(0.45 0.17 25)",
+          "oklch(0.57 0.2 25)",
+          "oklch(0.65 0.18 26)",
+          "oklch(0.72 0.15 27)",
+          "oklch(0.82 0.1 28)",
+          "oklch(0.92 0.05 30)"
+        ]
+      },
+      "coral-text": {
+        "role": "primary",
+        "displayName": "Record-Light Coral (text)",
+        "canonical": "oklch(0.7 0.17 27)"
+      },
+      "marigold": {
+        "role": "secondary",
+        "displayName": "Meter Marigold",
+        "canonical": "oklch(0.82 0.15 88)",
+        "tonalRamp": [
+          "oklch(0.3 0.06 88)",
+          "oklch(0.42 0.09 88)",
+          "oklch(0.55 0.12 88)",
+          "oklch(0.68 0.14 88)",
+          "oklch(0.82 0.15 88)",
+          "oklch(0.87 0.12 88)",
+          "oklch(0.92 0.08 88)",
+          "oklch(0.96 0.04 88)"
+        ]
+      },
+      "marigold-ink": {
+        "role": "secondary",
+        "displayName": "Marigold Ink",
+        "canonical": "oklch(0.22 0.04 90)"
+      },
+      "indigo-fill": {
+        "role": "tertiary",
+        "displayName": "Cue Indigo (fill)",
+        "canonical": "oklch(0.38 0.13 275)"
+      },
+      "indigo-text": {
+        "role": "tertiary",
+        "displayName": "Cue Indigo (text)",
+        "canonical": "oklch(0.74 0.11 275)"
+      },
+      "teal-fill": {
+        "role": "tertiary",
+        "displayName": "Monitor Teal (fill)",
+        "canonical": "oklch(0.52 0.1 195)"
+      },
+      "teal-text": {
+        "role": "tertiary",
+        "displayName": "Monitor Teal (text)",
+        "canonical": "oklch(0.74 0.11 195)"
+      },
+      "danger-fill": {
+        "role": "error",
+        "displayName": "Danger (fill)",
+        "canonical": "oklch(0.55 0.21 25)"
+      },
+      "danger-text": {
+        "role": "error",
+        "displayName": "Danger (text)",
+        "canonical": "oklch(0.7 0.18 22)"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Page title",
+        "purpose": "Every screen title (page-title utility)."
+      },
+      "readout": {
+        "displayName": "Readout",
+        "purpose": "Unbounded numerals: prizes, balances, big counts."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section and card titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Descriptions, rows, messages."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Buttons, chips, slider and nav labels."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "11px metadata under rows."
+      },
+      "micro": {
+        "displayName": "Micro",
+        "purpose": "10px nav labels only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "pop",
+        "value": "0 1px 2px oklch(0 0 0 / 0.3), 0 10px 28px -8px oklch(0 0 0 / 0.55)",
+        "purpose": "Default card/section separation."
+      },
+      {
+        "name": "pop-lg",
+        "value": "0 24px 60px -16px oklch(0 0 0 / 0.7)",
+        "purpose": "Hover lifts and dialogs."
+      },
+      {
+        "name": "pop-coral",
+        "value": "0 10px 28px -6px oklch(0.57 0.2 25 / 0.55)",
+        "purpose": "Record-light glow under the one primary action."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-snappy",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Presses, reveals, state changes."
+      },
+      {
+        "name": "ease-bounce",
+        "value": "cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "purpose": "Pop-in of new elements."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "column",
+        "value": "520px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one coral action per screen, with the record-light glow.",
+      "html": "<button class=\"ds-btn-primary\">Publish</button>",
+      "css": ".ds-btn-primary { background: oklch(0.57 0.2 25); color: #fff; border: 0; border-radius: 12px; height: 48px; padding: 0 20px; font: 700 14px Rubik, sans-serif; box-shadow: 0 10px 28px -6px oklch(0.57 0.2 25 / 0.55); transition: transform .15s cubic-bezier(0.16,1,0.3,1); cursor: pointer; } .ds-btn-primary:active { transform: scale(0.94); } .ds-btn-primary:focus-visible { outline: 2px solid oklch(0.7 0.17 27); outline-offset: 2px; }"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Secondary actions on the dark ground.",
+      "html": "<button class=\"ds-btn-quiet\">Export</button>",
+      "css": ".ds-btn-quiet { background: oklch(0.25 0.016 280); color: oklch(0.965 0.006 85); border: 1px solid oklch(1 0 0 / 0.09); border-radius: 12px; height: 48px; padding: 0 16px; background: transparent; font: 600 14px Rubik, sans-serif; transition: transform .15s cubic-bezier(0.16,1,0.3,1); cursor: pointer; } .ds-btn-quiet:hover { background: oklch(0.29 0.016 280); } .ds-btn-quiet:active { transform: scale(0.94); } .ds-btn-quiet:focus-visible { outline: 2px solid oklch(0.7 0.17 27); outline-offset: 2px; }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Filter and option pills; coral when selected.",
+      "html": "<span class=\"ds-chip\">Pop</span> <span class=\"ds-chip ds-chip--on\">Acoustic</span>",
+      "css": ".ds-chip { display: inline-block; background: oklch(0.25 0.016 280); color: oklch(0.74 0.016 275); border-radius: 9999px; padding: 6px 12px; font: 600 12px Rubik, sans-serif; } .ds-chip--on { background: oklch(0.57 0.2 25); color: #fff; }"
+    },
+    {
+      "name": "Studio Panel",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Rounded stage panel for sections.",
+      "html": "<section class=\"ds-card\"><strong>Manual mastering</strong><p>Fine-tune every stage yourself.</p></section>",
+      "css": ".ds-card { background: oklch(0.205 0.016 280); color: oklch(0.965 0.006 85); border: 1px solid oklch(1 0 0 / 0.09); border-radius: 22px; padding: 16px; box-shadow: 0 1px 2px oklch(0 0 0 / 0.3), 0 10px 28px -8px oklch(0 0 0 / 0.55); font: 14px Rubik, sans-serif; } .ds-card p { color: oklch(0.74 0.016 275); margin: 6px 0 0; }"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Pill well input.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search singers, songs\">",
+      "css": ".ds-input { background: oklch(0.25 0.016 280 / 0.6); color: oklch(0.965 0.006 85); border: 0; box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.09); border-radius: 12px; height: 48px; padding: 0 16px; font: 14px Rubik, sans-serif; width: 260px; } .ds-input::placeholder { color: oklch(0.74 0.016 275); } .ds-input:focus-visible { outline: none; box-shadow: inset 0 0 0 1px oklch(0.7 0.17 27); }"
+    },
+    {
+      "name": "Studio Slider",
+      "kind": "custom",
+      "refersTo": "slider",
+      "description": "Scroll-safe value row: label, mono marigold value, coral fill.",
+      "html": "<div class=\"ds-slider\"><div class=\"ds-slider__head\"><span>Reverb</span><span class=\"ds-slider__val\">12</span></div><div class=\"ds-slider__track\"><div class=\"ds-slider__fill\" style=\"width:12%\"></div><div class=\"ds-slider__thumb\" style=\"left:12%\"></div></div></div>",
+      "css": ".ds-slider { width: 280px; font: 12px Rubik, sans-serif; color: oklch(0.965 0.006 85); } .ds-slider__head { display: flex; justify-content: space-between; margin-bottom: 10px; } .ds-slider__val { font-family: Unbounded, Rubik, sans-serif; font-weight: 700; color: oklch(0.82 0.15 88); } .ds-slider__track { position: relative; height: 6px; border-radius: 9999px; background: oklch(0.25 0.016 280); } .ds-slider__fill { position: absolute; inset-block: 0; inset-inline-start: 0; border-radius: inherit; background: oklch(0.57 0.2 25); } .ds-slider__thumb { position: absolute; top: 50%; width: 20px; height: 20px; margin-left: -10px; transform: translateY(-50%); border-radius: 50%; background: #fff; box-shadow: 0 1px 4px oklch(0 0 0 / 0.5); }"
+    },
+    {
+      "name": "Bottom Nav",
+      "kind": "nav",
+      "refersTo": "nav-create",
+      "description": "Five slots, marigold active item, raised coral create button.",
+      "html": "<nav class=\"ds-nav\"><span>Home</span><span class=\"ds-nav__on\">Explore</span><span class=\"ds-nav__create\">+</span><span>Contests</span><span>Me</span></nav>",
+      "css": ".ds-nav { display: grid; grid-template-columns: repeat(5, 1fr); align-items: end; width: 340px; padding: 8px; background: oklch(0.205 0.016 280 / 0.82); border-top: 1px solid oklch(1 0 0 / 0.09); font: 500 10px Rubik, sans-serif; color: oklch(0.74 0.016 275); text-align: center; } .ds-nav__on { color: oklch(0.82 0.15 88); transform: translateY(-2px); } .ds-nav__create { justify-self: center; display: grid; place-items: center; width: 56px; height: 56px; margin-top: -24px; border-radius: 26px; background: oklch(0.57 0.2 25); color: #fff; font-size: 28px; box-shadow: 0 10px 28px -6px oklch(0.57 0.2 25 / 0.55); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Night Studio",
+    "overview": "Studio26 feels like a recording room after dark. The surfaces are near-black with a faint violet cast, the panels look like gear racks lit from inside, and the color sits where the signal is: a coral record light, a marigold meter needle, and an indigo or teal cue light. It matches the logo, which is black, chrome, and neon. The UI is dark-only, by the owner's decision on 2026-10-16. There is no light mode, and none should be added.",
+    "keyCharacteristics": [
+      "Dark-only ground with violet-tinted neutrals (hue 275–280), never pure black or grey.",
+      "Coral is the action and \"on air\" color, and marigold is the active, selected, or value color.",
+      "Firm corners: 12px buttons, 22px panels, pills only for chips and tags; a hairline white border at 9% opacity.",
+      "Rubik for every word in every script; Unbounded only for numeric readouts (prizes, coins, counts).",
+      "The level meter (gold body, coral peak) is the signature motif.",
+      "Exponential settle on touch (`--ease-snappy`), no bounce."
+    ],
+    "rules": [
+      {
+        "name": "The Two-Shade Rule",
+        "body": "Colored text uses the text shades (`text-brand-coral`, `text-brand-indigo`, `text-brand-teal`, `text-danger`). Never use core `text-primary` or `text-destructive`, because those are the fill shades and fail contrast on the dark ground. Every text/fill pair must reach WCAG AA 4.5:1.",
+        "section": "colors"
+      },
+      {
+        "name": "The Gold Label Rule",
+        "body": "Anything filled with marigold takes the dark marigold-ink label. White on gold is never allowed.",
+        "section": "colors"
+      },
+      {
+        "name": "The Arabic Joining Rule",
+        "body": "Arabic text gets no letter-spacing, ever. `:lang(ar)` resets it globally, so don't fight that reset.",
+        "section": "typography"
+      },
+      {
+        "name": "The Bidi Rule",
+        "body": "User-written text (titles, bios, comments, handles, messages) gets `bidi-auto`, so its own direction wins inside an RTL or LTR page.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Glow Rule",
+        "body": "Only the primary action on a screen gets the coral glow.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Scroll-Safe Control Rule",
+        "body": "Any control that sits inside a scrolling list and changes a value (sliders, steppers, toggles in long panels) must not react to a touch that starts a scroll. Value controls on touch begin only after intent is clear: a horizontal drag past a small threshold. Never use a bare `<input type=\"range\">` in a scrolling panel on mobile.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do pair every fill with its matching label shade (white on coral, indigo, or teal; marigold-ink on marigold).",
+      "Do use the text shades for colored text on the dark ground.",
+      "Do give the primary action on a screen the coral fill and glow, and only that one.",
+      "Do use logical spacing and `text-start` so layouts mirror in RTL.",
+      "Do set prizes, balances and big counts in Unbounded (`font-numeric`) so they scan as instruments.",
+      "Do group list rows into one `list-group` panel."
+    ],
+    "donts": [
+      "Don't add a light theme or light surfaces.",
+      "Don't stack look-alike cards for list items, or decorate with blurred colour blobs and floating icons.",
+      "Don't show a fake waveform: draw the take's real envelope or nothing.",
+      "Don't use `text-primary` or `text-destructive` for text.",
+      "Don't put white text on marigold.",
+      "Don't add letter-spacing to Arabic.",
+      "Don't let a value control change on a scroll gesture or an accidental tap.",
+      "Don't invent social proof (counts, testimonials, label logos). Studio26 is pre-launch."
+    ]
+  }
+}

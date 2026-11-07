@@ -1,69 +1,44 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
-import { useTimeAgo } from "@/hooks/use-locale-format";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
+import { ConversationList } from "@/components/ConversationList";
 import { listConversations } from "@/functions/messages";
 
 export const Route = createFileRoute("/messages")({
   component: MessagesPage,
 });
 
-const staggerClasses = [
-  "stagger-1",
-  "stagger-2",
-  "stagger-3",
-  "stagger-4",
-  "stagger-5",
-  "stagger-6",
-];
-
 function MessagesPage() {
   const { t } = useTranslation();
-  const timeAgo = useTimeAgo();
+  const navigate = useNavigate();
   const { data: conversations } = useQuery({
     queryKey: ["conversations"],
     queryFn: () => listConversations(),
   });
 
+  // On desktop the inbox is a two-pane messenger: open the latest conversation beside the list
+  // (the thread route renders both) instead of one list floating on a wide canvas. Phones and
+  // tablets keep the list as its own screen.
+  const latestId = conversations?.[0]?.id;
+  useEffect(() => {
+    if (!latestId) return;
+    if (!window.matchMedia("(min-width: 1024px)").matches) return;
+    navigate({
+      to: "/messages/$conversationId",
+      params: { conversationId: latestId },
+      replace: true,
+    });
+  }, [latestId, navigate]);
+
   return (
     <AppShell>
       <TopBar />
-      <div className="px-4 pt-3 pb-6">
-        <h1 className="font-display text-2xl font-bold">{t("messages.title")}</h1>
-        {conversations?.length === 0 && (
-          <p className="mt-6 text-center text-sm text-muted-foreground">{t("messages.empty")}</p>
-        )}
-        <ul className="mt-4 divide-y divide-border rounded-2xl border border-border bg-card shadow-pop">
-          {conversations?.map((c, i) => (
-            <li key={c.id} className={`animate-fade-up ${staggerClasses[i % 6]}`}>
-              <Link
-                to="/messages/$conversationId"
-                params={{ conversationId: c.id }}
-                className="flex items-center gap-3 px-3 py-3 hover-lift"
-              >
-                <img src={c.other.avatarUrl} className="h-11 w-11 rounded-full" alt="" />
-                <div className="flex-1 overflow-hidden">
-                  <p className="text-sm font-semibold">{c.other.name}</p>
-                  <p className="bidi-auto line-clamp-1 text-xs text-muted-foreground">
-                    {c.lastMessage ?? "…"}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  <span className="text-[10px] text-muted-foreground">
-                    {timeAgo(c.lastMessageAt)}
-                  </span>
-                  {c.unreadCount > 0 && (
-                    <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1 text-[10px] font-bold text-white">
-                      {c.unreadCount}
-                    </span>
-                  )}
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
+      <div className="px-4 pb-8 pt-6">
+        <h1 className="page-title">{t("messages.title")}</h1>
+        <ConversationList className="mt-5" />
       </div>
     </AppShell>
   );

@@ -221,8 +221,8 @@ function UploadPage() {
   return (
     <AppShell>
       <TopBar />
-      <div className="px-4 pt-3 pb-6">
-        <h1 className="font-display text-2xl font-bold">{t("upload.title")}</h1>
+      <div className="px-4 pb-8 pt-6">
+        <h1 className="page-title">{t("upload.title")}</h1>
 
         <p className="mt-4 mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           {t("upload.coverImage")}
@@ -298,7 +298,7 @@ function UploadPage() {
               whileTap={uploadFileMutation.isPending ? undefined : { scale: 0.95 }}
               whileHover={uploadFileMutation.isPending ? undefined : { scale: 1.03 }}
               transition={{ type: "spring", stiffness: 450, damping: 28 }}
-              className="mt-3 rounded-full bg-brand-coral px-5 py-2 text-xs font-bold text-white shadow-pop-coral disabled:opacity-60"
+              className="mt-3 h-10 rounded-xl border border-[var(--hairline-strong)] px-5 text-sm font-semibold transition-colors hover:bg-muted/60 disabled:opacity-60"
             >
               {t("upload.chooseFile")}
             </motion.button>
@@ -313,10 +313,10 @@ function UploadPage() {
             <button
               key={tp.key}
               onClick={() => setType(tp.key)}
-              className={`press-scale flex flex-col items-center gap-1 rounded-2xl border p-3 text-[11px] font-semibold transition-colors ${
+              className={`press-scale flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-semibold transition-colors ${
                 type === tp.key
-                  ? "border-primary bg-primary/10 text-brand-coral"
-                  : "border-border bg-card/60"
+                  ? "border-[var(--coral-text)] bg-brand-coral/10 text-brand-coral"
+                  : "border-border bg-card/60 hover:border-[var(--hairline-strong)]"
               }`}
             >
               <tp.icon className="h-4 w-4" /> {t(tp.labelKey)}
@@ -402,19 +402,17 @@ function UploadPage() {
           </fieldset>
 
           <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              {t("upload.visibility")}
-            </p>
+            <p className="section-label mb-2">{t("upload.visibility")}</p>
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setV("public")}
-                className={`press-scale flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold transition-colors ${visibility === "public" ? "border-primary bg-primary/10 text-brand-coral" : "border-border bg-card/60"}`}
+                className={`press-scale flex h-12 items-center justify-center gap-2 rounded-xl border text-sm font-semibold transition-colors ${visibility === "public" ? "border-[var(--coral-text)] bg-brand-coral/10 text-brand-coral" : "border-border bg-card/60 hover:border-[var(--hairline-strong)]"}`}
               >
                 <Globe className="h-4 w-4" /> {t("upload.public")}
               </button>
               <button
                 onClick={() => setV("private")}
-                className={`press-scale flex items-center justify-center gap-2 rounded-2xl border p-3 text-sm font-semibold transition-colors ${visibility === "private" ? "border-primary bg-primary/10 text-brand-coral" : "border-border bg-card/60"}`}
+                className={`press-scale flex h-12 items-center justify-center gap-2 rounded-xl border text-sm font-semibold transition-colors ${visibility === "private" ? "border-[var(--coral-text)] bg-brand-coral/10 text-brand-coral" : "border-border bg-card/60 hover:border-[var(--hairline-strong)]"}`}
               >
                 <Lock className="h-4 w-4" /> {t("upload.private")}
               </button>
@@ -428,14 +426,11 @@ function UploadPage() {
           whileTap={!canPublish ? undefined : { scale: 0.97 }}
           whileHover={!canPublish ? undefined : { scale: 1.01, y: -1 }}
           transition={{ type: "spring", stiffness: 450, damping: 28 }}
-          className="mt-6 w-full rounded-full bg-brand-coral py-3 text-sm font-bold text-white shadow-pop-coral disabled:opacity-50"
+          className="mt-6 h-14 w-full rounded-xl bg-brand-coral text-base font-bold text-white shadow-pop-coral transition-[filter] hover:brightness-110 disabled:opacity-50"
         >
           {publishMutation.isPending ? t("upload.publishing") : t("common.publish")}
         </motion.button>
       </div>
-
-      <style>{`.input { width: 100%; border-radius: 12px; background: var(--color-input); padding: 10px 12px; font-size: 14px; outline: none; border: 1px solid var(--color-border); }
-      .input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 25%, transparent); }`}</style>
 
       <PublishEverywhereModal
         open={!!justPublishedId && !!publishedPost}

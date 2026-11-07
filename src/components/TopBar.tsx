@@ -54,7 +54,7 @@ export function TopBar({ transparent = false }: { transparent?: boolean }) {
       className={`sticky top-0 z-30 flex h-14 items-center justify-between gap-2 ps-4 pe-2 lg:hidden ${
         transparent
           ? "bg-gradient-to-b from-black/55 via-black/15 to-transparent"
-          : "glass border-b border-border"
+          : "nav-surface border-b border-border md:border-b-0 md:[box-shadow:0_0_0_100vmax_var(--card),0_1px_0_100vmax_var(--border)] md:[clip-path:inset(0_-100vmax_-1px)]"
       }`}
     >
       <Link

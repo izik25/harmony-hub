@@ -34,14 +34,18 @@
   --color-brand-indigo: var(--brand-indigo);
   --color-brand-gold: var(--brand-gold);
   --color-brand-teal: var(--brand-teal);
-  /* Latin faces first; the browser falls through per glyph to the Hebrew/Arabic faces (neither
-     Space Grotesk nor Inter has those scripts, so without them RTL text dropped to the OS font). */
-  --font-display: "Space Grotesk", "Rubik", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "Inter", "Heebo", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
+  /* One family for every script: Rubik covers Latin, Cyrillic, Hebrew and Arabic, so a Hebrew
+     heading and its English neighbour share metrics and voice. CJK falls through to the OS face. */
+  --font-display: "Rubik", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Rubik", ui-sans-serif, system-ui, sans-serif;
+  /* Instrument readouts: counts, coins, timers, slider values. Digits only, so script never matters. */
+  --font-numeric: "Unbounded", "Rubik", ui-sans-serif, sans-serif;
+  --font-mono: "Rubik", ui-monospace, monospace;
 }
 
 :root {
-  --radius: 1.125rem;
+  /* Tighter corners than the original 18px: panels read as hardware, not bubbles. */
+  --radius: 0.875rem;
   color-scheme: dark;
 
   /* Night Studio palette — dark-first, matching the neon/chrome logo. Every text/fill pair below
@@ -77,12 +81,17 @@
   --teal-text: oklch(0.74 0.11 195);
   --danger-text: oklch(0.7 0.18 22);
 
-  --shadow-pop: 0 1px 2px oklch(0 0 0 / 0.3), 0 10px 28px -8px oklch(0 0 0 / 0.55);
-  --shadow-pop-lg: 0 24px 60px -16px oklch(0 0 0 / 0.7);
-  --shadow-pop-coral: 0 10px 28px -6px oklch(0.57 0.2 25 / 0.55);
+  /* Panels are lit from the top edge (inner highlight) and barely lift — depth is tonal first. */
+  --shadow-pop: inset 0 1px 0 oklch(1 0 0 / 0.04), 0 1px 2px oklch(0 0 0 / 0.35);
+  --shadow-pop-lg: 0 18px 48px -18px oklch(0 0 0 / 0.75);
+  --shadow-pop-coral: 0 6px 18px -8px oklch(0.57 0.2 25 / 0.5);
+
+  --surface-sunken: oklch(0.13 0.012 280);
+  --hairline-strong: oklch(1 0 0 / 0.14);
 
   --ease-snappy: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Exponential ease-out with no overshoot (was a bounce): settles like a fader, not a spring toy. */
+  --ease-bounce: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @layer base {
@@ -90,11 +99,43 @@
   html, body { background-color: var(--color-background); color: var(--color-foreground); }
   html { scroll-behavior: smooth; }
   body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
-  h1, h2, h3, h4, .font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
+  h1, h2, h3, h4, .font-display { font-family: var(--font-display); letter-spacing: -0.015em; font-weight: 700; text-wrap: balance; }
+  .font-mono { font-variant-numeric: tabular-nums; }
   /* Any letter-spacing breaks the joining of connected Arabic script. */
   :lang(ar) * { letter-spacing: 0 !important; }
   /* Tight display tracking crowds CJK characters and breaks Devanagari's joined headline. */
   :is(:lang(ja), :lang(zh), :lang(ko), :lang(hi)) :is(h1, h2, h3, h4, .font-display) { letter-spacing: 0; }
+
+  /* Browser surfaces carry the palette too. */
+  ::selection { background: oklch(0.57 0.2 25 / 0.45); color: var(--foreground); }
+  :root { caret-color: var(--coral-text); accent-color: var(--brand-coral); scrollbar-color: oklch(1 0 0 / 0.16) transparent; }
+}
+
+/* Decorative loops stop for people who ask for less motion; state changes stay. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin-fast, .animate-cover-breathe, .animate-float-avatar, .animate-ring-pulse { animation: none !important; }
+  html { scroll-behavior: auto; }
+}
+
+/* Big numbers set like instrument readouts. */
+@utility font-numeric {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+/* Quiet label naming a group of rows (not a kicker over a heading). */
+@utility section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+/* A grouped list: one panel, rows divided by hairlines. Replaces a stack of separate cards. */
+@utility list-group {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  overflow: hidden;
+  & > * + * { border-top: 1px solid var(--border); }
 }
 
 /* Brand fills (deep shades, for white labels) and brand text (light shades, for dark surfaces) */
@@ -190,3 +231,53 @@
 @utility stagger-4 { animation-delay: 0.16s; }
 @utility stagger-5 { animation-delay: 0.2s; }
 @utility stagger-6 { animation-delay: 0.24s; }
+
+/* LevelMeter: bars scale from their base like a channel meter. */
+@keyframes meter-bounce {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.45); }
+}
+.meter-bar { transform-origin: bottom; }
+.meter-bar--live { animation: meter-bounce 1s var(--ease-snappy) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .meter-bar--live { animation: none; }
+}
+
+/* One page title for every screen: same size, weight and rhythm everywhere. */
+@utility page-title {
+  font-family: var(--font-display);
+  font-size: 1.875rem;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+@utility bg-indigo-text { background-color: var(--indigo-text); }
+@utility bg-teal-text { background-color: var(--teal-text); }
+
+/* The one text field. (Was redefined inline per screen: pills on auth, 12px elsewhere.) */
+@layer components {
+  .input {
+    width: 100%;
+    min-height: 3rem;
+    border-radius: 0.75rem;
+    background: var(--color-input);
+    padding: 0.75rem 1rem;
+    font-size: 1rem; /* 16px: iOS doesn't zoom the page on focus */
+    color: var(--foreground);
+    border: 1px solid var(--border);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .input::placeholder { color: var(--muted-foreground); }
+  .input:hover { border-color: var(--hairline-strong); }
+  .input:focus-visible, .input:focus {
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px oklch(0.7 0.17 27 / 0.22);
+  }
+  @media (min-width: 768px) { .input { font-size: 0.875rem; } }
+}
+
+/* Fixed bars over scrolling content: fully opaque, so no text underneath ever reads through. */
+@utility nav-surface {
+  background: var(--card);
+}

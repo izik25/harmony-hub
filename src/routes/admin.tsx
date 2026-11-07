@@ -6,16 +6,7 @@ import { useFormatNumber, useTimeAgo } from "@/hooks/use-locale-format";
 import {
   ShieldCheck,
   Home,
-  Users,
-  Music2,
-  Heart,
-  MessageSquare,
-  UserPlus,
-  Gift,
-  Coins,
   Trophy,
-  Radio,
-  GraduationCap,
   Megaphone,
   Check,
   X,
@@ -23,6 +14,7 @@ import {
   Plus,
   Pencil,
   Trash2,
+  ChevronLeft,
 } from "lucide-react";
 import {
   AreaChart,
@@ -63,6 +55,7 @@ import {
   updateCompetition,
   deleteCompetition,
 } from "@/functions/admin";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -91,29 +84,29 @@ function AdminPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur lg:px-8">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-brand-coral" />
-          <h1 className="font-display text-lg font-bold">ניהול · Studio26</h1>
+          <h1 className="text-lg font-bold">ניהול · Studio26</h1>
         </div>
         <Link
           to="/"
-          className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold press-scale hover:border-primary/50"
+          className="flex h-10 items-center gap-1.5 rounded-xl border border-[var(--hairline-strong)] px-3 text-sm font-semibold transition-colors hover:bg-card press-scale"
         >
           <Home className="h-3.5 w-3.5" /> חזרה לאפליקציה
         </Link>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className="mx-auto max-w-6xl px-4 py-8 lg:px-8">
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-          <TabsList>
+          <TabsList className="h-auto max-w-full flex-wrap justify-start gap-1 rounded-xl bg-[var(--surface-sunken)] ring-1 ring-border">
             <TabsTrigger value="overview">סקירה כללית</TabsTrigger>
             <TabsTrigger value="users">משתמשים</TabsTrigger>
             <TabsTrigger value="competitions">תחרויות</TabsTrigger>
             <TabsTrigger value="promotions">קידומים ומודעות</TabsTrigger>
           </TabsList>
           <TabsContent value="overview">
-            <OverviewTab />
+            <OverviewTab onOpenPromotions={() => setTab("promotions")} />
           </TabsContent>
           <TabsContent value="users">
             <UsersTab />
@@ -130,86 +123,117 @@ function AdminPage() {
   );
 }
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  highlight,
+/** One panel per group of numbers; cells split by hairlines, values set as readouts. */
+function StatGroup({
+  title,
+  items,
 }: {
-  icon: typeof Users;
-  label: string;
-  value: number | undefined;
-  highlight?: boolean;
+  title: string;
+  items: { label: string; value: number | undefined }[];
 }) {
   return (
-    <div
-      className={`rounded-2xl border p-3 shadow-pop ${
-        highlight && value ? "border-brand-coral bg-brand-coral/5" : "border-border bg-card"
-      }`}
-    >
-      <Icon className="h-4 w-4 text-muted-foreground" />
-      <p className="mt-1.5 font-display text-xl font-bold tabular-nums">
-        {value === undefined ? "—" : formatCount(value)}
-      </p>
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-    </div>
+    <section>
+      <SectionLabel>{title}</SectionLabel>
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[18px] border border-border bg-border sm:grid-cols-3 lg:grid-cols-5">
+        {items.map((it) => (
+          <div key={it.label} className="bg-card px-4 py-4">
+            <p className="font-numeric text-2xl font-bold">
+              {it.value === undefined ? "—" : formatCount(it.value)}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{it.label}</p>
+          </div>
+        ))}
+        {/* Close the last row of each breakpoint so the hairline grid has no bare gap. */}
+        {Array.from({ length: 4 }).map((_, i) => {
+          const phone = (2 - (items.length % 2)) % 2;
+          const tablet = (3 - (items.length % 3)) % 3;
+          const desk = (5 - (items.length % 5)) % 5;
+          return (
+            <div
+              key={`pad-${i}`}
+              aria-hidden
+              className={`bg-card ${i < phone ? "block" : "hidden"} ${i < tablet ? "sm:block" : "sm:hidden"} ${i < desk ? "lg:block" : "lg:hidden"}`}
+            />
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
 function SectionLabel({ children }: { children: string }) {
-  return (
-    <h2 className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-      {children}
-    </h2>
-  );
+  return <h2 className="section-label mb-3">{children}</h2>;
 }
+
+// Every trend is a single series on its own chart, so one hue (the meter marigold) serves all
+// three and the title names the series. Checked: 3:1+ contrast against the card surface.
+const TREND_COLOR = "oklch(0.82 0.15 88)";
+const AXIS_TEXT = "oklch(0.74 0.016 275)";
 
 function TrendChart({
   id,
   title,
   data,
-  color,
 }: {
   id: string;
   title: string;
   data: { day: string; n: number }[];
-  color: string;
 }) {
+  const total = data.reduce((sum, d) => sum + d.n, 0);
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 shadow-pop">
-      <h3 className="text-sm font-semibold">{title}</h3>
-      <div className="mt-2 h-44">
+    <div className="rounded-[18px] border border-border bg-card p-4 shadow-pop">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <p className="font-numeric text-lg font-bold">{formatCount(total)}</p>
+      </div>
+      <div dir="ltr" className="mt-3 h-40">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+          <AreaChart data={data} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
             <defs>
               <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={color} stopOpacity={0.4} />
-                <stop offset="95%" stopColor={color} stopOpacity={0} />
+                <stop offset="0%" stopColor={TREND_COLOR} stopOpacity={0.28} />
+                <stop offset="100%" stopColor={TREND_COLOR} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="currentColor"
-              className="text-border/50"
-              vertical={false}
-            />
+            <CartesianGrid stroke="oklch(1 0 0 / 0.06)" vertical={false} />
             <XAxis
               dataKey="day"
               tickFormatter={(d: string) => d.slice(5)}
-              tick={{ fontSize: 10 }}
-              interval={4}
+              tick={{ fontSize: 10, fill: AXIS_TEXT }}
+              axisLine={false}
+              tickLine={false}
+              interval={6}
+              padding={{ left: 12, right: 4 }}
               minTickGap={10}
             />
-            <YAxis allowDecimals={false} width={30} tick={{ fontSize: 10 }} />
+            <YAxis
+              allowDecimals={false}
+              width={30}
+              tick={{ fontSize: 10, fill: AXIS_TEXT }}
+              axisLine={false}
+              tickLine={false}
+            />
             <Tooltip
+              cursor={{ stroke: "oklch(1 0 0 / 0.25)", strokeWidth: 1 }}
               contentStyle={{
                 fontSize: 12,
                 borderRadius: 12,
-                border: "1px solid var(--color-border)",
-                background: "var(--color-background)",
+                border: "1px solid oklch(1 0 0 / 0.14)",
+                background: "var(--popover)",
+                color: "var(--foreground)",
               }}
+              labelStyle={{ color: "var(--muted-foreground)" }}
+              itemStyle={{ color: "var(--foreground)" }}
             />
-            <Area type="monotone" dataKey="n" stroke={color} fill={`url(#${id})`} strokeWidth={2} />
+            <Area
+              type="monotone"
+              dataKey="n"
+              name={title}
+              stroke={TREND_COLOR}
+              fill={`url(#${id})`}
+              strokeWidth={2}
+              activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--card)" }}
+            />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -217,64 +241,42 @@ function TrendChart({
   );
 }
 
-function OverviewTab() {
+function OverviewTab({ onOpenPromotions }: { onOpenPromotions: () => void }) {
   const { data } = useQuery({ queryKey: ["admin", "overview"], queryFn: () => getAdminOverview() });
   const t = data?.totals;
+  const pending = t?.promotionsPending ?? 0;
 
   return (
-    <div className="mt-4 space-y-6">
-      <section>
-        <SectionLabel>קהילה</SectionLabel>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          <StatCard icon={Users} label="משתמשים" value={t?.users} />
-          <StatCard icon={Music2} label="פוסטים" value={t?.posts} />
-          <StatCard icon={Heart} label="לייקים" value={t?.likes} />
-          <StatCard icon={MessageSquare} label="תגובות" value={t?.comments} />
-          <StatCard icon={UserPlus} label="עוקבים" value={t?.follows} />
-        </div>
-      </section>
+    <div className="mt-6 space-y-8">
+      {/* What needs a decision comes first, not buried in a grid of equals. */}
+      {pending > 0 && (
+        <button
+          onClick={onOpenPromotions}
+          className="flex w-full items-center gap-4 rounded-[18px] border border-brand-coral/40 bg-brand-coral/10 px-5 py-4 text-start transition-colors hover:bg-brand-coral/15"
+        >
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-coral text-white">
+            <Megaphone className="h-5 w-5" />
+          </span>
+          <span className="flex-1">
+            <span className="block font-semibold">
+              {formatCount(pending)} בקשות קידום ממתינות לאישור
+            </span>
+            <span className="block text-sm text-muted-foreground">לחץ כדי לעבור לטיפול</span>
+          </span>
+          <ChevronLeft className="h-5 w-5 text-brand-coral" />
+        </button>
+      )}
 
-      <section>
-        <SectionLabel>כלכלה</SectionLabel>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          <StatCard icon={Gift} label="מתנות שנשלחו" value={t?.giftsSent} />
-          <StatCard icon={Coins} label="מטבעות שהוענקו במתנות" value={t?.coinsGifted} />
-          <StatCard
-            icon={Coins}
-            label="מטבעות במחזור (כל המשתמשים)"
-            value={t?.coinsInCirculation}
-          />
-        </div>
-      </section>
-
-      <section>
-        <SectionLabel>תחרויות ופעילות</SectionLabel>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          <StatCard icon={Trophy} label="תחרויות" value={t?.competitions} />
-          <StatCard icon={Trophy} label="השתתפויות בתחרויות" value={t?.competitionEntries} />
-          <StatCard icon={Trophy} label="הצבעות" value={t?.competitionVotes} />
-          <StatCard icon={MessageSquare} label="הודעות פרטיות" value={t?.messages} />
-          <StatCard icon={MessageSquare} label="שיחות" value={t?.conversations} />
-          <StatCard icon={Radio} label="לייבים פעילים כרגע" value={t?.liveActive} />
-          <StatCard icon={Radio} label="סה״כ שידורי לייב" value={t?.liveTotal} />
-          <StatCard icon={Music2} label="שירי קריוקי במאגר" value={t?.karaokeTracks} />
-          <StatCard icon={GraduationCap} label="אודישנים" value={t?.auditions} />
-        </div>
-      </section>
-
-      <section>
-        <SectionLabel>קידומים ומודעות</SectionLabel>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          <StatCard
-            icon={Megaphone}
-            label="ממתינים לאישור"
-            value={t?.promotionsPending}
-            highlight
-          />
-          <StatCard icon={Megaphone} label="מאושרים" value={t?.promotionsApproved} />
-          <StatCard icon={Megaphone} label="נדחו" value={t?.promotionsRejected} />
-        </div>
-      </section>
+      <StatGroup
+        title="קהילה"
+        items={[
+          { label: "משתמשים", value: t?.users },
+          { label: "פוסטים", value: t?.posts },
+          { label: "לייקים", value: t?.likes },
+          { label: "תגובות", value: t?.comments },
+          { label: "עוקבים", value: t?.follows },
+        ]}
+      />
 
       <section>
         <SectionLabel>מגמות — 30 הימים האחרונים</SectionLabel>
@@ -283,27 +285,58 @@ function OverviewTab() {
             id="admin-trend-users"
             title="משתמשים חדשים"
             data={data?.trends.newUsers ?? []}
-            color="#f97362"
           />
           <TrendChart
             id="admin-trend-posts"
             title="פוסטים חדשים"
             data={data?.trends.newPosts ?? []}
-            color="#6c8cff"
           />
           <TrendChart
             id="admin-trend-promos"
             title="בקשות קידום שהוגשו"
             data={data?.trends.promotionsSubmitted ?? []}
-            color="#f5b942"
           />
         </div>
       </section>
+
+      <StatGroup
+        title="כלכלה"
+        items={[
+          { label: "מתנות שנשלחו", value: t?.giftsSent },
+          { label: "מטבעות שהוענקו במתנות", value: t?.coinsGifted },
+          { label: "מטבעות במחזור (כל המשתמשים)", value: t?.coinsInCirculation },
+        ]}
+      />
+
+      <StatGroup
+        title="תחרויות ופעילות"
+        items={[
+          { label: "תחרויות", value: t?.competitions },
+          { label: "השתתפויות בתחרויות", value: t?.competitionEntries },
+          { label: "הצבעות", value: t?.competitionVotes },
+          { label: "הודעות פרטיות", value: t?.messages },
+          { label: "שיחות", value: t?.conversations },
+          { label: "לייבים פעילים כרגע", value: t?.liveActive },
+          { label: "סה״כ שידורי לייב", value: t?.liveTotal },
+          { label: "שירי קריוקי במאגר", value: t?.karaokeTracks },
+          { label: "אודישנים", value: t?.auditions },
+        ]}
+      />
+
+      <StatGroup
+        title="קידומים ומודעות"
+        items={[
+          { label: "ממתינים לאישור", value: t?.promotionsPending },
+          { label: "מאושרים", value: t?.promotionsApproved },
+          { label: "נדחו", value: t?.promotionsRejected },
+        ]}
+      />
     </div>
   );
 }
 
 function UsersTab() {
+  const { data: me } = useCurrentUser();
   const timeAgo = useTimeAgo();
   const formatNumber = useFormatNumber();
   const [query, setQuery] = useState("");
@@ -334,9 +367,86 @@ function UsersTab() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="חיפוש לפי שם, יוזרניים או אימייל..."
-        className="w-full max-w-sm rounded-full border border-border bg-input px-4 py-2 text-sm outline-none focus:border-primary"
+        aria-label="חיפוש משתמשים"
+        className="input max-w-sm"
       />
-      <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-pop">
+      {/* Phones and tablets: one row per person, actions under the identity. */}
+      <ul className="list-group lg:hidden">
+        {rows?.length === 0 && (
+          <li className="px-4 py-6 text-center text-sm text-muted-foreground">לא נמצאו משתמשים.</li>
+        )}
+        {rows?.map((u) => (
+          <li key={u.id} className="px-4 py-3.5">
+            <div className="flex items-center gap-3">
+              <img src={u.avatarUrl} className="h-10 w-10 shrink-0 rounded-full" alt="" />
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-2">
+                  <span className="truncate font-semibold">{u.name}</span>
+                  <span
+                    className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${
+                      u.role === "admin"
+                        ? "bg-brand-gold/15 text-brand-gold"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {u.role === "admin" ? "אדמין" : "משתמש"}
+                  </span>
+                </p>
+                <p className="bidi-auto truncate text-xs text-muted-foreground">
+                  @{u.handle} · {u.email || "—"}
+                </p>
+              </div>
+              <div className="shrink-0 text-end">
+                <p className="font-numeric text-sm font-bold">{formatNumber(u.coinsBalance)}</p>
+                <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <span
+                    aria-hidden
+                    className={`h-1.5 w-1.5 rounded-full ${u.isBanned ? "bg-[var(--danger-text)]" : "bg-teal-text"}`}
+                  />
+                  {u.isBanned ? "חסום" : "פעיל"}
+                </p>
+              </div>
+            </div>
+            {u.id !== me?.id && (
+              <div className="mt-3 flex gap-2 ps-[3.25rem]">
+                <button
+                  onClick={() => {
+                    const next = u.role === "admin" ? "user" : "admin";
+                    const ok = window.confirm(
+                      next === "admin"
+                        ? `לתת ל-${u.name} הרשאות אדמין מלאות?`
+                        : `להסיר את הרשאות האדמין של ${u.name}?`,
+                    );
+                    if (ok) roleMutation.mutate({ userId: u.id, role: next });
+                  }}
+                  disabled={roleMutation.isPending}
+                  className="h-9 rounded-lg border border-border px-3 text-xs font-semibold transition-colors hover:bg-muted/60 disabled:opacity-50"
+                >
+                  {u.role === "admin" ? "הסר הרשאת אדמין" : "הפוך לאדמין"}
+                </button>
+                <button
+                  onClick={() => {
+                    const ok = window.confirm(
+                      u.isBanned ? `לבטל את החסימה של ${u.name}?` : `לחסום את ${u.name}?`,
+                    );
+                    if (ok) banMutation.mutate({ userId: u.id, banned: !u.isBanned });
+                  }}
+                  disabled={banMutation.isPending}
+                  className={`h-9 rounded-lg border px-3 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                    u.isBanned
+                      ? "border-border"
+                      : "border-destructive/40 text-danger hover:bg-destructive/10"
+                  }`}
+                >
+                  {u.isBanned ? "בטל חסימה" : "חסום"}
+                </button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      <div className="hidden overflow-x-auto rounded-[18px] border border-border bg-card shadow-pop lg:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -375,46 +485,67 @@ function UsersTab() {
                   {formatNumber(u.coinsBalance)}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={u.role === "admin" ? "default" : "outline"}>
+                  <span
+                    className={`inline-flex rounded-md px-2 py-0.5 text-xs font-semibold ${
+                      u.role === "admin"
+                        ? "bg-brand-gold/15 text-brand-gold"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
                     {u.role === "admin" ? "אדמין" : "משתמש"}
-                  </Badge>
+                  </span>
                 </TableCell>
                 <TableCell>
-                  {u.isBanned ? (
-                    <Badge variant="destructive">חסום</Badge>
-                  ) : (
-                    <Badge variant="secondary">פעיל</Badge>
-                  )}
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium">
+                    <span
+                      aria-hidden
+                      className={`h-2 w-2 rounded-full ${u.isBanned ? "bg-[var(--danger-text)]" : "bg-teal-text"}`}
+                    />
+                    {u.isBanned ? "חסום" : "פעיל"}
+                  </span>
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                   {timeAgo(u.createdAt)}
                 </TableCell>
                 <TableCell>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      onClick={() =>
-                        roleMutation.mutate({
-                          userId: u.id,
-                          role: u.role === "admin" ? "user" : "admin",
-                        })
-                      }
-                      disabled={roleMutation.isPending}
-                      className="whitespace-nowrap rounded-full border border-border px-2.5 py-1 text-xs font-semibold press-scale hover:border-primary/50 disabled:opacity-50"
-                    >
-                      {u.role === "admin" ? "הסר הרשאת אדמין" : "הפוך לאדמין"}
-                    </button>
-                    <button
-                      onClick={() => banMutation.mutate({ userId: u.id, banned: !u.isBanned })}
-                      disabled={banMutation.isPending}
-                      className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold press-scale disabled:opacity-50 ${
-                        u.isBanned
-                          ? "border-border"
-                          : "border-destructive/40 text-danger hover:bg-destructive/10"
-                      }`}
-                    >
-                      {u.isBanned ? "בטל חסימה" : "חסום"}
-                    </button>
-                  </div>
+                  {u.id === me?.id ? (
+                    <span className="text-xs text-muted-foreground">זה החשבון שלך</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        onClick={() => {
+                          const next = u.role === "admin" ? "user" : "admin";
+                          // Admin rights are a one-click escalation: confirm first.
+                          const ok = window.confirm(
+                            next === "admin"
+                              ? `לתת ל-${u.name} הרשאות אדמין מלאות?`
+                              : `להסיר את הרשאות האדמין של ${u.name}?`,
+                          );
+                          if (ok) roleMutation.mutate({ userId: u.id, role: next });
+                        }}
+                        disabled={roleMutation.isPending}
+                        className="h-8 whitespace-nowrap rounded-lg border border-border px-2.5 text-xs font-semibold transition-colors hover:bg-muted/60 press-scale disabled:opacity-50"
+                      >
+                        {u.role === "admin" ? "הסר הרשאת אדמין" : "הפוך לאדמין"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          const ok = window.confirm(
+                            u.isBanned ? `לבטל את החסימה של ${u.name}?` : `לחסום את ${u.name}?`,
+                          );
+                          if (ok) banMutation.mutate({ userId: u.id, banned: !u.isBanned });
+                        }}
+                        disabled={banMutation.isPending}
+                        className={`h-8 whitespace-nowrap rounded-lg border px-2.5 text-xs font-semibold transition-colors press-scale disabled:opacity-50 ${
+                          u.isBanned
+                            ? "border-border"
+                            : "border-destructive/40 text-danger hover:bg-destructive/10"
+                        }`}
+                      >
+                        {u.isBanned ? "בטל חסימה" : "חסום"}
+                      </button>
+                    </div>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -494,7 +625,7 @@ function PromotionsTab() {
         </div>
         <button
           onClick={() => setNewOpen(true)}
-          className="flex items-center gap-1.5 rounded-full bg-brand-coral px-3 py-1.5 text-xs font-bold text-white shadow-pop-coral press-scale"
+          className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-brand-coral px-4 text-sm font-bold text-white transition-[filter] hover:brightness-110 press-scale"
         >
           <Plus className="h-3.5 w-3.5" /> מודעת ספונסר חדשה
         </button>
@@ -718,7 +849,7 @@ function NewSponsorAdDialog({
           <button
             onClick={() => createMutation.mutate()}
             disabled={createMutation.isPending || !title.trim()}
-            className="flex w-full items-center justify-center gap-2 rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-60"
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-coral text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-60"
           >
             {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             צור והפעל מודעה
@@ -805,77 +936,81 @@ function CompetitionsTab() {
         </p>
         <button
           onClick={() => setEditing("new")}
-          className="flex items-center gap-1.5 rounded-full bg-brand-coral px-3 py-1.5 text-xs font-bold text-white shadow-pop-coral press-scale"
+          className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-brand-coral px-4 text-sm font-bold text-white transition-[filter] hover:brightness-110 press-scale"
         >
           <Plus className="h-3.5 w-3.5" /> תחרות חדשה
         </button>
       </div>
 
       {rows?.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+        <div className="rounded-[18px] border border-dashed border-border p-10 text-center">
           <Trophy className="mx-auto h-8 w-8 text-brand-coral" />
           <p className="mt-2 text-sm text-muted-foreground">עדיין אין תחרויות.</p>
           <button
             onClick={() => setEditing("new")}
-            className="mt-4 rounded-full bg-brand-coral px-5 py-2 text-sm font-bold text-white shadow-pop-coral press-scale"
+            className="mt-4 h-11 rounded-xl bg-brand-coral px-5 text-sm font-bold text-white press-scale"
           >
             צור את התחרות הראשונה
           </button>
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className={rows?.length ? "list-group" : "hidden"}>
         {rows?.map((c) => (
           <div
             key={c.id}
-            className="flex gap-3 rounded-2xl border border-border bg-card p-3 shadow-pop"
+            className="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:gap-6"
           >
-            <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl">
-              <PostCoverBg hue={c.hue} seed={c.coverSeed} />
-            </div>
             <div className="min-w-0 flex-1">
               <p className="bidi-auto truncate font-semibold">{c.title}</p>
-              <p className="text-xs text-muted-foreground">
-                {STAGE_LABELS[c.stage as CompetitionStage] ?? c.stage} · <bdi>{c.prize}</bdi>
+              <p className="mt-1 flex flex-wrap items-baseline gap-x-3 text-xs text-muted-foreground">
+                <span>{STAGE_LABELS[c.stage as CompetitionStage] ?? c.stage}</span>
+                <bdi className="font-numeric text-sm font-bold text-brand-gold">{c.prize}</bdi>
+                <span>
+                  {formatNumber(c.entries)} הגשות · {formatNumber(c.votes)} הצבעות
+                </span>
               </p>
-              <p className="text-xs text-muted-foreground">
-                {formatNumber(c.entries)} הגשות · {formatNumber(c.votes)} הצבעות
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            </div>
+            <div className="flex items-center gap-3">
+              <div
+                role="group"
+                aria-label="סטטוס"
+                className="flex gap-0.5 rounded-lg bg-[var(--surface-sunken)] p-0.5 ring-1 ring-border"
+              >
                 {(Object.keys(COMPETITION_STATUS_LABELS) as CompetitionStatus[]).map((s) => (
                   <button
                     key={s}
                     onClick={() => c.status !== s && statusMutation.mutate({ row: c, status: s })}
                     disabled={statusMutation.isPending}
                     aria-pressed={c.status === s}
-                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold press-scale disabled:opacity-60 ${
+                    className={`h-8 rounded-md px-2.5 text-xs font-semibold transition-colors disabled:opacity-60 ${
                       c.status === s
                         ? s === "active"
-                          ? "bg-accent text-accent-foreground"
-                          : "bg-secondary text-secondary-foreground"
-                        : "border border-border text-muted-foreground hover:text-foreground"
+                          ? "bg-brand-gold text-accent-foreground"
+                          : "bg-muted text-foreground ring-1 ring-[var(--hairline-strong)]"
+                        : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     {COMPETITION_STATUS_LABELS[s]}
                   </button>
                 ))}
-                <span className="ms-auto flex gap-1">
-                  <button
-                    onClick={() => setEditing(c)}
-                    aria-label="עריכה"
-                    className="grid h-8 w-8 place-items-center rounded-full border border-border press-scale hover:text-brand-coral"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => setDeleting(c)}
-                    aria-label="מחיקה"
-                    className="grid h-8 w-8 place-items-center rounded-full border border-border press-scale hover:text-danger"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </span>
               </div>
+              <span className="ms-auto flex gap-1">
+                <button
+                  onClick={() => setEditing(c)}
+                  aria-label="עריכה"
+                  className="grid h-9 w-9 place-items-center rounded-lg border border-border transition-colors hover:bg-muted/60 press-scale"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setDeleting(c)}
+                  aria-label="מחיקה"
+                  className="grid h-9 w-9 place-items-center rounded-lg border border-border transition-colors hover:bg-destructive/10 hover:text-danger press-scale"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </span>
             </div>
           </div>
         ))}
@@ -1079,7 +1214,7 @@ function CompetitionDialog({
             <button
               type="submit"
               disabled={!canSave}
-              className="flex w-full items-center justify-center gap-2 rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-60"
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-coral text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-60"
             >
               {saveMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               {initial ? "שמור שינויים" : "צור תחרות"}

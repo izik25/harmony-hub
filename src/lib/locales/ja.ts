@@ -81,6 +81,8 @@ export const ja = {
     mute: "ミュート",
     unmute: "ミュート解除",
     viewSound: "サウンドを見る",
+    emptyTitle: "ステージは空いています",
+    emptyBody: "フィードにはまだ録音がありません。最初の一曲を録音しましょう。",
   },
   explore: {
     search: "アーティスト、曲、DJを検索...",
@@ -174,6 +176,7 @@ export const ja = {
     opensStudioHint:
       "完了するとAIスタジオが開き、保存や公開の前にテイクのバランスや音作りを調整できます。",
     scrubHint: "後ろにドラッグしてミスを修正",
+    seekBar: "再生位置",
     cutConfirmTitle: "ここまで削除しますか？",
     cutConfirmBody: "{{time}}以降はすべて削除され、そこから録り直せます。",
     cutConfirmAction: "削除して録り直す",

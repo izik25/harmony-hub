@@ -37,7 +37,27 @@ export default defineConfig({
   // while the dev preview looks fine. Running Lightning CSS in both keeps the preview honest.
   css: { transformer: "lightningcss" },
   optimizeDeps: {
-    include: ["react", "react-dom", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"],
+    include: [
+      "react",
+      "react-dom",
+      "react-dom/client",
+      "react/jsx-runtime",
+      "react/jsx-dev-runtime",
+    ],
   },
-  server: { host: "::", port: 8080 },
+  server: {
+    host: "::",
+    port: 8080,
+    // Build output and big media are never source. Watching them crashed the dev server with
+    // EBUSY whenever a build or a karaoke sync held one of those files open on Windows.
+    watch: {
+      ignored: [
+        "**/.output/**",
+        "**/.vercel/**",
+        "**/public/karaoke/**",
+        "**/public/uploads/**",
+        "**/*.mp4",
+      ],
+    },
+  },
 });

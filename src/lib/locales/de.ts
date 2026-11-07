@@ -79,6 +79,8 @@ export const de = {
     mute: "Stumm",
     unmute: "Ton an",
     viewSound: "Sound ansehen",
+    emptyTitle: "Die Bühne ist frei",
+    emptyBody: "Noch keine Aufnahmen im Feed. Nimm die erste auf.",
   },
   explore: {
     search: "Künstler, Songs, DJs suchen...",
@@ -174,6 +176,7 @@ export const de = {
     opensStudioHint:
       "Nach dem Beenden öffnet sich das KI-Studio, wo du den Take ausbalancieren und formen kannst, bevor du ihn speicherst oder veröffentlichst.",
     scrubHint: "Zurückziehen, um einen Fehler zu korrigieren",
+    seekBar: "Wiedergabeposition",
     cutConfirmTitle: "Bis zu dieser Stelle löschen?",
     cutConfirmBody: "Alles nach {{time}} wird gelöscht, und du kannst ab dort neu aufnehmen.",
     cutConfirmAction: "Löschen & neu aufnehmen",

@@ -79,6 +79,8 @@ export const pt = {
     mute: "Silenciar",
     unmute: "Ativar som",
     viewSound: "Ver som",
+    emptyTitle: "O palco está livre",
+    emptyBody: "Ainda não há gravações no feed. Grave a primeira.",
   },
   explore: {
     search: "Busque artistas, músicas, DJs...",
@@ -173,6 +175,7 @@ export const pt = {
     opensStudioHint:
       "Ao finalizar, o Estúdio IA abre para você equilibrar e lapidar a gravação antes de salvar ou publicar.",
     scrubHint: "Arraste para trás para corrigir um erro",
+    seekBar: "Posição da reprodução",
     cutConfirmTitle: "Apagar até este ponto?",
     cutConfirmBody: "Tudo depois de {{time}} será apagado, e você pode regravar a partir daí.",
     cutConfirmAction: "Apagar e regravar",

@@ -5,11 +5,11 @@ import { isRTL, setLanguage } from "@/lib/i18n";
 import { BottomNav } from "./BottomNav";
 import { SideNav } from "./SideNav";
 
-// Content column width on desktop (lg+); phones always get the 520px column.
+// Content column width from tablet up (md+); phones always get the 520px column.
 const DESKTOP_WIDTH = {
-  feed: "lg:max-w-[520px]",
-  default: "lg:max-w-2xl",
-  wide: "lg:max-w-5xl",
+  feed: "md:max-w-none lg:max-w-[520px]",
+  default: "md:max-w-2xl",
+  wide: "md:max-w-5xl",
 } as const;
 
 export function AppShell({

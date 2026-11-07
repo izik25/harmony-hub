@@ -193,7 +193,7 @@ export function ProfileView({ handle }: { handle: string }) {
               {profile.role === "admin" && (
                 <Link
                   to="/admin"
-                  className="rounded-full p-2 text-foreground/80 press-scale hover:text-brand-coral"
+                  className="grid h-11 w-11 place-items-center rounded-full text-foreground/80 transition-colors hover:bg-muted hover:text-foreground press-scale"
                   aria-label="Admin"
                 >
                   <ShieldCheck className="h-5 w-5" />
@@ -205,13 +205,15 @@ export function ProfileView({ handle }: { handle: string }) {
                   const result = await shareContent({ title: profile.name, url });
                   if (result === "copied") toast.success(t("profile.linkCopied"));
                 }}
-                className="rounded-full p-2 text-foreground/80 press-scale hover:text-brand-coral"
+                aria-label={t("common.share")}
+                className="grid h-11 w-11 place-items-center rounded-full text-foreground/80 transition-colors hover:bg-muted hover:text-foreground press-scale"
               >
                 <Share2 className="h-5 w-5" />
               </button>
               <button
                 onClick={() => setSettingsOpen(true)}
-                className="rounded-full p-2 text-foreground/80 press-scale hover:text-brand-coral"
+                aria-label={t("profile.edit")}
+                className="grid h-11 w-11 place-items-center rounded-full text-foreground/80 transition-colors hover:bg-muted hover:text-foreground press-scale"
               >
                 <Settings className="h-5 w-5" />
               </button>
@@ -248,18 +250,18 @@ export function ProfileView({ handle }: { handle: string }) {
             <motion.button
               whileTap={{ scale: 0.97 }}
               onClick={() => setSettingsOpen(true)}
-              className="mt-4 w-full max-w-xs rounded-lg border border-border bg-card py-2 text-sm font-semibold shadow-pop press-scale"
+              className="mt-5 h-11 w-full max-w-xs rounded-xl border border-[var(--hairline-strong)] text-sm font-semibold transition-colors hover:bg-card press-scale"
             >
               {t("profile.edit")}
             </motion.button>
           ) : (
-            <div className="mt-4 flex w-full max-w-xs items-center justify-center gap-2">
+            <div className="mt-5 flex w-full max-w-xs items-center justify-center gap-2">
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 whileHover={{ scale: 1.01 }}
                 transition={{ type: "spring", stiffness: 420, damping: 24 }}
                 onClick={() => followMutation.mutate()}
-                className={`flex-1 rounded-lg py-2 text-sm font-bold ${
+                className={`h-11 flex-1 rounded-xl text-sm font-bold ${
                   profile.isFollowing
                     ? "border border-border bg-card text-foreground"
                     : "bg-brand-coral text-white shadow-pop-coral"
@@ -272,7 +274,8 @@ export function ProfileView({ handle }: { handle: string }) {
                 whileHover={{ scale: 1.05 }}
                 transition={{ type: "spring", stiffness: 420, damping: 24 }}
                 onClick={() => messageMutation.mutate()}
-                className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold"
+                aria-label={t("nav.messages")}
+                className="grid h-11 w-11 place-items-center rounded-xl border border-border bg-card"
               >
                 <MessageSquare className="h-4 w-4" />
               </motion.button>
@@ -283,7 +286,8 @@ export function ProfileView({ handle }: { handle: string }) {
                 onClick={() => setDuelConfirmOpen(true)}
                 disabled={duelMutation.isPending}
                 title={t("profile.challengeToDuet")}
-                className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-brand-gold disabled:opacity-60"
+                aria-label={t("profile.challengeToDuet")}
+                className="grid h-11 w-11 place-items-center rounded-xl border border-border bg-card text-brand-gold disabled:opacity-60"
               >
                 <Swords className="h-4 w-4" />
               </motion.button>
@@ -296,7 +300,8 @@ export function ProfileView({ handle }: { handle: string }) {
                   const result = await shareContent({ title: profile.name, url });
                   if (result === "copied") toast.success(t("profile.linkCopied"));
                 }}
-                className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold"
+                aria-label={t("common.share")}
+                className="grid h-11 w-11 place-items-center rounded-xl border border-border bg-card"
               >
                 <Share2 className="h-4 w-4" />
               </motion.button>
@@ -313,7 +318,7 @@ export function ProfileView({ handle }: { handle: string }) {
               <button
                 key={k}
                 onClick={() => setTab(k)}
-                className={`relative shrink-0 px-3 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors duration-150 ${
+                className={`relative shrink-0 px-3 py-3 text-sm font-semibold transition-colors duration-150 ${
                   tab === k ? "text-foreground" : "text-muted-foreground"
                 }`}
               >
@@ -332,7 +337,9 @@ export function ProfileView({ handle }: { handle: string }) {
         {tab === "about" ? (
           <div className="p-4 text-sm">
             <h3 className="font-semibold">{t("profile.about")}</h3>
-            <p className="bidi-auto mt-1 text-muted-foreground">{profile.bio || t("profile.noBioYet")}</p>
+            <p className="bidi-auto mt-1 text-muted-foreground">
+              {profile.bio || t("profile.noBioYet")}
+            </p>
             {profile.voiceType && (
               <p className="mt-2 text-muted-foreground">
                 {profile.voiceType}
@@ -518,8 +525,8 @@ function Stat({ n, k, delay = 0 }: { n: number; k: string; delay?: number }) {
       transition={{ type: "spring", stiffness: 420, damping: 26, delay }}
       className="text-center"
     >
-      <p className="font-display text-lg font-bold">{formatCount(n)}</p>
-      <p className="text-[11px] text-muted-foreground">{k}</p>
+      <p className="font-numeric text-xl font-bold">{formatCount(n)}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{k}</p>
     </motion.div>
   );
 }
@@ -579,7 +586,7 @@ function ArtistLinksRow({ links }: { links: Profile["artistLinks"] }) {
   if (pills.length === 0 && !links.ticketsUrl && !links.genre && !links.label) return null;
 
   return (
-    <div className="mt-4 w-full max-w-xs rounded-2xl border border-border bg-card p-3 text-center shadow-pop">
+    <div className="mt-5 w-full max-w-sm text-center">
       {(links.genre || links.label) && (
         <p className="text-xs text-muted-foreground">
           {[links.genre, links.label].filter(Boolean).join(" · ")}
@@ -593,7 +600,7 @@ function ArtistLinksRow({ links }: { links: Profile["artistLinks"] }) {
               href={p.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold press-scale"
+              className="flex h-8 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-xs font-semibold transition-colors hover:border-[var(--hairline-strong)] press-scale"
             >
               {p.icon}
               {p.label}
@@ -606,9 +613,9 @@ function ArtistLinksRow({ links }: { links: Profile["artistLinks"] }) {
           href={links.ticketsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-2 flex items-center justify-center gap-2 rounded-full bg-brand-gold py-2 text-sm font-bold text-accent-foreground shadow-pop press-scale hover-lift"
+          className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--hairline-strong)] px-4 text-sm font-semibold transition-colors hover:bg-card press-scale"
         >
-          <Ticket className="h-4 w-4" />
+          <Ticket className="h-4 w-4 text-brand-gold" />
           {t("profile.artist.buyTickets")}
         </a>
       )}
@@ -1080,7 +1087,6 @@ function SettingsSheet({
           </button>
         </div>
 
-        <style>{`.input { width: 100%; border-radius: 12px; background: var(--color-input); padding: 10px 12px; font-size: 14px; outline: none; border: 1px solid var(--color-border); }`}</style>
       </SheetContent>
     </Sheet>
   );

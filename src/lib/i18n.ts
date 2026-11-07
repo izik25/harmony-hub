@@ -122,6 +122,8 @@ const en = {
     mute: "Mute",
     unmute: "Unmute",
     viewSound: "View sound",
+    emptyTitle: "The stage is open",
+    emptyBody: "No takes in the feed yet. Record the first one.",
   },
   explore: {
     search: "Search artists, songs, DJs...",
@@ -216,6 +218,7 @@ const en = {
     opensStudioHint:
       "Finishing opens the AI Studio, where you can balance and shape the take before saving or publishing.",
     scrubHint: "Drag back to fix a mistake",
+    seekBar: "Playback position",
     cutConfirmTitle: "Delete back to this point?",
     cutConfirmBody: "Everything after {{time}} will be deleted, and you can re-record from there.",
     cutConfirmAction: "Delete & Re-record",
@@ -980,6 +983,8 @@ const he = {
     mute: "השתק",
     unmute: "בטל השתקה",
     viewSound: "צפה בשיר",
+    emptyTitle: "הבמה פנויה",
+    emptyBody: "עדיין אין הקלטות בפיד. הקליטו את הראשונה.",
   },
   explore: {
     search: "חפש אמנים, שירים, DJs...",
@@ -1074,6 +1079,7 @@ const he = {
     opensStudioHint:
       "סיום ההקלטה פותח את אולפן ה-AI, שם תוכל לאזן ולעצב את ההקלטה לפני שמירה או פרסום.",
     scrubHint: "גרור אחורה כדי לתקן טעות",
+    seekBar: "מיקום בהשמעה",
     cutConfirmTitle: "למחוק עד לנקודה זו?",
     cutConfirmBody: "כל מה שאחרי {{time}} יימחק, ותוכל להקליט מחדש משם.",
     cutConfirmAction: "מחק והקלט מחדש",
@@ -1829,6 +1835,8 @@ const ar = {
     mute: "كتم الصوت",
     unmute: "إلغاء الكتم",
     viewSound: "عرض الصوت",
+    emptyTitle: "المسرح متاح",
+    emptyBody: "لا توجد تسجيلات في الخلاصة بعد. سجّل أول تسجيل.",
   },
   explore: {
     search: "ابحث عن فنانين، أغاني، DJs...",
@@ -1926,6 +1934,7 @@ const ar = {
     opensStudioHint:
       "إنهاء التسجيل يفتح استوديو الـ AI، حيث يمكنك موازنة المقطع وتشكيله قبل الحفظ أو النشر.",
     scrubHint: "اسحب للخلف لتصحيح خطأ",
+    seekBar: "موضع التشغيل",
     cutConfirmTitle: "حذف حتى هذه النقطة؟",
     cutConfirmBody: "سيتم حذف كل ما بعد {{time}}، ويمكنك إعادة التسجيل من هناك.",
     cutConfirmAction: "حذف وإعادة التسجيل",

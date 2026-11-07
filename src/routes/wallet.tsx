@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Coins, ArrowUpRight, ArrowDownRight, Plus, Crown } from "lucide-react";
+import { GiftGlyph } from "@/components/GiftGlyph";
+import { Coins, ArrowUpRight, ArrowDownRight, Plus, Crown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -82,84 +83,95 @@ function WalletPage() {
   return (
     <AppShell>
       <TopBar />
-      <div className="px-4 pt-3 pb-6">
-        <h1 className="font-display text-2xl font-bold">{t("wallet.title")}</h1>
+      <div className="px-4 pb-8 pt-6">
+        <h1 className="page-title">{t("wallet.title")}</h1>
 
-        <motion.div
-          initial={{ opacity: 0, y: 14, scale: 0.97 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ type: "spring", stiffness: 380, damping: 28 }}
-          className="mt-4 overflow-hidden rounded-3xl bg-brand-coral p-5 text-white shadow-pop-coral"
+        {/* Balance reads like a meter on a dark panel; colour is saved for the actions. */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          className="mt-5 overflow-hidden rounded-[22px] border border-border bg-card shadow-pop"
         >
-          <p className="text-xs uppercase tracking-widest opacity-90">{t("common.balance")}</p>
-          <div className="mt-2 flex items-end gap-2">
-            <Coins className="h-7 w-7" />
-            <span className="font-display text-4xl font-bold">
-              {formatNumber(wallet?.balance ?? 0)}
-            </span>
-            <span className="mb-1 text-sm opacity-90">{t("wallet.coins")}</span>
-          </div>
-          <p className="mt-1 text-sm opacity-90">{t("wallet.virtualCurrency")}</p>
-          <div className="mt-4 flex gap-2">
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              whileHover={{ scale: 1.02 }}
-              transition={{ type: "spring", stiffness: 420, damping: 24 }}
-              onClick={() => setWithdrawOpen(true)}
-              className="flex-1 rounded-full bg-white/20 backdrop-blur px-3 py-2 text-xs font-bold"
-            >
-              {t("common.withdraw")}
-            </motion.button>
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              whileHover={{ scale: 1.02 }}
-              transition={{ type: "spring", stiffness: 420, damping: 24 }}
-              onClick={() => setBuyOpen(true)}
-              className="flex-1 rounded-full bg-white text-brand-coral px-3 py-2 text-xs font-bold"
-            >
-              {t("common.buy")}
-            </motion.button>
+          <div className="relative px-5 pb-5 pt-5">
+            <p className="section-label">{t("common.balance")}</p>
+            <div className="mt-2 flex items-center gap-3">
+              <Coins className="h-7 w-7 shrink-0 text-brand-gold" />
+              <span className="font-numeric text-[2.75rem] font-bold leading-none text-brand-gold">
+                {formatNumber(wallet?.balance ?? 0)}
+              </span>
+              <span className="self-end pb-1 text-sm text-muted-foreground">
+                {t("wallet.coins")}
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">{t("wallet.virtualCurrency")}</p>
+            <div className="mt-5 flex gap-2">
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setBuyOpen(true)}
+                className="flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-xl bg-brand-coral text-sm font-bold text-white shadow-pop-coral transition-[filter] hover:brightness-110"
+              >
+                <Plus className="h-4 w-4" />
+                {t("common.buy")}
+              </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setWithdrawOpen(true)}
+                className="flex h-12 flex-1 items-center justify-center rounded-xl border border-[var(--hairline-strong)] text-sm font-semibold transition-colors hover:bg-muted/50"
+              >
+                {t("common.withdraw")}
+              </motion.button>
+            </div>
           </div>
           {!currentUser?.isPro && (
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              whileHover={{ scale: 1.02 }}
-              transition={{ type: "spring", stiffness: 420, damping: 24 }}
+            <button
               onClick={() => setProOpen(true)}
-              className="mt-2 flex w-full items-center justify-center gap-2 rounded-full bg-brand-gold px-3 py-2 text-xs font-bold text-accent-foreground"
+              className="flex w-full items-center gap-3 border-t border-border px-5 py-3.5 text-start transition-colors hover:bg-muted/50"
             >
-              <Crown className="h-4 w-4" /> {t("pro.title")}
-            </motion.button>
+              <span className="grid h-9 w-9 place-items-center rounded-lg bg-brand-gold/15 text-brand-gold">
+                <Crown className="h-4 w-4" />
+              </span>
+              <span className="flex-1 text-sm font-semibold">{t("pro.title")}</span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground rtl:rotate-180" />
+            </button>
           )}
-        </motion.div>
+        </motion.section>
 
-        <h2 className="mt-6 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          {t("wallet.giftsHeading")}
-        </h2>
-        <div className="mt-3 grid grid-cols-3 gap-2 lg:grid-cols-5">
-          {gifts?.map((g, i) => (
-            <div
-              key={g.id}
-              className={`flex flex-col items-center gap-1 rounded-2xl border border-border bg-card p-3 shadow-pop hover-lift animate-fade-up stagger-${(i % 6) + 1}`}
-            >
-              <span className="text-3xl">{g.emoji}</span>
-              <span className="text-[11px] font-semibold capitalize">
+        <h2 className="section-label mt-8">{t("wallet.giftsHeading")}</h2>
+        {/* One panel, hairline grid: a price list, not a wall of cards. */}
+        <div className="mt-3 grid grid-cols-3 gap-px overflow-hidden rounded-[18px] border border-border bg-border lg:grid-cols-5">
+          {gifts?.map((g) => (
+            <div key={g.id} className="flex flex-col items-center gap-1 bg-card px-2 py-4">
+              <GiftGlyph giftKey={g.key} emoji={g.emoji} />
+              <span className="mt-1 text-xs font-medium capitalize">
                 {t(`wallet.gifts.${g.key}`)}
               </span>
-              <span className="text-[11px] text-accent font-mono">{g.coins}</span>
+              <span className="font-numeric text-xs font-bold text-brand-gold">{g.coins}</span>
             </div>
           ))}
+          {/* Pad the last row with empty cells so the hairline grid closes cleanly (3 columns on
+              phones, 5 on desktop). */}
+          {gifts &&
+            Array.from({ length: 4 }).map((_, i) => {
+              const phone = (3 - (gifts.length % 3)) % 3;
+              const desk = (5 - (gifts.length % 5)) % 5;
+              return (
+                <div
+                  key={`pad-${i}`}
+                  aria-hidden
+                  className={`bg-card ${i < phone ? "block" : "hidden"} ${i < desk ? "lg:block" : "lg:hidden"}`}
+                />
+              );
+            })}
         </div>
 
-        <h2 className="mt-6 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          {t("wallet.history")}
-        </h2>
-        <ul className="mt-2 divide-y divide-border rounded-2xl border border-border bg-card shadow-pop">
+        <h2 className="section-label mt-8">{t("wallet.history")}</h2>
+        <ul className="list-group mt-3">
           {wallet?.history.length === 0 && (
             <li className="p-3 text-sm text-muted-foreground">{t("wallet.noTransactions")}</li>
           )}
           {wallet?.history.map((h) => (
-            <li key={h.id} className="flex items-center gap-3 p-3">
+            <li key={h.id} className="flex items-center gap-3 px-4 py-3">
               <div
                 className={`grid h-9 w-9 place-items-center rounded-full ${h.coins >= 0 ? "bg-accent/20 text-accent" : "bg-primary/20 text-brand-coral"}`}
               >
@@ -175,7 +187,7 @@ function WalletPage() {
               </div>
               <span
                 dir="ltr"
-                className={`text-sm font-semibold tabular-nums ${h.coins >= 0 ? "text-accent" : "text-brand-coral"}`}
+                className={`font-numeric text-sm font-bold ${h.coins >= 0 ? "text-brand-gold" : "text-brand-coral"}`}
               >
                 {h.coins >= 0 ? "+" : ""}
                 {h.coins}

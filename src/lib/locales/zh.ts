@@ -81,6 +81,8 @@ export const zh = {
     mute: "静音",
     unmute: "取消静音",
     viewSound: "查看音乐",
+    emptyTitle: "舞台空着",
+    emptyBody: "动态里还没有录音。来录第一首吧。",
   },
   explore: {
     search: "搜索歌手、歌曲、DJ...",
@@ -170,6 +172,7 @@ export const zh = {
     clearTrack: "清除",
     opensStudioHint: "完成后会打开 AI 录音棚，你可以在保存或发布前调整平衡、打磨效果。",
     scrubHint: "向后拖动以修正失误",
+    seekBar: "播放进度",
     cutConfirmTitle: "删除到这里？",
     cutConfirmBody: "{{time}} 之后的内容都会被删除，你可以从那里重新录。",
     cutConfirmAction: "删除并重录",

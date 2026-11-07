@@ -90,12 +90,12 @@ function NotifPage() {
   return (
     <AppShell>
       <TopBar />
-      <div className="px-4 pt-3 pb-6">
-        <h1 className="font-display text-2xl font-bold">{t("notif.title")}</h1>
+      <div className="px-4 pb-8 pt-6">
+        <h1 className="page-title">{t("notif.title")}</h1>
         {notifications?.length === 0 && (
           <p className="mt-6 text-center text-sm text-muted-foreground">{t("notif.empty")}</p>
         )}
-        <ul className="mt-4 divide-y divide-border rounded-2xl border border-border bg-card shadow-pop">
+        <ul className="mt-4 list-group">
           {notifications?.map((n, i) => (
             <li
               key={n.id}
@@ -124,7 +124,7 @@ function NotifPage() {
                   whileTap={{ scale: 0.9 }}
                   onClick={() => followMutation.mutate(n.actor.id)}
                   disabled={followMutation.isPending}
-                  className="rounded-full bg-brand-coral px-3 py-1 text-xs font-bold text-white shadow-pop-coral disabled:opacity-60"
+                  className="h-8 rounded-lg bg-brand-coral px-3 text-xs font-bold text-white disabled:opacity-60"
                 >
                   {t("common.follow")}
                 </motion.button>
@@ -138,7 +138,7 @@ function NotifPage() {
                       params: { roomId: String(n.extra.roomId) },
                     })
                   }
-                  className="flex items-center gap-1 rounded-full bg-brand-coral px-3 py-1 text-xs font-bold text-white shadow-pop-coral"
+                  className="flex items-center gap-1 h-8 rounded-lg bg-brand-coral px-3 text-xs font-bold text-white"
                 >
                   <Swords className="h-3 w-3" />
                   {t("notif.joinBattle")}
@@ -153,7 +153,7 @@ function NotifPage() {
                       params: { roomId: String(n.extra.roomId) },
                     })
                   }
-                  className="flex items-center gap-1 rounded-full bg-brand-coral px-3 py-1 text-xs font-bold text-white shadow-pop-coral"
+                  className="flex items-center gap-1 h-8 rounded-lg bg-brand-coral px-3 text-xs font-bold text-white"
                 >
                   <Swords className="h-3 w-3" />
                   {t("notif.joinBattle")}
@@ -168,7 +168,7 @@ function NotifPage() {
                       params: { roomId: String(n.extra.roomId) },
                     })
                   }
-                  className="flex items-center gap-1 rounded-full bg-brand-coral px-3 py-1 text-xs font-bold text-white shadow-pop-coral"
+                  className="flex items-center gap-1 h-8 rounded-lg bg-brand-coral px-3 text-xs font-bold text-white"
                 >
                   <Radio className="h-3 w-3" />
                   {t("notif.joinStage")}

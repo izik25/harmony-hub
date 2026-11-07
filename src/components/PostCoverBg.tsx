@@ -1,7 +1,7 @@
 /**
  * Post thumbnail: renders the AI-generated cover image when the post has one, otherwise falls
- * back to a generated placeholder in the Night Studio style — a dark tinted base, two soft neon
- * glows and the concentric "speaker" rings of the logo mark. Deterministic per seed, no assets.
+ * back to a generated placeholder in the Night Studio style: a dark tinted base, two soft glows
+ * and a level-meter silhouette. Deterministic per seed, no assets.
  */
 export function PostCoverBg({
   hue,
@@ -36,9 +36,20 @@ export function PostCoverBg({
       }}
       data-seed={seed}
     >
-      <div className="absolute left-1/2 top-[45%] aspect-square w-[70%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10" />
-      <div className="absolute left-1/2 top-[45%] aspect-square w-[46%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/15" />
-      <div className="absolute left-1/2 top-[45%] aspect-square w-[14%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/15" />
+      {/* The studio signature: a level-meter silhouette whose shape comes from the seed, so each
+          placeholder reads as "a take" rather than a generic orb. */}
+      <div className="absolute inset-x-[12%] bottom-[14%] flex h-[38%] items-end gap-[3%]">
+        {Array.from({ length: 14 }).map((_, i) => {
+          const h = 22 + (((hash >> (i % 16)) + i * 37) % 70);
+          return (
+            <span
+              key={i}
+              className="flex-1 rounded-[2px] bg-white/14"
+              style={{ height: `${h}%` }}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -79,6 +79,8 @@ export const it = {
     mute: "Disattiva audio",
     unmute: "Attiva audio",
     viewSound: "Vedi suono",
+    emptyTitle: "Il palco è libero",
+    emptyBody: "Ancora nessuna registrazione nel feed. Registra la prima.",
   },
   explore: {
     search: "Cerca artisti, brani, DJ...",
@@ -174,6 +176,7 @@ export const it = {
     opensStudioHint:
       "Al termine si apre lo Studio IA, dove puoi bilanciare e rifinire la take prima di salvarla o pubblicarla.",
     scrubHint: "Trascina indietro per correggere un errore",
+    seekBar: "Posizione di riproduzione",
     cutConfirmTitle: "Eliminare fino a questo punto?",
     cutConfirmBody:
       "Tutto ciò che viene dopo {{time}} sarà eliminato e potrai registrare di nuovo da lì.",

@@ -9,6 +9,7 @@ import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { PostCoverBg } from "@/components/PostCoverBg";
 import { EmptyState } from "@/components/EmptyState";
+import { Segmented } from "@/components/Segmented";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { listLiveRooms, startRoom, isLiveConfigured } from "@/functions/live";
 import { translateServerError } from "@/lib/i18n";
@@ -65,25 +66,24 @@ function LivePage() {
   return (
     <AppShell width="wide">
       <TopBar />
-      <div className="px-4 pt-3 pb-6">
+      <div className="px-4 pb-8 pt-6">
         <div className="flex items-center justify-between">
-          <h1 className="font-display text-2xl font-bold flex items-center gap-2">
-            <Radio className="h-6 w-6 text-brand-coral" />
-            {t("live.title")}
-          </h1>
-          <motion.button
-            whileTap={{ scale: 0.94 }}
-            whileHover={{ scale: 1.04, y: -1 }}
-            transition={{ type: "spring", stiffness: 450, damping: 26 }}
-            onClick={() => setGoLiveOpen(true)}
-            className="rounded-full bg-brand-coral px-4 py-1.5 text-xs font-bold text-white shadow-pop-coral"
-          >
-            {t("live.goLive")}
-          </motion.button>
+          <h1 className="page-title">{t("live.title")}</h1>
+          {/* Only once there are rooms: on an empty screen the centred action is the one. */}
+          {!!rooms?.length && (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setGoLiveOpen(true)}
+              className="flex h-10 items-center gap-2 rounded-xl bg-brand-coral px-4 text-sm font-bold text-white shadow-pop-coral transition-[filter] hover:brightness-110"
+            >
+              <span className="h-2 w-2 rounded-full bg-white" />
+              {t("live.goLive")}
+            </motion.button>
+          )}
         </div>
 
         {configured === false && (
-          <div className="mt-4 flex items-start gap-2 rounded-2xl border border-accent/40 bg-accent/5 p-3 text-xs text-muted-foreground">
+          <div className="mt-5 flex items-start gap-3 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
             {t("live.notConfigured")}
           </div>
@@ -97,7 +97,7 @@ function LivePage() {
             action={
               <button
                 onClick={() => setGoLiveOpen(true)}
-                className="rounded-full bg-brand-coral px-6 py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale"
+                className="flex h-12 items-center gap-2 rounded-xl bg-brand-coral px-6 text-sm font-bold text-white shadow-pop-coral transition-[filter] hover:brightness-110 press-scale"
               >
                 {t("live.goLive")}
               </button>
@@ -117,7 +117,7 @@ function LivePage() {
             >
               <PostCoverBg hue={(i * 60 + 280) % 360} seed={r.id} />
               <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/40" />
-              <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+              <span className="absolute start-2 top-2 flex items-center gap-1 rounded-md bg-brand-coral px-2 py-0.5 text-[10px] font-bold uppercase text-white">
                 <span className="relative flex h-1.5 w-1.5">
                   <span className="absolute inline-flex h-full w-full animate-ring-pulse rounded-full bg-white" />
                   <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
@@ -133,7 +133,7 @@ function LivePage() {
                   />
                   <div>
                     <p className="text-sm font-bold text-white">{r.host.name}</p>
-                    <p className="text-[10px] text-white/80 capitalize">
+                    <p className="text-xs text-white/80 capitalize">
                       {t(`live.${r.type}`, { defaultValue: r.type })}
                     </p>
                   </div>
@@ -156,25 +156,15 @@ function LivePage() {
               placeholder={t("live.sessionAbout")}
               className="input"
             />
-            <div className="grid grid-cols-3 gap-2">
-              {roomTypes.map((rt) => (
-                <button
-                  key={rt}
-                  onClick={() => setType(rt)}
-                  className={`rounded-full px-3 py-2 text-xs font-semibold capitalize transition-all duration-200 ease-out press-scale ${
-                    type === rt
-                      ? "bg-brand-coral text-white shadow-pop-coral"
-                      : "border border-border bg-card text-muted-foreground"
-                  }`}
-                >
-                  {t(`live.${rt}`)}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              value={type}
+              onChange={setType}
+              options={roomTypes.map((rt) => ({ value: rt, label: t(`live.${rt}`) }))}
+            />
             <button
               onClick={() => startMutation.mutate()}
               disabled={startMutation.isPending}
-              className="flex w-full items-center justify-center gap-2 rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-60"
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-coral text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-60"
             >
               <Users className="h-4 w-4" />{" "}
               {startMutation.isPending ? t("live.starting") : t("live.startStreaming")}
@@ -183,7 +173,6 @@ function LivePage() {
         </DialogContent>
       </Dialog>
 
-      <style>{`.input { width: 100%; border-radius: 12px; background: var(--color-input); padding: 10px 12px; font-size: 14px; outline: none; border: 1px solid var(--color-border); }`}</style>
     </AppShell>
   );
 }

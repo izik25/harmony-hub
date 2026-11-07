@@ -43,13 +43,13 @@ export function BottomNav({ overlay = false }: { overlay?: boolean }) {
 
   return (
     <nav
-      className={`fixed bottom-0 left-1/2 z-40 w-full max-w-[520px] -translate-x-1/2 lg:hidden ${
+      className={`fixed bottom-0 left-1/2 z-40 w-full max-w-[520px] -translate-x-1/2 md:max-w-none lg:hidden ${
         overlay
           ? "bg-gradient-to-t from-black/85 via-black/40 to-transparent pt-6"
-          : "glass border-t border-border"
+          : "nav-surface border-t border-border"
       }`}
     >
-      <ul className="grid grid-cols-5 items-end px-2 pb-[max(env(safe-area-inset-bottom),8px)] pt-2">
+      <ul className="mx-auto grid max-w-2xl grid-cols-5 items-end px-2 pb-[max(env(safe-area-inset-bottom),8px)] pt-2">
         {items.map((it) => {
           const active = pathname === it.to;
           const Icon = it.icon;

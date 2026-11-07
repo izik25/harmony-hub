@@ -19,7 +19,14 @@ export const Route = createFileRoute("/competitions_/$id")({
   component: CompetitionDetailPage,
 });
 
-const staggerClasses = ["stagger-1", "stagger-2", "stagger-3", "stagger-4", "stagger-5", "stagger-6"];
+const staggerClasses = [
+  "stagger-1",
+  "stagger-2",
+  "stagger-3",
+  "stagger-4",
+  "stagger-5",
+  "stagger-6",
+];
 
 function CompetitionDetailPage() {
   const { t } = useTranslation();
@@ -75,28 +82,31 @@ function CompetitionDetailPage() {
   return (
     <AppShell>
       <TopBar />
-      <div className="px-4 pt-3 pb-6">
+      <div className="px-4 pb-8 pt-4">
         <Link
           to="/competitions"
-          className="mb-3 inline-flex items-center gap-1 text-xs text-muted-foreground"
+          className="-ms-2 mb-3 inline-flex h-10 items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5 rtl:rotate-180" /> {t("comp.title")}
         </Link>
 
-        <article className="relative h-48 overflow-hidden rounded-3xl shadow-pop-lg">
+        <article className="relative min-h-60 overflow-hidden rounded-[22px] border border-border">
           <PostCoverBg hue={competition.hue} seed={competition.coverSeed} />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent" />
-          <div className="absolute inset-x-0 bottom-0 p-4">
-            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-primary-foreground">
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
+          <div className="absolute inset-x-0 bottom-0 p-5">
+            <span className="rounded-md bg-white/12 px-2 py-1 text-xs font-semibold text-white backdrop-blur-sm">
               {t(`comp.${competition.stage}`)}
             </span>
-            <h1 className="mt-2 font-display text-2xl font-bold text-white">{competition.title}</h1>
-            <div className="mt-1 flex items-center gap-3 text-xs text-white/80">
+            <h1 className="bidi-auto mt-3 text-2xl text-white lg:text-3xl">{competition.title}</h1>
+            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-white/80">
               <span className="flex items-center gap-1">
                 <Users className="h-3.5 w-3.5" /> {t("comp.entriesCount", { n: entries.length })}
               </span>
               <span className="flex items-center gap-1">
-                <Award className="h-3.5 w-3.5 text-accent" /> {competition.prize}
+                <Award className="h-4 w-4 text-brand-gold" />
+                <span className="font-numeric text-lg font-bold text-brand-gold">
+                  {competition.prize}
+                </span>
               </span>
             </div>
           </div>
@@ -105,7 +115,7 @@ function CompetitionDetailPage() {
         <button
           onClick={() => setJoinOpen(true)}
           disabled={alreadyEntered || !isOpen}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-brand-coral py-2.5 text-sm font-bold text-white shadow-pop-coral press-scale disabled:opacity-50"
+          className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-coral text-sm font-bold text-white shadow-pop-coral transition-[filter] hover:brightness-110 press-scale disabled:opacity-50"
         >
           <Trophy className="h-4 w-4" />{" "}
           {!isOpen
@@ -115,20 +125,18 @@ function CompetitionDetailPage() {
               : t("comp.join")}
         </button>
 
-        <h2 className="mt-6 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          {t("comp.entriesHeading")}
-        </h2>
+        <h2 className="section-label mt-8">{t("comp.entriesHeading")}</h2>
         {entries.length === 0 && <EmptyState icon={Trophy} title={t("comp.noEntriesYet")} />}
-        <div className="mt-2 space-y-2">
+        <div className={entries.length ? "list-group mt-3" : "hidden"}>
           {entries.map((e, i) => (
             <div
               key={e.id}
-              className={`flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-pop animate-fade-up ${staggerClasses[i % 6]}`}
+              className={`flex items-center gap-3 px-4 py-3 animate-fade-up ${staggerClasses[i % 6]}`}
             >
               <img src={e.user.avatarUrl} className="h-10 w-10 rounded-full" alt="" />
               <div className="flex-1">
                 <p className="text-sm font-semibold">{e.post.title}</p>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {e.user.name} · {t("comp.votesCount", { n: e.votesCount })}
                 </p>
               </div>
@@ -148,8 +156,10 @@ function CompetitionDetailPage() {
                     key="vote"
                     whileTap={{ scale: 0.88 }}
                     onClick={() => voteMutation.mutate(e.id)}
-                    disabled={!isOpen || !!myVoteEntryId || e.user.id === me?.id || voteMutation.isPending}
-                    className="flex items-center gap-1 rounded-full border border-primary/60 px-3 py-1.5 text-xs font-semibold text-brand-coral disabled:opacity-40"
+                    disabled={
+                      !isOpen || !!myVoteEntryId || e.user.id === me?.id || voteMutation.isPending
+                    }
+                    className="flex h-9 items-center gap-1.5 rounded-lg bg-brand-coral/15 px-3 text-xs font-bold text-brand-coral transition-colors hover:bg-brand-coral/25 disabled:opacity-40"
                   >
                     <ThumbsUp className="h-3.5 w-3.5" /> {t("common.vote")}
                   </motion.button>
@@ -180,7 +190,7 @@ function CompetitionDetailPage() {
                 key={p.id}
                 disabled={joinMutation.isPending}
                 onClick={() => joinMutation.mutate(p.id)}
-                className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card p-3 text-start press-scale hover:border-primary/50"
+                className="flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-start transition-colors hover:border-[var(--hairline-strong)] hover:bg-muted/40 press-scale"
               >
                 <div className="relative h-10 w-10 overflow-hidden rounded-lg">
                   <PostCoverBg hue={p.hue} seed={p.id} />

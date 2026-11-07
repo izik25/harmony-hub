@@ -81,6 +81,8 @@ export const ko = {
     mute: "음소거",
     unmute: "음소거 해제",
     viewSound: "사운드 보기",
+    emptyTitle: "무대가 비어 있어요",
+    emptyBody: "아직 피드에 녹음이 없어요. 첫 번째 녹음을 남겨 보세요.",
   },
   explore: {
     search: "아티스트, 노래, DJ 검색...",
@@ -173,6 +175,7 @@ export const ko = {
     opensStudioHint:
       "완료하면 AI 스튜디오가 열려요. 저장하거나 게시하기 전에 테이크의 밸런스와 사운드를 다듬을 수 있어요.",
     scrubHint: "뒤로 드래그해 실수를 고치세요",
+    seekBar: "재생 위치",
     cutConfirmTitle: "여기까지 삭제할까요?",
     cutConfirmBody: "{{time}} 이후의 내용이 모두 삭제되고, 그 지점부터 다시 녹음할 수 있어요.",
     cutConfirmAction: "삭제 후 다시 녹음",

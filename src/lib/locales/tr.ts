@@ -80,6 +80,8 @@ export const tr = {
     mute: "Sesi kapat",
     unmute: "Sesi aç",
     viewSound: "Sesi görüntüle",
+    emptyTitle: "Sahne boş",
+    emptyBody: "Akışta henüz kayıt yok. İlkini sen kaydet.",
   },
   explore: {
     search: "Sanatçı, şarkı, DJ ara...",
@@ -174,6 +176,7 @@ export const tr = {
     opensStudioHint:
       "Bitirdiğinde Yapay Zekâ Stüdyosu açılır; kaydetmeden ya da yayınlamadan önce kaydın dengesini ve sesini ayarlayabilirsin.",
     scrubHint: "Bir hatayı düzeltmek için geri sürükle",
+    seekBar: "Oynatma konumu",
     cutConfirmTitle: "Bu noktaya kadar silinsin mi?",
     cutConfirmBody: "{{time}} sonrasındaki her şey silinecek ve oradan yeniden kaydedebileceksin.",
     cutConfirmAction: "Sil ve yeniden kaydet",
