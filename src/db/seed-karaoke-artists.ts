@@ -14,14 +14,24 @@ type DeezerArtist = { name: string; nb_fan: number; picture_xl: string };
 // looking up an artist's photo by name. We take the highest-fan-count match rather than just the
 // first result, since a same-named minor artist occasionally outranks the real one on relevance
 // alone (verified by hand for all 10 names in this file — every top-fan match was correct).
+// An exact name match wins over fan count, though: searching "עופר לוי" otherwise returns the far
+// bigger Offer Nissim. DEEZER_NAME gives the name to search for when Deezer lists the singer under
+// a different spelling than the one on our files.
+const DEEZER_NAME: Record<string, string> = {
+  "עופר לוי": "Ofer Levi",
+};
+
 async function fetchArtistPhoto(name: string): Promise<string | null> {
-  const url = `https://api.deezer.com/search/artist?q=${encodeURIComponent(name)}&limit=5`;
+  const query = DEEZER_NAME[name] ?? name;
+  const url = `https://api.deezer.com/search/artist?q=${encodeURIComponent(query)}&limit=5`;
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
     const data = (await res.json()) as { data?: Array<DeezerArtist> };
     if (!data.data?.length) return null;
-    const best = data.data.reduce((a, b) => (b.nb_fan > a.nb_fan ? b : a));
+    const exact = data.data.filter((a) => a.name.toLowerCase() === query.toLowerCase());
+    const pool = exact.length ? exact : data.data;
+    const best = pool.reduce((a, b) => (b.nb_fan > a.nb_fan ? b : a));
     return best.picture_xl || null;
   } catch {
     return null;
@@ -52,7 +62,10 @@ const ARTISTS: Record<string, Array<string>> = {
     "אודיה",
     "אופק אדנק",
     "בר צברי",
+    "נדב חנציס",
+    "עופר לוי",
   ],
+  en: ["Billie Eilish"],
   es: ["Luis Fonsi"],
   fr: ["Stromae"],
   ru: ["Ласковый май"],
