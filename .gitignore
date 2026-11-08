@@ -37,3 +37,10 @@ public/karaoke/
 *.sw?
 .vercel
 .env*
+
+# Impeccable design tooling: per-machine state, review screenshots, and the downloaded binary
+# (the launcher fetches it again on first run)
+.impeccable/config.local.json
+.impeccable/hook.cache.json
+.impeccable/review/
+**/skills/impeccable/scripts/bin/
