@@ -144,14 +144,7 @@ export const tr = {
       "Canlı monitör açık — kulaklık kullan, yoksa geri besleme/cızırtı olur.",
     monitorBluetoothLatency:
       "Bluetooth sesin yerleşik bir gecikmesi var (100-300ms) — gerçek zamanlı monitör için kablolu kulaklık dene.",
-    monitorDirect: "Sıfır gecikme",
-    monitorDirectOn:
-      "Sıfır gecikme: sesin hiçbir işlemden geçmeden doğrudan kulaklığa gider — bu cihazın izin verdiği en kısa gecikme. En iyisi kablolu kulaklıkla.",
-    monitorDirectOff:
-      "Yumuşatılmış monitör: arka plan gürültüsü filtrelenir, karşılığında birkaç milisaniye gecikme olur.",
     monitorVolume: "Monitör sesi",
-    monitorLatency:
-      "Bu cihazın bildirdiği gecikme: ~{{ms}}ms. ~40ms üzerindeki her şey telefonun, tarayıcının ve kulaklığın kendisinden gelir — kablolu kulaklık en düşükte tutar.",
     vocalVolume: "Vokal sesi",
     playbackVolume: "Altyapı sesi",
     remix: "Miksi güncelle",
@@ -198,6 +191,12 @@ export const tr = {
       "Kayıt boyunca yüzünü takip eden bir aksesuar tak — şapka, maske, hatta pop yıldızı tacı.",
     bg: {
       none: "Yok",
+      brand: "Studio 26",
+      micStage: "Sahnede",
+      micBooth: "Kayıt kabini",
+      neon: "Neon",
+      city: "Gece şehir",
+      micHint: "Kamerayı mikrofon tam ağzının altında olacak şekilde ayarla 🎤",
       blur: "Bulanık",
       studio: "Stüdyo",
       stage: "Sahne",

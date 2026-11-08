@@ -144,13 +144,7 @@ export const ko = {
     monitorFeedbackWarning: "실시간 모니터링이 켜져 있어요. 헤드폰을 쓰지 않으면 하울링이 생겨요.",
     monitorBluetoothLatency:
       "블루투스 오디오에는 기본 지연(100-300ms)이 있어요. 실시간 모니터링에는 유선 헤드폰을 사용해 보세요.",
-    monitorDirect: "지연 없음",
-    monitorDirectOn:
-      "지연 없음: 목소리가 아무 처리 없이 바로 헤드폰으로 가요 — 이 기기에서 가능한 가장 짧은 지연이에요. 유선 헤드폰과 함께 쓰면 가장 좋아요.",
-    monitorDirectOff: "부드러운 모니터링: 배경 소음을 걸러내는 대신 몇 밀리초의 지연이 생겨요.",
     monitorVolume: "모니터 볼륨",
-    monitorLatency:
-      "이 기기가 보고한 지연: 약 {{ms}}ms. 약 40ms를 넘는 부분은 휴대폰, 브라우저, 헤드폰 자체에서 생겨요 — 유선 헤드폰이 지연을 가장 낮게 유지해요.",
     vocalVolume: "보컬 볼륨",
     playbackVolume: "반주 볼륨",
     remix: "믹스 업데이트",
@@ -194,6 +188,12 @@ export const ko = {
     overlayHint: "얼굴을 따라다니는 소품을 테이크 내내 착용하세요 — 모자, 마스크, 팝스타 왕관까지.",
     bg: {
       none: "없음",
+      brand: "Studio 26",
+      micStage: "무대 위",
+      micBooth: "녹음 부스",
+      neon: "네온",
+      city: "도시의 밤",
+      micHint: "마이크가 입 바로 아래에 오도록 카메라를 맞춰 주세요 🎤",
       blur: "흐림",
       studio: "스튜디오",
       stage: "무대",

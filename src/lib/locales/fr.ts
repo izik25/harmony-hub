@@ -143,14 +143,7 @@ export const fr = {
       "Le retour en direct est activé — utilise un casque, sinon tu auras du larsen.",
     monitorBluetoothLatency:
       "L'audio Bluetooth a un retard intégré (100-300ms) — pour un retour en temps réel, essaie plutôt un casque filaire.",
-    monitorDirect: "Zéro latence",
-    monitorDirectOn:
-      "Zéro latence : ta voix va directement dans le casque sans aucun traitement — le retard le plus court que permet cet appareil. Idéal avec un casque filaire.",
-    monitorDirectOff:
-      "Retour lissé : le bruit de fond est filtré, au prix de quelques millisecondes de retard.",
     monitorVolume: "Volume du retour",
-    monitorLatency:
-      "Retard indiqué par cet appareil : ~{{ms}}ms. Au-delà de ~40ms, il vient du téléphone, du navigateur et du casque eux-mêmes — un casque filaire le garde au plus bas.",
     vocalVolume: "Volume de la voix",
     playbackVolume: "Volume de la musique",
     remix: "Mettre à jour le mix",
@@ -200,6 +193,12 @@ export const fr = {
       "Ajoute un accessoire qui suit ton visage pendant toute la prise — un chapeau, un masque, voire une couronne de pop star.",
     bg: {
       none: "Aucun",
+      brand: "Studio 26",
+      micStage: "Sur scène",
+      micBooth: "Cabine",
+      neon: "Néon",
+      city: "Ville la nuit",
+      micHint: "Cadre la caméra pour que le micro soit juste sous ta bouche 🎤",
       blur: "Flou",
       studio: "Studio",
       stage: "Scène",

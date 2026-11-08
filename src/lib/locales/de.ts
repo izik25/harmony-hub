@@ -144,14 +144,7 @@ export const de = {
       "Live-Monitoring ist an – nutze Kopfhörer, sonst gibt es Rückkopplungen.",
     monitorBluetoothLatency:
       "Bluetooth-Audio hat eine eingebaute Verzögerung (100-300ms) – für Echtzeit-Monitoring probier lieber kabelgebundene Kopfhörer.",
-    monitorDirect: "Ohne Verzögerung",
-    monitorDirectOn:
-      "Ohne Verzögerung: Deine Stimme geht ohne jede Bearbeitung direkt auf die Kopfhörer – die kürzeste Verzögerung, die dieses Gerät erlaubt. Am besten mit kabelgebundenen Kopfhörern.",
-    monitorDirectOff:
-      "Geglättetes Monitoring: Hintergrundgeräusche werden gefiltert, auf Kosten einiger Millisekunden Verzögerung.",
     monitorVolume: "Monitoring-Lautstärke",
-    monitorLatency:
-      "Von diesem Gerät gemeldete Verzögerung: ~{{ms}}ms. Alles über ~40ms kommt vom Handy, Browser und den Kopfhörern selbst – kabelgebundene Kopfhörer halten sie am niedrigsten.",
     vocalVolume: "Gesangslautstärke",
     playbackVolume: "Playback-Lautstärke",
     remix: "Mix aktualisieren",
@@ -199,6 +192,12 @@ export const de = {
       "Pinne ein gesichtsverfolgtes Accessoire für den ganzen Take an – einen Hut, eine Maske, sogar eine Popstar-Krone.",
     bg: {
       none: "Keiner",
+      brand: "Studio 26",
+      micStage: "Auf der Bühne",
+      micBooth: "Gesangskabine",
+      neon: "Neon",
+      city: "Stadt bei Nacht",
+      micHint: "Richte die Kamera so aus, dass das Mikro direkt unter deinem Mund ist 🎤",
       blur: "Unschärfe",
       studio: "Studio",
       stage: "Bühne",

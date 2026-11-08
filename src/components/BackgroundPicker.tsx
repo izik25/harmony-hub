@@ -1,69 +1,54 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
-import {
-  Aperture,
-  CloudFog,
-  Lightbulb,
-  Drama,
-  Users,
-  PartyPopper,
-  Landmark,
-  Martini,
-  Flame,
-  Check,
-  type LucideIcon,
-} from "lucide-react";
+import { Aperture, CloudFog, Check } from "lucide-react";
 import { BACKGROUND_OPTIONS, type BackgroundId } from "@/lib/virtual-background";
+import { renderBackgroundThumbnail } from "@/lib/background-scenes";
 
-// Approximates each real, canvas-rendered scene from virtual-background.ts using plain CSS
-// gradients — cheap to render as a picker thumbnail without spinning up the segmentation model
-// or drawing to an actual canvas just to preview a swatch. "none" and "blur" get a deliberately
-// dark neutral tile (rather than a washed-out light one) so their icon reads clearly against it —
-// every tile in the tray keeps the same white-icon-on-dark-or-vivid-fill contrast.
-const TILE_BACKGROUND: Record<BackgroundId, string> = {
-  none: "linear-gradient(165deg, #4b5563, #1c2330)",
-  blur: "linear-gradient(150deg, color-mix(in oklab, var(--brand-teal) 55%, #101820) 0%, #10161c 100%)",
-  studio:
-    "radial-gradient(circle at 30% 18%, rgba(245,240,230,0.55), transparent 55%), linear-gradient(160deg, #2a2e37, #101217)",
-  stage:
-    "radial-gradient(circle at 50% 10%, rgba(255,243,214,0.6), transparent 45%), linear-gradient(180deg, #0c0d12 0%, #15161d 65%, #2b1d14 100%)",
-  arena:
-    "radial-gradient(circle at 50% 4%, rgba(255,255,255,0.35), transparent 40%), linear-gradient(200deg, color-mix(in oklab, var(--brand-teal) 55%, transparent) 0%, transparent 45%), linear-gradient(150deg, color-mix(in oklab, var(--brand-coral) 55%, transparent) 0%, transparent 45%), linear-gradient(180deg, #08080d, #141018)",
-  crowd:
-    "radial-gradient(circle at 50% 2%, rgba(255,220,168,0.4), transparent 42%), radial-gradient(circle at 14% 20%, color-mix(in oklab, var(--brand-coral) 45%, transparent), transparent 50%), radial-gradient(circle at 88% 22%, color-mix(in oklab, var(--brand-indigo) 45%, transparent), transparent 50%), linear-gradient(180deg, #140b1c 0%, #251531 45%, #08060c 100%)",
-  caesarea:
-    "linear-gradient(180deg, #251534 0%, #7a3b52 42%, #d9814f 58%, #1a1310 60%, #1a1310 100%)",
-  bar: "radial-gradient(circle at 50% 12%, rgba(255,179,92,0.5), transparent 45%), linear-gradient(180deg, #1c130e 0%, #090504 100%)",
-  fireplace:
-    "radial-gradient(circle at 50% 78%, rgba(255,138,61,0.55), transparent 45%), radial-gradient(circle at 50% 82%, rgba(255,209,102,0.5), transparent 30%), linear-gradient(180deg, #2b1f16, #110b07)",
-  green: "linear-gradient(165deg, #22d16f, #0e9c4f)",
-  blue: "linear-gradient(165deg, #3b8aef, #0f56c4)",
-  coral:
-    "linear-gradient(165deg, color-mix(in oklab, var(--brand-coral) 85%, white), var(--brand-coral))",
-  indigo:
-    "linear-gradient(165deg, color-mix(in oklab, var(--brand-indigo) 70%, #5c5ad1), var(--brand-indigo))",
-  teal: "linear-gradient(165deg, color-mix(in oklab, var(--brand-teal) 80%, white), var(--brand-teal))",
-  gold: "linear-gradient(165deg, color-mix(in oklab, var(--brand-gold) 80%, white), var(--brand-gold))",
-};
+// Thumbnails are rendered at 2× the tile's CSS size so they stay crisp on retina screens.
+const THUMB_W = 128;
+const THUMB_H = 192;
 
-const TILE_ICON: Partial<Record<BackgroundId, LucideIcon>> = {
-  none: Aperture,
-  blur: CloudFog,
-  studio: Lightbulb,
-  stage: Drama,
-  arena: Users,
-  crowd: PartyPopper,
-  caesarea: Landmark,
-  bar: Martini,
-  fireplace: Flame,
+// "none" and "blur" have no painted scene to preview — they get a dark neutral tile with an icon.
+const ICON_TILES: Partial<Record<BackgroundId, { bg: string; Icon: typeof Aperture }>> = {
+  none: { bg: "linear-gradient(165deg, #4b5563, #1c2330)", Icon: Aperture },
+  blur: {
+    bg: "linear-gradient(150deg, color-mix(in oklab, var(--brand-teal) 55%, #101820) 0%, #10161c 100%)",
+    Icon: CloudFog,
+  },
 };
 
 /**
- * Horizontal tray of rectangular background previews — each tile shows an actual (scaled-down)
- * preview of the real scene from virtual-background.ts, not just an abstract icon, so scrolling
- * through it reads like flipping through a camera app's filter tray: you can tell what you're
- * about to get before tapping it. Tap one to change the selfie camera's live backdrop; the choice
- * stays visibly locked in (bright ring + glow + checkmark) until changed again.
+ * Renders every scene's real thumbnail (the same painters the live composer uses, with a
+ * stand-in silhouette where the singer goes) once, then hands back id → data URL. Rendering is
+ * spread over animation frames so opening the tray never blocks on painting all of them at once.
+ */
+function useThumbnails() {
+  const [thumbs, setThumbs] = useState<Partial<Record<BackgroundId, string>>>({});
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const { id } of BACKGROUND_OPTIONS) {
+        if (ICON_TILES[id]) continue;
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+        if (cancelled) return;
+        const url = await renderBackgroundThumbnail(id, THUMB_W, THUMB_H);
+        if (cancelled) return;
+        if (url) setThumbs((prev) => ({ ...prev, [id]: url }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return thumbs;
+}
+
+/**
+ * Horizontal tray of rectangular background previews — each tile is an actual scaled-down render
+ * of the scene, not an abstract icon, so scrolling through it reads like flipping through a camera
+ * app's filter tray. Tap one to change the selfie camera's live backdrop; the choice stays visibly
+ * locked in (bright ring + glow + checkmark) until changed again.
  */
 export function BackgroundPicker({
   value,
@@ -75,10 +60,12 @@ export function BackgroundPicker({
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
+  const thumbs = useThumbnails();
   return (
     <div className="no-scrollbar -mx-1 flex gap-2.5 overflow-x-auto px-1 pb-0.5 pt-1">
       {BACKGROUND_OPTIONS.map(({ id, labelKey }) => {
-        const Icon = TILE_ICON[id];
+        const iconTile = ICON_TILES[id];
+        const thumb = thumbs[id];
         const selected = value === id;
         return (
           <motion.button
@@ -89,17 +76,28 @@ export function BackgroundPicker({
             whileTap={disabled ? undefined : { scale: 0.93 }}
             aria-pressed={selected}
             aria-label={t(labelKey)}
-            className="relative h-24 w-16 shrink-0 overflow-hidden rounded-2xl outline-none transition-shadow disabled:opacity-50"
+            className="relative h-24 w-16 shrink-0 overflow-hidden rounded-2xl bg-[#111116] outline-none transition-shadow disabled:opacity-50"
             style={{
-              background: TILE_BACKGROUND[id],
+              background: iconTile?.bg,
               boxShadow: selected
                 ? "0 0 0 2.5px var(--card), 0 0 0 4.5px var(--primary), var(--shadow-pop-coral)"
                 : "0 0 0 1px color-mix(in oklab, var(--foreground) 8%, transparent)",
             }}
           >
-            {Icon && (
+            {thumb && (
+              <motion.img
+                src={thumb}
+                alt=""
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.25 }}
+                className="absolute inset-0 h-full w-full object-cover"
+                draggable={false}
+              />
+            )}
+            {iconTile && (
               <span className="absolute inset-0 grid place-items-center">
-                <Icon className="h-6 w-6 text-white/90 drop-shadow" />
+                <iconTile.Icon className="h-6 w-6 text-white/90 drop-shadow" />
               </span>
             )}
             {selected && (

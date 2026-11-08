@@ -143,14 +143,7 @@ export const it = {
       "Il monitoraggio dal vivo è attivo: usa le cuffie, o ci sarà un fischio di ritorno.",
     monitorBluetoothLatency:
       "L'audio Bluetooth ha un ritardo integrato (100-300ms): per il monitoraggio in tempo reale prova delle cuffie con filo.",
-    monitorDirect: "Zero ritardo",
-    monitorDirectOn:
-      "Zero ritardo: la tua voce va dritta in cuffia senza alcuna elaborazione, il ritardo più breve che questo dispositivo consente. Ideale con cuffie a filo.",
-    monitorDirectOff:
-      "Monitoraggio filtrato: il rumore di fondo viene eliminato, al costo di qualche millisecondo di ritardo.",
     monitorVolume: "Volume monitoraggio",
-    monitorLatency:
-      "Ritardo segnalato da questo dispositivo: ~{{ms}}ms. Oltre i ~40ms dipende da telefono, browser e cuffie stessi: le cuffie a filo lo tengono al minimo.",
     vocalVolume: "Volume voce",
     playbackVolume: "Volume base",
     remix: "Aggiorna mix",
@@ -200,6 +193,12 @@ export const it = {
       "Applica un accessorio che segue il viso per tutta la take: un cappello, una maschera, perfino una corona da popstar.",
     bg: {
       none: "Nessuno",
+      brand: "Studio 26",
+      micStage: "Sul palco",
+      micBooth: "Cabina",
+      neon: "Neon",
+      city: "Città di notte",
+      micHint: "Inquadra la fotocamera così che il microfono sia proprio sotto la bocca 🎤",
       blur: "Sfocato",
       studio: "Studio",
       stage: "Palco",

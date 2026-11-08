@@ -142,13 +142,7 @@ export const zh = {
     cameraDenied: "无法访问摄像头——仅录制音频。",
     monitorFeedbackWarning: "实时耳返已开启——请戴耳机，否则会产生啸叫。",
     monitorBluetoothLatency: "蓝牙音频自带延迟（100-300ms）——如需实时耳返，建议改用有线耳机。",
-    monitorDirect: "零延迟",
-    monitorDirectOn:
-      "零延迟：你的声音不经任何处理直接进入耳机——这是本设备允许的最短延迟。搭配有线耳机效果最佳。",
-    monitorDirectOff: "平滑耳返：过滤背景噪音，代价是几毫秒的延迟。",
     monitorVolume: "耳返音量",
-    monitorLatency:
-      "本设备报告的延迟：约 {{ms}}ms。超过约 40ms 的部分来自手机、浏览器和耳机本身——有线耳机能让延迟保持最低。",
     vocalVolume: "人声音量",
     playbackVolume: "伴奏音量",
     remix: "更新混音",
@@ -191,6 +185,12 @@ export const zh = {
     overlayHint: "整段录制都戴上跟随面部的道具——帽子、面具，甚至流行巨星的皇冠。",
     bg: {
       none: "无",
+      brand: "Studio 26",
+      micStage: "舞台上",
+      micBooth: "录音棚",
+      neon: "霓虹",
+      city: "城市夜景",
+      micHint: "调整镜头，让麦克风正好在你嘴巴下方 🎤",
       blur: "虚化",
       studio: "录音棚",
       stage: "舞台",

@@ -27,7 +27,6 @@ import {
   RotateCcw,
   Wand2,
   Crown,
-  Zap,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import * as Tone from "tone";
@@ -66,12 +65,14 @@ import * as videoSplice from "@/lib/video-splice";
 import { openSelfieCamera, buildCombinedRecorder } from "@/lib/camera-capture";
 import {
   startVirtualBackground,
+  DEFAULT_BACKGROUND,
+  MIC_BACKGROUNDS,
+  isBackgroundId,
   type BackgroundId,
   type VirtualBackgroundComposer,
 } from "@/lib/virtual-background";
-import { findHeadphoneOutput } from "@/lib/audio-output";
+import { findHeadphones } from "@/lib/audio-output";
 import { outputLatencySeconds } from "@/lib/vocal-chain";
-import { createMonitorVoice, type LiveNoiseGate } from "@/lib/mic-noise-gate";
 
 export const Route = createFileRoute("/record")({
   // A song page's "Use this sound" button lands here with the track already picked, so recording
@@ -98,8 +99,34 @@ const DEFAULT_VOCAL_GAIN = 1.15;
 const DEFAULT_BACKING_GAIN = 0.95;
 // How loud the monitor feeds your voice into the headphones. Fixed, with no settings to dial in:
 // the monitor just works as soon as headphones are on. A version that added +10dB of makeup gain
-// on top of this distorted and brought the room's hiss up with the voice.
-const MONITOR_GAIN = 0.55;
+// on top of this distorted and brought the room's hiss up with the voice, and 0.55 on the raw
+// (unprocessed) mic was still too loud in the ears.
+const MONITOR_GAIN = 0.4;
+// Ceiling for the monitor's soft limiter (see monitorLimiterCurve): below this the voice passes
+// untouched, above it a shout or a plosive is rounded off instead of blasting the headphones.
+const MONITOR_CEILING = 0.5;
+
+/**
+ * A WaveShaper curve that's a straight line (no change at all) up to half the ceiling, then bends
+ * smoothly into MONITOR_CEILING. A WaveShaperNode with no oversampling is a per-sample lookup —
+ * no lookahead and no buffering, unlike DynamicsCompressorNode, which delays the signal by ~6ms
+ * to see peaks coming — so it caps the monitor's loudness without adding any delay.
+ */
+function monitorLimiterCurve(): Float32Array<ArrayBuffer> {
+  const knee = MONITOR_CEILING / 2;
+  const n = 2049;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    const a = Math.abs(x);
+    const y =
+      a <= knee
+        ? a
+        : knee + (MONITOR_CEILING - knee) * Math.tanh((a - knee) / (MONITOR_CEILING - knee));
+    curve[i] = Math.sign(x) * y;
+  }
+  return curve;
+}
 
 // Legacy Chromium-only constraint names ("goog*") aren't in the standard MediaTrackConstraints
 // type, but are still honored today — and the plain boolean flags alone don't switch off every
@@ -132,12 +159,20 @@ type ChromeAudioConstraints = MediaTrackConstraints & {
 // change from moment to moment, which is exactly what the offline noise reduction can't follow:
 // it learns the room from the whole take, so the room has to stay the same all the way through.
 // Kept in sync with FixSectionEditor.tsx's copy, so a re-recorded section matches the take.
-const MIC_CONSTRAINTS: ChromeAudioConstraints = {
+//
+// `latency: 0` (the shortest capture buffering the device allows) isn't for the take — it's
+// there because the live monitor below asks for these exact settings, and Chrome serves
+// both captures from one open mic. Whichever opens first sets that mic's buffering, and it's
+// usually this one, so asking only on the monitor's side left it on the default buffer. It
+// changes nothing in the recorded audio, and the take's own sync reads the real value back from
+// the track (measureRecordLatency).
+const MIC_CONSTRAINTS: ChromeAudioConstraints & { latency?: ConstrainDouble } = {
   echoCancellation: false,
   noiseSuppression: false,
   autoGainControl: false,
   sampleRate: { ideal: 48000 },
   channelCount: { ideal: 1 },
+  latency: { ideal: 0 },
   googEchoCancellation: false,
   googEchoCancellation2: false,
   googAutoGainControl: false,
@@ -148,38 +183,14 @@ const MIC_CONSTRAINTS: ChromeAudioConstraints = {
   googTypingNoiseDetection: false,
 };
 
-// The monitor's own capture. Noise suppression is ON: a raw, unprocessed capsule (tried twice)
-// put every bit of room hiss, rustle and handling noise straight into the singer's headphones,
-// which was far worse than the few milliseconds NS's frame costs. AGC stays off — it would pump
-// the room back up between phrases — and AEC stays off for the same Android call-mode reason as
-// MIC_CONSTRAINTS. `latency: 0` asks the capture layer for the shortest buffering it can manage.
-// No sampleRate ask: the mic's own native rate means no capture-side conversion at all, and the
-// monitor context below is sized to the output device.
-const MONITOR_CONSTRAINTS: ChromeAudioConstraints & { latency?: ConstrainDouble } = {
-  echoCancellation: false,
-  noiseSuppression: true,
-  autoGainControl: false,
-  channelCount: { ideal: 1 },
-  latency: { ideal: 0 },
-  googEchoCancellation: false,
-  googEchoCancellation2: false,
-  googAutoGainControl: false,
-  googAutoGainControl2: false,
-  googNoiseSuppression: true,
-  googNoiseSuppression2: true,
-  googHighpassFilter: true,
-};
-
-// "Zero delay" monitoring, for wired headphones: the exact capture settings the take itself uses
-// (every bit of browser voice processing off) plus `latency: 0`. Noise suppression is what
-// MONITOR_CONSTRAINTS pays for in delay — Chromium's processing runs in 10ms frames with its own
-// buffering on top — and with nothing switched on, Chrome skips that whole stage and hands the
-// mic's samples straight to Web Audio. Matching MIC_CONSTRAINTS also lets Chrome serve both
-// captures from the one open device instead of a second, differently-configured one.
-const DIRECT_MONITOR_CONSTRAINTS: ChromeAudioConstraints & { latency?: ConstrainDouble } = {
-  ...MIC_CONSTRAINTS,
-  latency: { ideal: 0 },
-};
+// The live monitor's capture: the exact settings the take itself uses — every bit of browser
+// voice processing off, shortest buffering. The singer hears exactly what's being recorded, with
+// nothing cleaned up. Noise suppression used to run here (with a mode switch to turn it off), but
+// Chromium's processing works in 10ms frames with its own buffering on top, and that delay was
+// what threw singers off the beat. With nothing switched on, Chrome skips that whole stage and
+// hands the mic's samples straight to Web Audio. Matching MIC_CONSTRAINTS also lets Chrome serve
+// both captures from the one open device instead of a second, differently-configured one.
+const MONITOR_CONSTRAINTS = MIC_CONSTRAINTS;
 
 /**
  * Measures how far behind the backing track a fresh take runs, from the moment the recorder
@@ -225,7 +236,7 @@ function measureRecordLatency(
   return () => clearInterval(timer);
 }
 
-function useMicLevels(active: boolean, monitor: boolean, direct: boolean) {
+function useMicLevels(active: boolean, monitor: boolean) {
   const [levels, setLevels] = useState<number[]>(() => Array(BAR_COUNT).fill(6));
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -238,6 +249,9 @@ function useMicLevels(active: boolean, monitor: boolean, direct: boolean) {
   // Bumped whenever the OS kills a mic track out from under us (app backgrounded mid-pause, an
   // incoming call) so both captures below reopen instead of a resumed take recording a dead track.
   const [restartKey, setRestartKey] = useState(0);
+  // Whether the recording mic is open right now — the point from which device labels are readable,
+  // so headphone detection knows when to look again.
+  const [micOpen, setMicOpen] = useState(false);
 
   // The stream MediaRecorder actually records from — nothing else ever touches this track.
   useEffect(() => {
@@ -253,6 +267,7 @@ function useMicLevels(active: boolean, monitor: boolean, direct: boolean) {
           return;
         }
         streamRef.current = stream;
+        setMicOpen(true);
         stream.getAudioTracks()[0]?.addEventListener("ended", () => {
           if (!cancelled) setRestartKey((k) => k + 1);
         });
@@ -287,6 +302,7 @@ function useMicLevels(active: boolean, monitor: boolean, direct: boolean) {
       // Cleared so the recorder-setup effect waits for the reopened stream rather than starting
       // on the one just stopped.
       streamRef.current = null;
+      setMicOpen(false);
       ctxRef.current = null;
       ctx?.close();
       setLevels(Array(BAR_COUNT).fill(6));
@@ -314,12 +330,9 @@ function useMicLevels(active: boolean, monitor: boolean, direct: boolean) {
     let cancelled = false;
     let monitorStream: MediaStream | undefined;
     let ctx: AudioContext | undefined;
-    let gate: LiveNoiseGate | undefined;
 
     (async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: direct ? DIRECT_MONITOR_CONSTRAINTS : MONITOR_CONSTRAINTS,
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: MONITOR_CONSTRAINTS });
       if (cancelled) {
         stream.getTracks().forEach((t) => t.stop());
         return;
@@ -351,49 +364,30 @@ function useMicLevels(active: boolean, monitor: boolean, direct: boolean) {
       ctx.resume().catch(() => {});
       // The mic permission just granted above is what makes real device labels available. Not
       // awaited, so the hint never holds up the monitor itself.
-      findHeadphoneOutput().then((headphone) => {
+      findHeadphones().then((headphone) => {
         if (!cancelled && headphone && /bluetooth/i.test(headphone.label)) {
           toast.info(i18n.t("record.monitorBluetoothLatency"));
         }
       });
+      // mic -> volume -> soft limiter -> headphones, and nothing else: no noise cleanup, no
+      // filter, no AudioWorklet. Both nodes work sample by sample with no buffering of their own,
+      // so the voice reaches the ears exactly as fast as the device itself allows.
       const source = ctx.createMediaStreamSource(stream);
       const gain = ctx.createGain();
       gain.gain.value = MONITOR_GAIN;
-      // Zero delay: mic -> volume -> headphones and nothing else in between. The filter and
-      // processor below don't buffer, but they're still work on every tiny render block, and this
-      // mode is about leaving the shortest path there is.
-      if (direct) {
-        source.connect(gain).connect(ctx.destination);
-        return;
-      }
-      // Just a rumble/handling-thump cut below the voice: a plain BiquadFilterNode (a
-      // single-sample IIR filter, no internal buffering, so no added latency), ahead of the
-      // processor so it never reacts to thumps. No lowpass — an earlier 9kHz one made the voice
-      // sound muffled — and no reverb: a ConvolverNode was heard as an echo and was heavy enough
-      // to crackle at the monitor's tiny render buffers.
-      const rumble = ctx.createBiquadFilter();
-      rumble.type = "highpass";
-      rumble.frequency.value = 90;
-      rumble.Q.value = 0.7;
-      source.connect(rumble);
-      // Soft expander + gentle compressor — see MonitorVoiceProcessor in mic-noise-gate.ts.
-      // Falls back to `rumble` itself (unprocessed) if AudioWorklet isn't available.
-      gate = await createMonitorVoice(ctx, rumble);
-      if (cancelled) {
-        gate.dispose();
-        return;
-      }
-      gate.node.connect(gain).connect(ctx.destination);
+      const limiter = ctx.createWaveShaper();
+      limiter.curve = monitorLimiterCurve();
+      limiter.oversample = "none";
+      source.connect(gain).connect(limiter).connect(ctx.destination);
     })().catch(() => {}); // monitor is optional — a failure here shouldn't interrupt recording
 
     return () => {
       cancelled = true;
       monitorCtxRef.current = null;
-      gate?.dispose();
       ctx?.close();
       monitorStream?.getTracks().forEach((t) => t.stop());
     };
-  }, [active, monitor, direct, restartKey]);
+  }, [active, monitor, restartKey]);
 
   const resumeAudio = () => {
     ctxRef.current?.resume().catch(() => {});
@@ -404,6 +398,7 @@ function useMicLevels(active: boolean, monitor: boolean, direct: boolean) {
     levels,
     stream: streamRef,
     resumeAudio,
+    micOpen,
   };
 }
 
@@ -412,7 +407,15 @@ function useMicLevels(active: boolean, monitor: boolean, direct: boolean) {
 // what should actually be shown/recorded, whether that's the plain camera feed ("none") or the
 // background-replaced one. Keeping preview and recording on the exact same stream means what you
 // see while framing the shot is exactly what ends up in the take.
-function useSelfieCameraStream(enabled: boolean, backgroundId: BackgroundId, onDenied: () => void) {
+//
+// `mirrored` says whether the returned stream is already flipped (the background composer draws
+// the singer mirrored so scene text like the logo reads correctly) — the preview only applies its
+// own CSS mirror when it isn't.
+function useSelfieCameraStream(
+  enabled: boolean,
+  backgroundId: BackgroundId,
+  onDenied: () => void,
+): { stream: MediaStream | null; mirrored: boolean } {
   const [rawStream, setRawStream] = useState<MediaStream | null>(null);
   const [outputStream, setOutputStream] = useState<MediaStream | null>(null);
   const composerRef = useRef<VirtualBackgroundComposer | null>(null);
@@ -533,7 +536,7 @@ function useSelfieCameraStream(enabled: boolean, backgroundId: BackgroundId, onD
     };
   }, [rawStream, backgroundId]);
 
-  return outputStream;
+  return { stream: outputStream, mirrored: !!outputStream && outputStream !== rawStream };
 }
 
 // Second compositing stage, chained after useSelfieCameraStream's own output: bakes a whole-frame
@@ -702,10 +705,6 @@ function RecordPage() {
   // moment you start recording rather than requiring a tap to discover. localStorage still lets
   // an explicit "no" from a previous session stick.
   const [monitorEnabled, setMonitorEnabled] = useState(true);
-  // "Zero delay" monitoring (DIRECT_MONITOR_CONSTRAINTS): the voice goes straight to the
-  // headphones with no noise suppression or processing. Switches itself on when wired headphones
-  // are found (below) unless the user has picked a mode themselves, which then sticks.
-  const [monitorDirect, setMonitorDirect] = useState(false);
   // Rewind-and-punch-in: previewSeconds tracks the live drag position while the user is
   // scrubbing the timeline backward; cutConfirm holds the target once they release, gating the
   // "delete back to here and re-record?" dialog.
@@ -719,10 +718,11 @@ function RecordPage() {
   // slicing) when !cameraEnabled, video-splice.ts (plays segments through a canvas + MediaRecorder
   // re-encode — see that file) when cameraEnabled.
   const [cameraEnabled, setCameraEnabled] = useState(false);
-  // Which virtual background (if any) replaces whatever's actually behind the singer — "none"
-  // keeps the real camera feed exactly as before. Persisted the same way monitorEnabled is, so a
-  // returning user's last pick sticks instead of resetting to "none" every session.
-  const [backgroundId, setBackgroundId] = useState<BackgroundId>("none");
+  // Which virtual background (if any) replaces whatever's actually behind the singer. Every camera
+  // opens on the branded Studio 26 backdrop (DEFAULT_BACKGROUND) until the user picks something
+  // else — "none" keeps the real camera feed. Persisted the same way monitorEnabled is, so a
+  // returning user's last pick (including "none") sticks.
+  const [backgroundId, setBackgroundId] = useState<BackgroundId>(DEFAULT_BACKGROUND);
   // A face-filter gift (party hat, sunglasses, ...) currently playing over the camera preview —
   // see FaceFilterOverlay.tsx. Unlike backgroundId this is transient: it's cleared automatically
   // a few seconds after being set, by the overlay's own onDone callback, not by the user.
@@ -801,10 +801,9 @@ function RecordPage() {
   // real rewind (or answering "no" to the cut prompt) knows whether to resume or stay paused.
   const wasRecordingRef = useRef(false);
   const recording = phase === "recording";
-  const { stream, resumeAudio } = useMicLevels(
+  const { stream, resumeAudio, micOpen } = useMicLevels(
     phase === "recording" || phase === "paused",
     monitorEnabled,
-    monitorDirect,
   );
 
   // Remember the monitor preference across visits, same as any other studio setting — but only
@@ -817,42 +816,31 @@ function RecordPage() {
     const stored = localStorage.getItem("hh:monitorEnabled");
     if (stored != null) setMonitorEnabled(stored === "1");
     else firstMonitorVisitRef.current = true;
-    const storedDirect = localStorage.getItem("hh:monitorDirect");
-    if (storedDirect != null) setMonitorDirect(storedDirect === "1");
+    // The old monitor-mode switch is gone; drop its leftover preference.
+    localStorage.removeItem("hh:monitorDirect");
   }, []);
 
   // Headphones turn monitoring on by themselves — the one setup where hearing yourself can't feed
   // back. Only when they're first seen (on this visit, or plugged in later), so switching it off
   // with the rail button sticks until the headphones are actually reconnected. Device labels need
-  // mic permission, so this looks again when recording starts, once the mic is open.
+  // mic permission, so this looks again the moment the recording mic is actually open — a fixed
+  // retry a second after tapping record missed it whenever the permission prompt took longer.
   const headphonesSeenRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
     const check = () =>
-      findHeadphoneOutput().then((headphone) => {
+      findHeadphones().then((headphone) => {
         if (cancelled) return;
-        if (headphone && !headphonesSeenRef.current) {
-          setMonitorEnabled(true);
-          // Wired is the one connection fast enough for zero delay to matter — Bluetooth's own
-          // 100-300ms swamps anything saved here.
-          if (
-            !/bluetooth/i.test(headphone.label) &&
-            localStorage.getItem("hh:monitorDirect") == null
-          ) {
-            setMonitorDirect(true);
-          }
-        }
+        if (headphone && !headphonesSeenRef.current) setMonitorEnabled(true);
         headphonesSeenRef.current = !!headphone;
       });
     check();
-    const retry = recording ? setTimeout(check, 1000) : undefined;
     navigator.mediaDevices?.addEventListener?.("devicechange", check);
     return () => {
       cancelled = true;
-      clearTimeout(retry);
       navigator.mediaDevices?.removeEventListener?.("devicechange", check);
     };
-  }, [recording]);
+  }, [micOpen]);
 
   const toggleMonitor = () => {
     setMonitorEnabled((prev) => {
@@ -863,24 +851,19 @@ function RecordPage() {
     });
   };
 
-  const toggleMonitorDirect = () => {
-    setMonitorDirect((prev) => {
-      const next = !prev;
-      localStorage.setItem("hh:monitorDirect", next ? "1" : "0");
-      toast.info(t(next ? "record.monitorDirectOn" : "record.monitorDirectOff"));
-      return next;
-    });
-  };
-
   // Opens (or tears down) the camera as soon as the toggle changes — independent of `phase` —
   // so the self-preview is already framed and ready before the user taps record, the same way
   // the mic-level meter is already live before recording starts. Background replacement (if any)
   // is layered on top by the hook itself; the effect below just mirrors whichever stream comes
   // back into the preview element and the ref the recorder reads from.
-  const backgroundStream = useSelfieCameraStream(cameraEnabled, backgroundId, () => {
-    toast.error(t("record.cameraDenied"));
-    setCameraEnabled(false);
-  });
+  const { stream: backgroundStream, mirrored: selfieMirrored } = useSelfieCameraStream(
+    cameraEnabled,
+    backgroundId,
+    () => {
+      toast.error(t("record.cameraDenied"));
+      setCameraEnabled(false);
+    },
+  );
   // Second stage on top of the background composer's own output — bakes the look grade and any
   // pinned overlay prop in, so the preview and the recorded stream stay identical the same way
   // backgroundId's replacement already does (see useCameraEffectsStream above).
@@ -903,7 +886,7 @@ function RecordPage() {
   // above.
   useEffect(() => {
     const stored = localStorage.getItem("hh:backgroundId");
-    if (stored) setBackgroundId(stored as BackgroundId);
+    if (isBackgroundId(stored)) setBackgroundId(stored);
     const storedLook = localStorage.getItem("hh:lookId");
     if (storedLook) setLookId(storedLook as LookId);
     const storedOverlay = localStorage.getItem("hh:stickyOverlay");
@@ -912,6 +895,7 @@ function RecordPage() {
   const chooseBackground = (id: BackgroundId) => {
     setBackgroundId(id);
     localStorage.setItem("hh:backgroundId", id);
+    if (MIC_BACKGROUNDS.has(id)) toast.info(t("record.bg.micHint"));
   };
   const chooseLook = (id: LookId) => {
     setLookId(id);
@@ -1456,13 +1440,20 @@ function RecordPage() {
               gifted filter's few-second effect on top of it — a live show effect only, never
               baked into the actual take. */}
           {cameraEnabled && (
-            <div className="absolute top-20 end-3 z-20 h-32 w-24 overflow-hidden rounded-2xl border-2 border-white shadow-lg">
+            // A mic scene needs you to line your mouth up with the mic, so the preview grows a
+            // size while one is picked — big enough to actually frame against.
+            <div
+              className={`absolute top-20 end-3 z-20 overflow-hidden rounded-2xl border-2 border-white shadow-lg transition-[width,height] duration-300 ${
+                MIC_BACKGROUNDS.has(backgroundId) ? "h-48 w-36" : "h-32 w-24"
+              }`}
+            >
               {/* Mirrored like every selfie camera preview on social apps today (Instagram, TikTok,
                   Snapchat) so it reads as a mirror rather than the "backwards" feel of the raw,
-                  unflipped feed. The video and its face-filter overlay are flipped together as one
+                  unflipped feed. (Skipped when the background composer already mirrored the
+                  stream itself — see useSelfieCameraStream.) The video and its face-filter overlay are flipped together as one
                   box — FaceFilterOverlay still tracks/anchors against the real, unmirrored video
                   pixels, so flipping the pair post-render keeps the filter aligned with the face. */}
-              <div className="h-full w-full -scale-x-100">
+              <div className={selfieMirrored ? "h-full w-full" : "h-full w-full -scale-x-100"}>
                 <video
                   ref={camVideoRef}
                   muted
@@ -1561,18 +1552,6 @@ function RecordPage() {
               }}
               active={monitorEnabled}
             />
-            {monitorEnabled && (
-              <RailControl
-                icon={<Zap className="h-5 w-5" />}
-                label={t("record.monitorDirect")}
-                showLabel={!railHintsSeen}
-                onClick={() => {
-                  setRailHintsSeen(true);
-                  toggleMonitorDirect();
-                }}
-                active={monitorDirect}
-              />
-            )}
             <RailControl
               icon={<ChevronsUpDown className="h-5 w-5" />}
               label={t("record.pitchLabel")}

@@ -145,13 +145,7 @@ export const ja = {
       "ライブモニターがオンです。ヘッドホンを使わないとハウリングが起きます。",
     monitorBluetoothLatency:
       "Bluetoothオーディオには遅延（100-300ms）があります。リアルタイムでモニターするなら有線ヘッドホンをお試しください。",
-    monitorDirect: "ゼロ遅延",
-    monitorDirectOn:
-      "ゼロ遅延：声を一切処理せずにそのままヘッドホンへ送ります。このデバイスで可能な最短の遅延です。有線ヘッドホンがおすすめです。",
-    monitorDirectOff: "スムーズモニター：背景ノイズを除去する代わりに、数ミリ秒の遅延が生じます。",
     monitorVolume: "モニター音量",
-    monitorLatency:
-      "このデバイスが報告する遅延：約{{ms}}ms。約40msを超える分はスマホ、ブラウザ、ヘッドホン自体によるものです。有線ヘッドホンなら最小限に抑えられます。",
     vocalVolume: "ボーカル音量",
     playbackVolume: "伴奏の音量",
     remix: "ミックスを更新",
@@ -195,6 +189,12 @@ export const ja = {
     overlayHint: "顔を追従するアイテムをテイク全体に — 帽子、マスク、ポップスターの王冠まで。",
     bg: {
       none: "なし",
+      brand: "Studio 26",
+      micStage: "ステージ",
+      micBooth: "録音ブース",
+      neon: "ネオン",
+      city: "夜の街",
+      micHint: "マイクが口のすぐ下に来るようにカメラを合わせてね 🎤",
       blur: "ぼかし",
       studio: "スタジオ",
       stage: "ステージ",

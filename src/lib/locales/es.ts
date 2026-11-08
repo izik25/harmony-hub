@@ -143,14 +143,7 @@ export const es = {
       "El monitoreo en vivo está activado: usa auriculares o habrá acople/pitidos.",
     monitorBluetoothLatency:
       "El audio Bluetooth tiene un retraso incorporado (100-300ms); para monitorear en tiempo real, prueba con auriculares con cable.",
-    monitorDirect: "Sin retraso",
-    monitorDirectOn:
-      "Sin retraso: tu voz va directo a los auriculares sin ningún procesamiento, el retraso más corto que permite este dispositivo. Mejor con auriculares con cable.",
-    monitorDirectOff:
-      "Monitoreo suavizado: se filtra el ruido de fondo, a cambio de unos milisegundos de retraso.",
     monitorVolume: "Volumen del monitoreo",
-    monitorLatency:
-      "Retraso informado por este dispositivo: ~{{ms}}ms. Todo lo que pase de ~40ms viene del teléfono, el navegador y los auriculares; los auriculares con cable lo mantienen al mínimo.",
     vocalVolume: "Volumen de voz",
     playbackVolume: "Volumen de la pista",
     remix: "Actualizar mezcla",
@@ -199,6 +192,12 @@ export const es = {
       "Fija un accesorio que sigue tu cara durante toda la toma: un sombrero, una máscara, incluso una corona de estrella pop.",
     bg: {
       none: "Ninguno",
+      brand: "Studio 26",
+      micStage: "En el escenario",
+      micBooth: "Cabina",
+      neon: "Neón",
+      city: "Ciudad de noche",
+      micHint: "Encuadra la cámara para que el micro quede justo bajo tu boca 🎤",
       blur: "Desenfoque",
       studio: "Estudio",
       stage: "Escenario",

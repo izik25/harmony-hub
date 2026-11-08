@@ -142,14 +142,7 @@ export const pt = {
     monitorFeedbackWarning: "O retorno ao vivo está ligado — use fones, ou vai dar microfonia.",
     monitorBluetoothLatency:
       "O áudio Bluetooth tem um atraso embutido (100-300ms) — para retorno em tempo real, experimente fones com fio.",
-    monitorDirect: "Sem atraso",
-    monitorDirectOn:
-      "Sem atraso: sua voz vai direto para os fones sem nenhum processamento — o menor atraso que este aparelho permite. Melhor com fones com fio.",
-    monitorDirectOff:
-      "Retorno suavizado: o ruído de fundo é filtrado, ao custo de alguns milissegundos de atraso.",
     monitorVolume: "Volume do retorno",
-    monitorLatency:
-      "Atraso informado por este aparelho: ~{{ms}}ms. Tudo acima de ~40ms vem do próprio celular, navegador e fones — fones com fio mantêm o atraso mais baixo.",
     vocalVolume: "Volume da voz",
     playbackVolume: "Volume da música",
     remix: "Atualizar mixagem",
@@ -197,6 +190,12 @@ export const pt = {
       "Fixe um acessório que acompanha seu rosto durante toda a gravação — um chapéu, uma máscara, até uma coroa de pop star.",
     bg: {
       none: "Nenhum",
+      brand: "Studio 26",
+      micStage: "No palco",
+      micBooth: "Cabine",
+      neon: "Neon",
+      city: "Cidade à noite",
+      micHint: "Enquadre a câmera para o microfone ficar logo abaixo da boca 🎤",
       blur: "Desfoque",
       studio: "Estúdio",
       stage: "Palco",
