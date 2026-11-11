@@ -67,7 +67,6 @@ import {
   startVirtualBackground,
   DEFAULT_BACKGROUND,
   MIC_BACKGROUNDS,
-  isBackgroundId,
   type BackgroundId,
   type VirtualBackgroundComposer,
 } from "@/lib/virtual-background";
@@ -100,11 +99,14 @@ const DEFAULT_BACKING_GAIN = 0.95;
 // How loud the monitor feeds your voice into the headphones. Fixed, with no settings to dial in:
 // the monitor just works as soon as headphones are on. A version that added +10dB of makeup gain
 // on top of this distorted and brought the room's hiss up with the voice, and 0.55 on the raw
-// (unprocessed) mic was still too loud in the ears.
-const MONITOR_GAIN = 0.4;
+// (unprocessed) mic was still too loud in the ears — so was 0.4.
+const MONITOR_GAIN = 0.28;
 // Ceiling for the monitor's soft limiter (see monitorLimiterCurve): below this the voice passes
 // untouched, above it a shout or a plosive is rounded off instead of blasting the headphones.
-const MONITOR_CEILING = 0.5;
+const MONITOR_CEILING = 0.35;
+// Below this RMS the singer is between phrases — the moment the monitor can swap in a fresh mic
+// source (see the monitor effect) without it being heard.
+const MONITOR_QUIET_RMS = 0.012;
 
 /**
  * A WaveShaper curve that's a straight line (no change at all) up to half the ceiling, then bends
@@ -325,22 +327,25 @@ function useMicLevels(active: boolean, monitor: boolean) {
   // of "hearing myself a beat late" was actually coming from — MONITOR_CONSTRAINTS' `latency: 0`
   // only shortens the *capture* side. `latencyHint: 0` asks the output side for the shortest
   // buffer it can manage too, so both ends of the loop are tuned for immediacy.
+  //
+  // Why the delay used to *grow*: Chrome hands mic audio to Web Audio through a FIFO inside each
+  // MediaStreamAudioSourceNode, and that FIFO only ever drops on overflow — it never drains a
+  // backlog. Any hiccup (the context starting after the mic already runs, the video seek and
+  // recorder start on tapping record, the background segmenter loading the CPU) stalls the render
+  // thread for a moment, the mic keeps pushing, and from then on the voice plays back late by
+  // that backlog for the rest of the session. A fresh source node starts with an empty FIFO, so
+  // the monitor keeps swapping one in — crossfaded over 8ms, only while the singer is quiet
+  // between phrases — which throws any backlog away the moment it's safe to. And if the output
+  // side's own buffer grows after underruns (AAudio enlarges it and never shrinks it back), the
+  // whole context is rebuilt.
   useEffect(() => {
     if (!active || !monitor) return;
     let cancelled = false;
     let monitorStream: MediaStream | undefined;
     let ctx: AudioContext | undefined;
+    let watch: ReturnType<typeof setInterval> | undefined;
 
-    (async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: MONITOR_CONSTRAINTS });
-      if (cancelled) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
-      monitorStream = stream;
-      stream.getAudioTracks()[0]?.addEventListener("ended", () => {
-        if (!cancelled) setRestartKey((k) => k + 1);
-      });
+    const build = (stream: MediaStream) => {
       // `latencyHint: "interactive"` is a broadly-safe preset the browser picks to cover any
       // kind of app; passing an explicit `0` instead is the spec's own escape hatch for exactly
       // this case — it asks the platform for the smallest render buffer it's actually willing
@@ -359,9 +364,102 @@ function useMicLevels(active: boolean, monitor: boolean) {
       // ("Wired headset", "Bluetooth", ...) are its *call* routes; pinning the monitor to one
       // (tried twice) didn't shorten the delay at all, and put playback on the phone-call path —
       // call volume, voice processing, and narrowband SCO audio on Bluetooth.
-      ctx = new AudioContext({ latencyHint: 0 });
-      monitorCtxRef.current = ctx;
-      ctx.resume().catch(() => {});
+      if (watch) clearInterval(watch);
+      ctx?.close().catch(() => {});
+      const c = new AudioContext({ latencyHint: 0 });
+      ctx = c;
+      monitorCtxRef.current = c;
+      c.resume().catch(() => {});
+      // [fresh mic source -> 8ms fade] -> rumble cut -> volume -> soft limiter -> headphones.
+      // Every node here works sample by sample with no buffering of its own (the highpass is a
+      // plain IIR biquad), so none of it adds delay. The highpass at 100Hz takes out handling
+      // thumps, breath pops and room rumble — the low noise that was loud in the ears — and
+      // leaves the voice itself alone.
+      const rumble = c.createBiquadFilter();
+      rumble.type = "highpass";
+      rumble.frequency.value = 100;
+      rumble.Q.value = 0.7;
+      const gain = c.createGain();
+      gain.gain.value = MONITOR_GAIN;
+      const limiter = c.createWaveShaper();
+      limiter.curve = monitorLimiterCurve();
+      limiter.oversample = "none";
+      rumble.connect(gain).connect(limiter).connect(c.destination);
+      const meter = c.createAnalyser();
+      meter.fftSize = 512;
+      const buf = new Float32Array(meter.fftSize);
+
+      let current: { src: MediaStreamAudioSourceNode; fade: GainNode } | undefined;
+      const swapSource = () => {
+        const src = c.createMediaStreamSource(stream);
+        const fade = c.createGain();
+        const t = c.currentTime;
+        fade.gain.setValueAtTime(current ? 0 : 1, t);
+        if (current) fade.gain.linearRampToValueAtTime(1, t + 0.008);
+        src.connect(fade).connect(rumble);
+        src.connect(meter);
+        const old = current;
+        current = { src, fade };
+        if (old) {
+          old.fade.gain.setValueAtTime(1, t);
+          old.fade.gain.linearRampToValueAtTime(0, t + 0.008);
+          setTimeout(() => {
+            old.src.disconnect();
+            old.fade.disconnect();
+          }, 60);
+        }
+      };
+      swapSource();
+
+      // Lowest output latency this context has reported; growth past it means the platform
+      // enlarged the output buffer after underruns.
+      let bestOut = Infinity;
+      let grownChecks = 0;
+      let quietMs = 0;
+      let lastSwap = performance.now();
+      let swappedSinceRunning = false;
+      // A rebuild at most every 10s, so a jittery latency estimate can't keep tearing it down.
+      const builtAt = performance.now();
+      watch = setInterval(() => {
+        if (cancelled || c.state !== "running") return;
+        // The first source was created before the context was running, so its FIFO may have
+        // filled while nothing pulled — swap it out as soon as the output is actually playing.
+        if (!swappedSinceRunning) {
+          swappedSinceRunning = true;
+          swapSource();
+          lastSwap = performance.now();
+          return;
+        }
+        meter.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        quietMs = Math.sqrt(sum / buf.length) < MONITOR_QUIET_RMS ? quietMs + 100 : 0;
+        const now = performance.now();
+        if (quietMs >= 200 && now - lastSwap > 1500) {
+          swapSource();
+          lastSwap = now;
+        }
+        const out = c.baseLatency + (c.outputLatency || 0);
+        if (out > 0) {
+          bestOut = Math.min(bestOut, out);
+          grownChecks = out > bestOut + 0.012 ? grownChecks + 1 : 0;
+          // Rebuild only while quiet, too — a fresh context costs ~100ms of silence to start.
+          if (grownChecks >= 5 && quietMs >= 200 && now - builtAt > 10000) build(stream);
+        }
+      }, 100);
+    };
+
+    (async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: MONITOR_CONSTRAINTS });
+      if (cancelled) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      monitorStream = stream;
+      stream.getAudioTracks()[0]?.addEventListener("ended", () => {
+        if (!cancelled) setRestartKey((k) => k + 1);
+      });
+      build(stream);
       // The mic permission just granted above is what makes real device labels available. Not
       // awaited, so the hint never holds up the monitor itself.
       findHeadphones().then((headphone) => {
@@ -369,22 +467,13 @@ function useMicLevels(active: boolean, monitor: boolean) {
           toast.info(i18n.t("record.monitorBluetoothLatency"));
         }
       });
-      // mic -> volume -> soft limiter -> headphones, and nothing else: no noise cleanup, no
-      // filter, no AudioWorklet. Both nodes work sample by sample with no buffering of their own,
-      // so the voice reaches the ears exactly as fast as the device itself allows.
-      const source = ctx.createMediaStreamSource(stream);
-      const gain = ctx.createGain();
-      gain.gain.value = MONITOR_GAIN;
-      const limiter = ctx.createWaveShaper();
-      limiter.curve = monitorLimiterCurve();
-      limiter.oversample = "none";
-      source.connect(gain).connect(limiter).connect(ctx.destination);
     })().catch(() => {}); // monitor is optional — a failure here shouldn't interrupt recording
 
     return () => {
       cancelled = true;
+      if (watch) clearInterval(watch);
       monitorCtxRef.current = null;
-      ctx?.close();
+      ctx?.close().catch(() => {});
       monitorStream?.getTracks().forEach((t) => t.stop());
     };
   }, [active, monitor, restartKey]);
@@ -720,8 +809,8 @@ function RecordPage() {
   const [cameraEnabled, setCameraEnabled] = useState(false);
   // Which virtual background (if any) replaces whatever's actually behind the singer. Every camera
   // opens on the branded Studio 26 backdrop (DEFAULT_BACKGROUND) until the user picks something
-  // else — "none" keeps the real camera feed. Persisted the same way monitorEnabled is, so a
-  // returning user's last pick (including "none") sticks.
+  // else — "none" keeps the real camera feed. Not persisted across visits: the Studio 26 backdrop
+  // is always the first thing a new session sees.
   const [backgroundId, setBackgroundId] = useState<BackgroundId>(DEFAULT_BACKGROUND);
   // A face-filter gift (party hat, sunglasses, ...) currently playing over the camera preview —
   // see FaceFilterOverlay.tsx. Unlike backgroundId this is transient: it's cleared automatically
@@ -882,11 +971,11 @@ function RecordPage() {
     return () => document.removeEventListener("visibilitychange", replay);
   }, []);
 
-  // Remembers the last background/look/overlay pick across visits, same pattern as monitorEnabled
-  // above.
+  // Remembers the last look/overlay pick across visits, same pattern as monitorEnabled above. The
+  // background is deliberately NOT restored: every visit opens on the Studio 26 backdrop
+  // (DEFAULT_BACKGROUND), and the old saved pick is cleared so it can't come back.
   useEffect(() => {
-    const stored = localStorage.getItem("hh:backgroundId");
-    if (isBackgroundId(stored)) setBackgroundId(stored);
+    localStorage.removeItem("hh:backgroundId");
     const storedLook = localStorage.getItem("hh:lookId");
     if (storedLook) setLookId(storedLook as LookId);
     const storedOverlay = localStorage.getItem("hh:stickyOverlay");
@@ -894,7 +983,6 @@ function RecordPage() {
   }, []);
   const chooseBackground = (id: BackgroundId) => {
     setBackgroundId(id);
-    localStorage.setItem("hh:backgroundId", id);
     if (MIC_BACKGROUNDS.has(id)) toast.info(t("record.bg.micHint"));
   };
   const chooseLook = (id: LookId) => {
