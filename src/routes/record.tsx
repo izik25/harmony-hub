@@ -71,6 +71,7 @@ import {
   type VirtualBackgroundComposer,
 } from "@/lib/virtual-background";
 import { findHeadphones } from "@/lib/audio-output";
+import { createMonitorVoice } from "@/lib/mic-noise-gate";
 import { outputLatencySeconds } from "@/lib/vocal-chain";
 
 export const Route = createFileRoute("/record")({
@@ -385,6 +386,21 @@ function useMicLevels(active: boolean, monitor: boolean) {
       limiter.curve = monitorLimiterCurve();
       limiter.oversample = "none";
       rumble.connect(gain).connect(limiter).connect(c.destination);
+      // The noise cleanup that costs no delay: the soft expander + gentle compressor in
+      // mic-noise-gate.ts, spliced in between the rumble cut and the volume once its AudioWorklet
+      // has loaded (the monitor plays unprocessed until then, and stays that way if it can't).
+      // The browser's own noise suppressor — the other way this monitor has been cleaned up —
+      // buffers in 10ms frames and was what put the voice behind the beat; this runs sample by
+      // sample inside the same render block as everything else, so it adds nothing to the
+      // delay. It eases the room ~12dB down only between phrases and never cuts into a word.
+      createMonitorVoice(c, rumble).then((voice) => {
+        if (cancelled || ctx !== c || voice.node === rumble) {
+          voice.dispose();
+          return;
+        }
+        rumble.disconnect(gain);
+        voice.node.connect(gain);
+      });
       const meter = c.createAnalyser();
       meter.fftSize = 512;
       const buf = new Float32Array(meter.fftSize);
@@ -915,6 +931,7 @@ function RecordPage() {
   // mic permission, so this looks again the moment the recording mic is actually open — a fixed
   // retry a second after tapping record missed it whenever the permission prompt took longer.
   const headphonesSeenRef = useRef(false);
+  const [headphonesOn, setHeadphonesOn] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const check = () =>
@@ -922,6 +939,7 @@ function RecordPage() {
         if (cancelled) return;
         if (headphone && !headphonesSeenRef.current) setMonitorEnabled(true);
         headphonesSeenRef.current = !!headphone;
+        setHeadphonesOn(!!headphone);
       });
     check();
     navigator.mediaDevices?.addEventListener?.("devicechange", check);
@@ -1088,9 +1106,15 @@ function RecordPage() {
   // bleeds straight into the recording. Ducking playback while actively recording (still clearly
   // audible to follow along, just quieter) cuts down how much of that bleed reaches the mic in
   // the first place — the noise gate in processRecording only cleans up what's left over.
+  //
+  // With headphones there's no speaker for the backing to bleed from, so it stays at full volume:
+  // ducking it there only dropped the beat in the singer's ears the moment recording started and
+  // left their own (monitored) voice sitting on top of it, which made any delay in that voice
+  // stand out and made it harder to stay on the beat.
   useEffect(() => {
-    if (videoRef.current) videoRef.current.volume = phase === "recording" ? 0.35 : 1;
-  }, [phase, selectedTrack]);
+    if (videoRef.current)
+      videoRef.current.volume = phase === "recording" && !headphonesOn ? 0.35 : 1;
+  }, [phase, selectedTrack, headphonesOn]);
 
   // Turns a finished take straight into a Studio session: mixes the raw recording with whatever
   // karaoke backing was used (same offline pipeline as before), uploads both the mixed result and
