@@ -27,6 +27,7 @@ import {
   RotateCcw,
   Wand2,
   Crown,
+  VolumeX,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import * as Tone from "tone";
@@ -35,7 +36,6 @@ import { AppShell } from "@/components/AppShell";
 import { TopBar } from "@/components/TopBar";
 import { LogoPulse } from "@/components/LogoPulse";
 import { LevelMeter } from "@/components/LevelMeter";
-import { Segmented } from "@/components/Segmented";
 import { KaraokeLanguageTabs } from "@/components/KaraokeLanguageTabs";
 import { useKaraokeLanguage } from "@/hooks/use-karaoke-language";
 import { BackgroundPicker } from "@/components/BackgroundPicker";
@@ -906,8 +906,11 @@ function RecordPage() {
   // real rewind (or answering "no" to the cut prompt) knows whether to resume or stay paused.
   const wasRecordingRef = useRef(false);
   const recording = phase === "recording";
+  // 3-2-1 pre-roll before a fresh take (null when not counting). The mic opens as soon as the
+  // countdown starts, so the stream is already live by "go" and the recorder starts instantly.
+  const [countdown, setCountdown] = useState<number | null>(null);
   const { stream, resumeAudio, micOpen } = useMicLevels(
-    phase === "recording" || phase === "paused",
+    phase === "recording" || phase === "paused" || countdown !== null,
     monitorEnabled,
   );
 
@@ -1348,6 +1351,44 @@ function RecordPage() {
     setOpenPanel(null); // don't leave a background/filter tray crowding the controls mid-take
   };
 
+  // The big record button: a fresh take gets a full-screen 3-2-1 first. startOrResume() then runs
+  // from a timer, outside the tap — so everything that needs a real user gesture (the backing
+  // video's sound on iOS, waking suspended AudioContexts) is unlocked right here in the tap. A
+  // play() immediately followed by pause() "blesses" the element for later scripted playback
+  // without letting any audio out, and the seek shows the take's first frame behind the count.
+  const beginCountdown = () => {
+    const video = videoRef.current;
+    if (video) {
+      video.currentTime = segmentStart;
+      video.play().catch(() => {});
+      video.pause();
+    }
+    resumeAudio();
+    if (pitchShiftRef.current)
+      Tone.getContext()
+        .resume()
+        .catch(() => {});
+    setOpenPanel(null);
+    setCountdown(3);
+  };
+
+  useEffect(() => {
+    if (countdown === null) return;
+    navigator.vibrate?.(countdown > 1 ? 30 : 60);
+    const id = setTimeout(() => {
+      if (countdown > 1) {
+        setCountdown(countdown - 1);
+      } else {
+        setCountdown(null);
+        startOrResume();
+      }
+    }, 1000);
+    return () => clearTimeout(id);
+    // startOrResume is recreated every render; the closure from the render that scheduled this
+    // tick is current enough, and depending on it would restart the second on every re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countdown]);
+
   // Stops the live recorder (if any) and folds its audio into baseBlobRef, in `mode`. Resolves
   // once that fold-in has finished — callers that need baseBlobRef to be current (finishing,
   // starting a new scrub) await this instead of racing the async decode/encode.
@@ -1464,6 +1505,7 @@ function RecordPage() {
   const ss = String(seconds % 60).padStart(2, "0");
 
   const backToTrackPicker = () => {
+    setCountdown(null);
     setSelectedTrack(null);
     setSegmentStart(0);
     setCameraEnabled(false);
@@ -1739,6 +1781,12 @@ function RecordPage() {
             )}
           </AnimatePresence>
 
+          <AnimatePresence>
+            {countdown !== null && (
+              <CountdownOverlay value={countdown} onCancel={() => setCountdown(null)} />
+            )}
+          </AnimatePresence>
+
           {finishing && (
             <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/75 backdrop-blur-sm">
               <LogoPulse label={t("record.processingOverlay")} labelClassName="text-white" />
@@ -1819,7 +1867,7 @@ function RecordPage() {
                     </>
                   )}
                   <ControlButton
-                    onClick={startOrResume}
+                    onClick={beginCountdown}
                     icon={
                       finishing ? (
                         <Loader2 className="h-5 w-5 animate-spin" />
@@ -2399,7 +2447,7 @@ function KaraokeSegmentPicker({
         </button>
       </div>
 
-      <div className="flex flex-1 flex-col overflow-hidden px-4 pb-4 pt-3">
+      <div className="flex flex-1 flex-col overflow-y-auto px-4 pb-4 pt-3">
         <p className="line-clamp-1 text-lg font-semibold">{track.title}</p>
         {track.artist && (
           <p className="line-clamp-1 text-sm text-muted-foreground">{track.artist}</p>
@@ -2428,43 +2476,229 @@ function KaraokeSegmentPicker({
           </button>
         </div>
 
-        <Segmented
-          className="mt-4 shrink-0"
-          value={mode}
-          onChange={selectMode}
-          options={[
-            { value: "full", label: t("record.fullSong") },
-            { value: "part", label: t("record.selectPart") },
-          ]}
-        />
-
-        {mode === "part" && duration > 0 && (
-          <div className="mt-5 shrink-0">
-            <RangeScrubber
-              duration={duration}
-              start={rangeStart}
-              end={rangeEnd}
-              onChange={(nextStart, nextEnd) => {
-                setRangeStart(nextStart);
-                setRangeEnd(nextEnd);
-                if (videoRef.current) videoRef.current.currentTime = nextStart;
-              }}
-            />
-            <p className="mt-2 text-center text-xs text-muted-foreground">
-              {t("record.dragToSelect")}
-            </p>
+        <section className="mt-5 shrink-0 overflow-hidden rounded-3xl border border-border bg-card p-4 shadow-pop">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-brand-coral/15 text-brand-coral">
+              <Mic className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold leading-tight">{t("record.segmentTitle")}</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">{t("record.segmentSubtitle")}</p>
+            </div>
           </div>
-        )}
 
+          <div role="radiogroup" className="mt-4 grid grid-cols-2 gap-2.5">
+            {(
+              [
+                {
+                  value: "full",
+                  icon: Music2,
+                  label: t("record.fullSong"),
+                  desc: t("record.fullSongDesc"),
+                },
+                {
+                  value: "part",
+                  icon: Scissors,
+                  label: t("record.selectPart"),
+                  desc: t("record.selectPartDesc"),
+                },
+              ] as const
+            ).map(({ value, icon: Icon, label, desc }) => {
+              const active = mode === value;
+              return (
+                <button
+                  key={value}
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => selectMode(value)}
+                  className={`relative flex flex-col items-start gap-2 rounded-2xl border p-3 text-start transition-colors press-scale ${
+                    active
+                      ? "border-[var(--coral-text)] bg-brand-coral/10 ring-4 ring-brand-coral/15"
+                      : "border-border bg-[var(--surface-sunken)] hover:border-[var(--hairline-strong)]"
+                  }`}
+                >
+                  <span
+                    className={`grid h-9 w-9 place-items-center rounded-full ${
+                      active ? "bg-brand-coral text-white" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="text-sm font-bold">{label}</span>
+                  <span className="text-[11px] leading-snug text-muted-foreground">{desc}</span>
+                  <span
+                    aria-hidden
+                    className={`absolute end-3 top-3 grid h-5 w-5 place-items-center rounded-full border ${
+                      active
+                        ? "border-transparent bg-brand-coral text-white"
+                        : "border-[var(--hairline-strong)]"
+                    }`}
+                  >
+                    {active && <Check className="h-3 w-3" strokeWidth={3} />}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <AnimatePresence initial={false}>
+            {mode === "part" && duration > 0 && (
+              <motion.div
+                key="range"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+                className="overflow-hidden"
+              >
+                <div className="mt-4 border-t border-border pt-4">
+                  <RangeScrubber
+                    duration={duration}
+                    start={rangeStart}
+                    end={rangeEnd}
+                    onChange={(nextStart, nextEnd) => {
+                      setRangeStart(nextStart);
+                      setRangeEnd(nextEnd);
+                      if (videoRef.current) videoRef.current.currentTime = nextStart;
+                    }}
+                  />
+                  <p className="mt-2 text-center text-xs text-muted-foreground">
+                    {t("record.dragToSelect")}
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </section>
+
+        <div className="min-h-5 flex-1" />
         <button
           onClick={() => onConfirm(mode === "part" ? rangeStart : 0)}
-          className="mt-auto flex w-full shrink-0 items-center justify-center gap-2 rounded-full bg-brand-coral py-3 text-sm font-bold text-white shadow-pop-coral press-scale"
+          className="flex w-full shrink-0 items-center justify-center gap-2 rounded-full bg-brand-coral py-3 text-sm font-bold text-white shadow-pop-coral press-scale"
         >
           <Mic className="h-4 w-4" />
           {t("record.continueToRecord")}
         </button>
       </div>
     </div>
+  );
+}
+
+// Full-screen 3-2-1 before a fresh take: a dimmed, blurred stage with a coral glow, one big
+// numeral per second inside a ring that drains with it, and the two things that matter most for a
+// clean take (headphones, a quiet room) as a last reminder. The mic is already open underneath.
+function CountdownOverlay({ value, onCancel }: { value: number; onCancel: () => void }) {
+  const { t } = useTranslation();
+  const R = 92;
+  const C = 2 * Math.PI * R;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: 0.35 } }}
+      className="absolute inset-0 z-50 flex flex-col items-center justify-center overflow-hidden bg-black/75 px-6 text-white backdrop-blur-md"
+      role="timer"
+      aria-live="assertive"
+    >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2 h-[34rem] w-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-60 blur-3xl"
+        style={{
+          background:
+            "radial-gradient(circle, oklch(0.57 0.2 25 / 0.55) 0%, oklch(0.38 0.13 275 / 0.35) 45%, transparent 70%)",
+        }}
+      />
+
+      <motion.p
+        initial={{ y: -8, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.1 }}
+        className="relative text-sm font-semibold tracking-wide text-white/80"
+      >
+        {t("record.countdownTitle")}
+      </motion.p>
+
+      <div className="relative mt-6 grid h-60 w-60 place-items-center">
+        {/* Sonar rings, one per beat */}
+        <motion.span
+          key={`wave-${value}`}
+          aria-hidden
+          className="absolute inset-6 rounded-full border-2 border-[var(--coral-text)]"
+          initial={{ scale: 0.85, opacity: 0.7 }}
+          animate={{ scale: 1.45, opacity: 0 }}
+          transition={{ duration: 1, ease: "easeOut" }}
+        />
+        <svg viewBox="0 0 200 200" className="absolute inset-0 h-full w-full -rotate-90">
+          <circle
+            cx="100"
+            cy="100"
+            r={R}
+            fill="none"
+            stroke="oklch(1 0 0 / 0.12)"
+            strokeWidth="4"
+          />
+          <motion.circle
+            key={`ring-${value}`}
+            cx="100"
+            cy="100"
+            r={R}
+            fill="none"
+            stroke="var(--coral-text)"
+            strokeWidth="5"
+            strokeLinecap="round"
+            strokeDasharray={C}
+            initial={{ strokeDashoffset: 0 }}
+            animate={{ strokeDashoffset: C }}
+            transition={{ duration: 1, ease: "linear" }}
+          />
+        </svg>
+        <AnimatePresence mode="popLayout">
+          <motion.span
+            key={value}
+            initial={{ scale: 1.8, opacity: 0, filter: "blur(12px)" }}
+            animate={{ scale: 1, opacity: 1, filter: "blur(0px)" }}
+            exit={{ scale: 0.5, opacity: 0, filter: "blur(8px)" }}
+            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            className="font-numeric text-[7.5rem] font-extrabold leading-none drop-shadow-[0_0_30px_oklch(0.57_0.2_25/0.6)]"
+          >
+            {value}
+          </motion.span>
+        </AnimatePresence>
+      </div>
+
+      <motion.p
+        initial={{ y: 8, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.2 }}
+        className="relative mt-6 text-center text-lg font-bold"
+      >
+        {t("record.countdownHint")}
+      </motion.p>
+
+      <motion.div
+        initial={{ y: 8, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.3 }}
+        className="relative mt-4 flex flex-wrap items-center justify-center gap-2"
+      >
+        <span className="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-medium text-white/90">
+          <Headphones className="h-3.5 w-3.5" />
+          {t("record.countdownChipHeadphones")}
+        </span>
+        <span className="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-medium text-white/90">
+          <VolumeX className="h-3.5 w-3.5" />
+          {t("record.countdownChipQuiet")}
+        </span>
+      </motion.div>
+
+      <button
+        onClick={onCancel}
+        className="absolute bottom-8 left-1/2 -translate-x-1/2 rounded-full px-5 py-2 text-sm text-white/70 transition-colors hover:text-white"
+      >
+        {t("record.countdownCancel")}
+      </button>
+    </motion.div>
   );
 }
 
