@@ -21,14 +21,23 @@ import {
   createFaceTracker,
   getFilterBitmap,
 } from "./face-filters";
+import type { Props3DRenderer } from "./props-3d";
 import type { LookId } from "./video-filters";
 import { LOOK_BEAUTY, LOOK_FILTERS } from "./video-filters";
-import { createBeautyRenderer, recipeNeedsFace, type BeautyRenderer } from "./beauty-effects";
+import {
+  createBeautyRenderer,
+  createLandmarkSmoother,
+  recipeNeedsFace,
+  type BeautyRenderer,
+} from "./beauty-effects";
 
 // Detection cadence while a face-tracked beauty look is on (see FaceTracker.track's intervalMs).
 const BEAUTY_DETECT_MS = 40;
 
 const OUTPUT_FPS = 24;
+// Redraw cap: a little over OUTPUT_FPS so the captured stream never repeats a frame it didn't
+// have to (rAF ticks don't line up exactly with the capture clock).
+const MIN_FRAME_MS = 1000 / 32;
 
 export interface CameraEffectsComposer {
   /** The graded/decorated feed — feed this into the recorder/preview instead of the input stream. */
@@ -60,6 +69,7 @@ export async function startCameraEffects(
   let overlayKind = initial.overlayKind;
   let running = true;
   let raf = 0;
+  let lastDrawAt = -Infinity;
 
   // Created lazily (and kept around once created — swapping props/looks shouldn't reload the
   // model) so picking a look without ever touching the overlay tray never pays for face tracking.
@@ -67,8 +77,25 @@ export async function startCameraEffects(
   let overlayBitmap: ImageBitmap | null = null;
   let bitmapFor: FilterKind | null = null;
 
+  // The real 3D props (props-3d.ts) — three.js is fetched the first time a prop is picked.
+  // undefined while that's loading (nothing drawn rather than flashing the 2D sticker first),
+  // null if this device can't do WebGL, in which case the 2D sticker is the fallback.
+  let props3d: Props3DRenderer | null | undefined;
+  let props3dLoading = false;
+
   function ensureOverlayAssets(kind: FilterKind) {
     if (!tracker) tracker = createFaceTracker();
+    if (props3d === undefined && !props3dLoading) {
+      props3dLoading = true;
+      import("./props-3d")
+        .then((mod) => {
+          props3d = mod.getProps3DRenderer();
+        })
+        .catch((err) => {
+          console.error(err);
+          props3d = null;
+        });
+    }
     if (bitmapFor !== kind) {
       bitmapFor = kind;
       overlayBitmap = null;
@@ -90,10 +117,17 @@ export async function startCameraEffects(
   }
   ensureBeauty(lookId);
 
+  // Steadies the landmarks so makeup and props sit on the face instead of shimmering on it.
+  const smoothFace = createLandmarkSmoother(width, height);
+
   const drawFrame = (now: number) => {
     if (!running) return;
     raf = requestAnimationFrame(drawFrame);
     if (video.readyState < 2) return;
+    // The output stream is OUTPUT_FPS; redrawing at the display's rate (120Hz on many phones)
+    // only burns battery — and with a 3D prop on, a full WebGL render per redraw.
+    if (now - lastDrawAt < MIN_FRAME_MS) return;
+    lastDrawAt = now;
 
     ctx.filter = LOOK_FILTERS[lookId] ?? "none";
     ctx.drawImage(video, 0, 0, width, height);
@@ -102,14 +136,20 @@ export async function startCameraEffects(
     const recipe = LOOK_BEAUTY[lookId];
     const beautyFace = recipeNeedsFace(recipe);
     // One detection per frame, shared by the beauty pass and the overlay prop.
-    const face =
+    const face = smoothFace(
       tracker && (overlayKind || beautyFace)
         ? tracker.track(video, now, beautyFace ? BEAUTY_DETECT_MS : undefined)
-        : null;
+        : null,
+      now,
+    );
 
     if (recipe && beauty) beauty.draw(ctx, face, recipe);
 
-    if (overlayKind && tracker) {
+    const props3dFrame =
+      overlayKind && face && props3d ? props3d.render(face, overlayKind, width, height) : null;
+    if (props3dFrame) {
+      ctx.drawImage(props3dFrame, 0, 0, width, height);
+    } else if (overlayKind && tracker && props3d !== undefined) {
       const spec = FILTER_SPECS[overlayKind];
       if (face && overlayBitmap) {
         // Canvas is sized exactly to the video's own native resolution and drawn 1:1 above (no

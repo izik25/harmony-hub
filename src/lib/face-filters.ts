@@ -571,8 +571,13 @@ export async function playFaceFilter(
   kind: FilterKind,
   onDone: () => void,
 ): Promise<FaceFilterPlayer> {
-  // Waits for the model before the clock starts, so a slow first load doesn't eat the effect.
-  const [, bitmap] = await Promise.all([loadFaceLandmarker(), getFilterBitmap(kind)]);
+  // Waits for the model (and the 3D props, props-3d.ts) before the clock starts, so a slow first
+  // load doesn't eat the effect. No WebGL → the 2D sticker below.
+  const [, bitmap, props3d] = await Promise.all([
+    loadFaceLandmarker(),
+    getFilterBitmap(kind),
+    import("./props-3d").then((m) => m.getProps3DRenderer()).catch(() => null),
+  ]);
   const tracker = createFaceTracker();
   const spec = FILTER_SPECS[kind];
   const ctx = canvas.getContext("2d")!;
@@ -608,13 +613,24 @@ export async function playFaceFilter(
     const coverScale = Math.max(boxW / vw, boxH / vh);
     const offsetX = (vw * coverScale - boxW) / 2;
     const offsetY = (vh * coverScale - boxH) / 2;
+    const { scale: envScale, alpha } = envelope(elapsed, FILTER_DURATION_MS);
+
+    // The 3D prop is rendered at the video's own resolution, then laid over the preview box with
+    // the same object-cover mapping the video itself gets.
+    const frame3d = props3d?.render(face, kind, vw, vh, envScale);
+    if (frame3d) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(frame3d, -offsetX, -offsetY, vw * coverScale, vh * coverScale);
+      ctx.restore();
+      return;
+    }
 
     const {
       point: anchorPoint,
       angle,
       scale,
     } = computeFaceAnchor(spec, face, vw, vh, coverScale, offsetX, offsetY);
-    const { scale: envScale, alpha } = envelope(elapsed, FILTER_DURATION_MS);
 
     ctx.save();
     ctx.globalAlpha = alpha;
