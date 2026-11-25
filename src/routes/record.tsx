@@ -837,7 +837,7 @@ function RecordPage() {
   const [lookId, setLookId] = useState<LookId>("none");
   // A face-tracked overlay prop (hat, mask, crown, mic...) pinned on for the whole take — the
   // permanent counterpart to activeFilter's few-seconds gift, picked from OverlayPicker instead of
-  // bought from FilterShop. Also persisted, same as backgroundId/lookId.
+  // bought from FilterShop. Not persisted: every visit opens with no prop.
   const [stickyOverlay, setStickyOverlay] = useState<FilterKind | null>(null);
   // Which floating tray (if any) is open over the immersive full-screen stage below — the
   // TikTok-style icon rail opens one of these instead of the settings-card rows the idle/no-track
@@ -909,21 +909,20 @@ function RecordPage() {
   // 3-2-1 pre-roll before a fresh take (null when not counting). The mic opens as soon as the
   // countdown starts, so the stream is already live by "go" and the recorder starts instantly.
   const [countdown, setCountdown] = useState<number | null>(null);
+  // Hearing yourself only ever runs through headphones — out of a phone speaker it just feeds
+  // back into the mic — so without them it stays off and its rail button isn't shown at all.
+  const [headphonesOn, setHeadphonesOn] = useState(false);
   const { stream, resumeAudio, micOpen } = useMicLevels(
     phase === "recording" || phase === "paused" || countdown !== null,
-    monitorEnabled,
+    monitorEnabled && headphonesOn,
   );
 
   // Remember the monitor preference across visits, same as any other studio setting — but only
   // once someone's actually made a choice. No stored value yet means "first time here," which
   // keeps the on-by-default above rather than snapping it back off.
-  // First visit (no stored choice): the feedback warning waits for the stage to open, where it
-  // means something, instead of covering the chooser before anything can make a sound.
-  const firstMonitorVisitRef = useRef(false);
   useEffect(() => {
     const stored = localStorage.getItem("hh:monitorEnabled");
     if (stored != null) setMonitorEnabled(stored === "1");
-    else firstMonitorVisitRef.current = true;
     // The old monitor-mode switch is gone; drop its leftover preference.
     localStorage.removeItem("hh:monitorDirect");
   }, []);
@@ -934,7 +933,6 @@ function RecordPage() {
   // mic permission, so this looks again the moment the recording mic is actually open — a fixed
   // retry a second after tapping record missed it whenever the permission prompt took longer.
   const headphonesSeenRef = useRef(false);
-  const [headphonesOn, setHeadphonesOn] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const check = () =>
@@ -956,7 +954,6 @@ function RecordPage() {
     setMonitorEnabled((prev) => {
       const next = !prev;
       localStorage.setItem("hh:monitorEnabled", next ? "1" : "0");
-      if (next) toast.info(t("record.monitorFeedbackWarning"));
       return next;
     });
   };
@@ -997,10 +994,11 @@ function RecordPage() {
   // (DEFAULT_BACKGROUND), and the old saved pick is cleared so it can't come back.
   useEffect(() => {
     localStorage.removeItem("hh:backgroundId");
+    // A prop is a per-take choice, not a setting: every visit opens with none, and an old saved
+    // pick is cleared so it can't come back.
+    localStorage.removeItem("hh:stickyOverlay");
     const storedLook = localStorage.getItem("hh:lookId");
     if (storedLook) setLookId(storedLook as LookId);
-    const storedOverlay = localStorage.getItem("hh:stickyOverlay");
-    if (storedOverlay) setStickyOverlay(storedOverlay as FilterKind);
   }, []);
   const chooseBackground = (id: BackgroundId) => {
     setBackgroundId(id);
@@ -1012,8 +1010,6 @@ function RecordPage() {
   };
   const chooseOverlay = (kind: FilterKind | null) => {
     setStickyOverlay(kind);
-    if (kind) localStorage.setItem("hh:stickyOverlay", kind);
-    else localStorage.removeItem("hh:stickyOverlay");
   };
 
   // Splices the video element into a Web Audio graph the first time it's needed, via a native
@@ -1540,16 +1536,8 @@ function RecordPage() {
             setPendingTrack(null);
             // The selfie camera opens with the stage; the rail's camera icon turns it off.
             setCameraEnabled(true);
-            // One headphones nudge per stage entry: the more specific feedback warning the first
-            // time (monitoring is on by default), the general bleed hint after that.
-            toast.info(
-              t(
-                firstMonitorVisitRef.current
-                  ? "record.monitorFeedbackWarning"
-                  : "record.headphonesHint",
-              ),
-            );
-            firstMonitorVisitRef.current = false;
+            // One headphones nudge per stage entry, only when there aren't any plugged in.
+            if (!headphonesOn) toast.info(t("record.headphonesHint"));
           }}
         />
       ) : selectedTrack ? (
