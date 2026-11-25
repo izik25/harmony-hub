@@ -223,6 +223,12 @@ export const tr = {
     },
     look: {
       none: "Orijinal",
+      photoshoot: "Fotoğraf çekimi",
+      freckles: "Çil",
+      blush: "Allık",
+      lips: "Dudak",
+      eyesBlue: "Mavi gözler",
+      eyesGreen: "Yeşil gözler",
       hd: "HD",
       vivid: "Canlı",
       warm: "Sıcak",

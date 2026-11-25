@@ -224,6 +224,12 @@ export const de = {
     },
     look: {
       none: "Original",
+      photoshoot: "Fotoshooting",
+      freckles: "Sommersprossen",
+      blush: "Rouge",
+      lips: "Lippen",
+      eyesBlue: "Blaue Augen",
+      eyesGreen: "Grüne Augen",
       hd: "HD",
       vivid: "Lebendig",
       warm: "Warm",

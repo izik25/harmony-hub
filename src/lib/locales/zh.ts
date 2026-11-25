@@ -217,6 +217,12 @@ export const zh = {
     },
     look: {
       none: "原图",
+      photoshoot: "写真",
+      freckles: "雀斑",
+      blush: "腮红",
+      lips: "唇色",
+      eyesBlue: "蓝色眼睛",
+      eyesGreen: "绿色眼睛",
       hd: "高清",
       vivid: "鲜艳",
       warm: "暖色",

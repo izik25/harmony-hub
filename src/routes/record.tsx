@@ -1538,6 +1538,8 @@ function RecordPage() {
             setSegmentStart(startSeconds);
             setSelectedTrack(pendingTrack);
             setPendingTrack(null);
+            // The selfie camera opens with the stage; the rail's camera icon turns it off.
+            setCameraEnabled(true);
             // One headphones nudge per stage entry: the more specific feedback warning the first
             // time (monitoring is on by default), the general bleed hint after that.
             toast.info(

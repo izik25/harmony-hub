@@ -225,6 +225,12 @@ export const it = {
     },
     look: {
       none: "Originale",
+      photoshoot: "Servizio foto",
+      freckles: "Lentiggini",
+      blush: "Blush",
+      lips: "Labbra",
+      eyesBlue: "Occhi azzurri",
+      eyesGreen: "Occhi verdi",
       hd: "HD",
       vivid: "Vivido",
       warm: "Caldo",

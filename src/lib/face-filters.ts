@@ -429,8 +429,12 @@ const HOLD_MS = 400;
 const GPU_TRIAL_MISSES = 24;
 
 export interface FaceTracker {
-  /** The face to draw on this frame, or null. Call once per drawn frame. */
-  track(video: HTMLVideoElement, now: number): NormalizedLandmark[] | null;
+  /**
+   * The face to draw on this frame, or null. Call once per drawn frame. `intervalMs` overrides
+   * how often a fresh detection runs — makeup-style looks (beauty-effects.ts) ask for a tighter
+   * one than props, since tinted lips trailing the mouth shows far more than a hat trailing it.
+   */
+  track(video: HTMLVideoElement, now: number, intervalMs?: number): NormalizedLandmark[] | null;
 }
 
 export function createFaceTracker(): FaceTracker {
@@ -464,14 +468,14 @@ export function createFaceTracker(): FaceTracker {
   };
 
   return {
-    track(video, now) {
+    track(video, now, intervalMs = DETECT_INTERVAL_MS) {
       // Another tracker already ruled the GPU out — follow it rather than repeat the trial.
       if (delegate === "GPU" && gpuRejected) landmarker = null;
       if (!landmarker) {
         load(now);
         return null;
       }
-      if (video.readyState >= 2 && now - lastDetectAt >= DETECT_INTERVAL_MS) {
+      if (video.readyState >= 2 && now - lastDetectAt >= intervalMs) {
         lastDetectAt = now;
         let face: NormalizedLandmark[] | null = null;
         try {

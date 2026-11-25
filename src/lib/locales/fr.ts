@@ -225,6 +225,12 @@ export const fr = {
     },
     look: {
       none: "Original",
+      photoshoot: "Shooting photo",
+      freckles: "Taches de rousseur",
+      blush: "Blush",
+      lips: "Lèvres",
+      eyesBlue: "Yeux bleus",
+      eyesGreen: "Yeux verts",
       hd: "HD",
       vivid: "Éclatant",
       warm: "Chaud",

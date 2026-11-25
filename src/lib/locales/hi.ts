@@ -220,6 +220,12 @@ export const hi = {
     },
     look: {
       none: "मूल",
+      photoshoot: "फ़ोटोशूट",
+      freckles: "झाइयाँ",
+      blush: "ब्लश",
+      lips: "होंठ",
+      eyesBlue: "नीली आँखें",
+      eyesGreen: "हरी आँखें",
       hd: "HD",
       vivid: "चटख",
       warm: "गर्म",

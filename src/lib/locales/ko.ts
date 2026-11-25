@@ -221,6 +221,12 @@ export const ko = {
     },
     look: {
       none: "원본",
+      photoshoot: "화보",
+      freckles: "주근깨",
+      blush: "블러셔",
+      lips: "립",
+      eyesBlue: "파란 눈",
+      eyesGreen: "초록 눈",
       hd: "HD",
       vivid: "비비드",
       warm: "웜",

@@ -221,6 +221,12 @@ export const ja = {
     },
     look: {
       none: "オリジナル",
+      photoshoot: "フォトシュート",
+      freckles: "そばかす",
+      blush: "チーク",
+      lips: "リップ",
+      eyesBlue: "青い瞳",
+      eyesGreen: "緑の瞳",
       hd: "HD",
       vivid: "ビビッド",
       warm: "ウォーム",

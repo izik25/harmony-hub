@@ -223,6 +223,12 @@ export const ru = {
     },
     look: {
       none: "Оригинал",
+      photoshoot: "Фотосессия",
+      freckles: "Веснушки",
+      blush: "Румяна",
+      lips: "Губы",
+      eyesBlue: "Голубые глаза",
+      eyesGreen: "Зелёные глаза",
       hd: "HD",
       vivid: "Яркий",
       warm: "Тёплый",

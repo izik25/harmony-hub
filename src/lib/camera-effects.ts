@@ -22,7 +22,11 @@ import {
   getFilterBitmap,
 } from "./face-filters";
 import type { LookId } from "./video-filters";
-import { LOOK_FILTERS } from "./video-filters";
+import { LOOK_BEAUTY, LOOK_FILTERS } from "./video-filters";
+import { createBeautyRenderer, recipeNeedsFace, type BeautyRenderer } from "./beauty-effects";
+
+// Detection cadence while a face-tracked beauty look is on (see FaceTracker.track's intervalMs).
+const BEAUTY_DETECT_MS = 40;
 
 const OUTPUT_FPS = 24;
 
@@ -75,6 +79,17 @@ export async function startCameraEffects(
   }
   if (overlayKind) ensureOverlayAssets(overlayKind);
 
+  // Beauty looks (photoshoot, freckles, eye color...) — scratch canvases only built once one is
+  // actually picked, and the face tracker only when the look needs a face.
+  let beauty: BeautyRenderer | null = null;
+  function ensureBeauty(id: LookId) {
+    const recipe = LOOK_BEAUTY[id];
+    if (!recipe) return;
+    if (!beauty) beauty = createBeautyRenderer(width, height);
+    if (recipeNeedsFace(recipe) && !tracker) tracker = createFaceTracker();
+  }
+  ensureBeauty(lookId);
+
   const drawFrame = (now: number) => {
     if (!running) return;
     raf = requestAnimationFrame(drawFrame);
@@ -84,9 +99,18 @@ export async function startCameraEffects(
     ctx.drawImage(video, 0, 0, width, height);
     ctx.filter = "none";
 
+    const recipe = LOOK_BEAUTY[lookId];
+    const beautyFace = recipeNeedsFace(recipe);
+    // One detection per frame, shared by the beauty pass and the overlay prop.
+    const face =
+      tracker && (overlayKind || beautyFace)
+        ? tracker.track(video, now, beautyFace ? BEAUTY_DETECT_MS : undefined)
+        : null;
+
+    if (recipe && beauty) beauty.draw(ctx, face, recipe);
+
     if (overlayKind && tracker) {
       const spec = FILTER_SPECS[overlayKind];
-      const face = tracker.track(video, now);
       if (face && overlayBitmap) {
         // Canvas is sized exactly to the video's own native resolution and drawn 1:1 above (no
         // object-cover cropping happens here, unlike the DOM preview box in face-filters.ts) — so
@@ -111,6 +135,7 @@ export async function startCameraEffects(
     stream,
     setLook(id: LookId) {
       lookId = id;
+      ensureBeauty(id);
     },
     setOverlay(kind: FilterKind | null) {
       overlayKind = kind;
