@@ -845,10 +845,6 @@ function RecordPage() {
   const [openPanel, setOpenPanel] = useState<
     "background" | "filters" | "pitch" | "looks" | "overlay" | null
   >(null);
-  // The icon rail's small text labels (see the immersive stage below) are only there so a
-  // first-time visitor can tell what each icon does — once you've actually used one, you know,
-  // so all of them fade away together rather than permanently crowding the video.
-  const [railHintsSeen, setRailHintsSeen] = useState(false);
   // Manual key change for the backing track (± semitones), set live from the pitch rail control
   // below. Real pitch shifting, not a playbackRate trick — see pitchGraphRef/applyLivePitch: a
   // Tone.PitchShift node is spliced into the video's Web Audio graph on demand, and the same
@@ -1578,17 +1574,17 @@ function RecordPage() {
             <div className="h-10 w-10 shrink-0" aria-hidden />
           </div>
 
-          {/* Self-preview picture-in-picture, moved to a top corner here (rather than the bottom
-              corner the compact/idle stage below still uses) since the bottom edge is now busy
-              with floating record controls and the scrub bar. FaceFilterOverlay draws a bought/
+          {/* Self-preview picture-in-picture, in the top corner opposite the icon rail (so the
+              rail never covers it), rather than the bottom corner the compact/idle stage below
+              still uses, since the bottom edge is busy with record controls and the scrub bar. FaceFilterOverlay draws a bought/
               gifted filter's few-second effect on top of it — a live show effect only, never
               baked into the actual take. */}
           {cameraEnabled && (
             // A mic scene needs you to line your mouth up with the mic, so the preview grows a
             // size while one is picked — big enough to actually frame against.
             <div
-              className={`absolute top-20 end-3 z-20 overflow-hidden rounded-2xl border-2 border-white shadow-lg transition-[width,height] duration-300 ${
-                MIC_BACKGROUNDS.has(backgroundId) ? "h-48 w-36" : "h-32 w-24"
+              className={`absolute top-20 start-3 z-20 overflow-hidden rounded-2xl border-2 border-white shadow-lg transition-[width,height] duration-300 ${
+                MIC_BACKGROUNDS.has(backgroundId) ? "h-56 w-42" : "h-40 w-30"
               }`}
             >
               {/* Mirrored like every selfie camera preview on social apps today (Instagram, TikTok,
@@ -1617,7 +1613,7 @@ function RecordPage() {
           {cameraEnabled && <FaceFxDebug />}
 
           {recording && (
-            <span className="absolute start-3 top-20 z-20 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
+            <span className="absolute left-1/2 top-20 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
               <span className="relative flex h-1.5 w-1.5">
                 <span className="absolute inline-flex h-full w-full animate-ring-pulse rounded-full bg-white" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
@@ -1627,16 +1623,13 @@ function RecordPage() {
           )}
 
           {/* The TikTok-style control column — a toggle/trigger icon per feature instead of the
-              named settings-card rows the pre-selection page above still uses. Each carries a
-              small caption the first time you see this screen (RailControl below); the moment you
-              actually use one, all of them drop the captions and go icon-only. */}
-          <div className="absolute top-1/2 end-3 z-20 flex -translate-y-1/2 flex-col items-center gap-3">
+              named settings-card rows the pre-selection page above still uses. Every icon keeps its
+              caption so it's always clear what each one does. */}
+          <div className="absolute top-1/2 end-3 z-20 flex -translate-y-1/2 flex-col items-center gap-2.5">
             <RailControl
               icon={<Video className="h-5 w-5" />}
               label={t("record.selfieCameraLabel")}
-              showLabel={!railHintsSeen}
               onClick={() => {
-                setRailHintsSeen(true);
                 setCameraEnabled((v) => !v);
               }}
               disabled={recording || phase === "paused"}
@@ -1645,9 +1638,7 @@ function RecordPage() {
             <RailControl
               icon={<Sparkles className="h-5 w-5" />}
               label={t("record.backgroundLabel")}
-              showLabel={!railHintsSeen}
               onClick={() => {
-                setRailHintsSeen(true);
                 openTray("background");
               }}
               disabled={recording || phase === "paused"}
@@ -1656,9 +1647,7 @@ function RecordPage() {
             <RailControl
               icon={<Wand2 className="h-5 w-5" />}
               label={t("record.looksLabel")}
-              showLabel={!railHintsSeen}
               onClick={() => {
-                setRailHintsSeen(true);
                 openTray("looks");
               }}
               disabled={recording || phase === "paused"}
@@ -1667,9 +1656,7 @@ function RecordPage() {
             <RailControl
               icon={<Crown className="h-5 w-5" />}
               label={t("record.overlayLabel")}
-              showLabel={!railHintsSeen}
               onClick={() => {
-                setRailHintsSeen(true);
                 openTray("overlay");
               }}
               disabled={recording || phase === "paused"}
@@ -1679,31 +1666,26 @@ function RecordPage() {
               <RailControl
                 icon={<PartyPopper className="h-5 w-5" />}
                 label={t("record.filterShopLabel")}
-                showLabel={!railHintsSeen}
                 onClick={() => {
-                  setRailHintsSeen(true);
                   openTray("filters");
                 }}
                 disabled={recording || phase === "paused"}
                 active={openPanel === "filters"}
               />
             )}
-            <RailControl
-              icon={<Headphones className="h-5 w-5" />}
-              label={t("record.monitorOn")}
-              showLabel={!railHintsSeen}
-              onClick={() => {
-                setRailHintsSeen(true);
-                toggleMonitor();
-              }}
-              active={monitorEnabled}
-            />
+            {/* Only with headphones: through the phone speaker, hearing yourself just feeds back. */}
+            {headphonesOn && (
+              <RailControl
+                icon={<Headphones className="h-5 w-5" />}
+                label={t("record.monitorOn")}
+                onClick={toggleMonitor}
+                active={monitorEnabled}
+              />
+            )}
             <RailControl
               icon={<ChevronsUpDown className="h-5 w-5" />}
               label={t("record.pitchLabel")}
-              showLabel={!railHintsSeen}
               onClick={() => {
-                setRailHintsSeen(true);
                 setOpenPanel((p) => (p === "pitch" ? null : "pitch"));
               }}
               disabled={recording || phase === "paused"}
@@ -2931,23 +2913,21 @@ function PitchTray({
   );
 }
 
-// The immersive stage's icon-rail button: same circular glass icon as ControlButton, plus a small
-// pill caption that's only there for a first-time visitor and fades away (see railHintsSeen in
-// RecordPage) the moment any rail icon actually gets used.
+// The immersive stage's icon-rail button: same circular glass icon as ControlButton, with a small
+// caption under it that's always shown, so it's never a guess what an icon does. Capped in width
+// (wrapping to a second line if needed) so a long caption can't push past the screen edge.
 function RailControl({
   icon,
   label,
   onClick,
   disabled,
   active,
-  showLabel,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
   disabled?: boolean;
   active?: boolean;
-  showLabel: boolean;
 }) {
   return (
     <div className="flex flex-col items-center gap-1">
@@ -2959,19 +2939,9 @@ function RailControl({
         active={active}
         variant="glass"
       />
-      <AnimatePresence>
-        {showLabel && (
-          <motion.span
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.18 }}
-            className="whitespace-nowrap rounded-full bg-black/70 px-2 py-0.5 text-[11px] font-semibold text-white ring-1 ring-white/15 backdrop-blur-sm"
-          >
-            {label}
-          </motion.span>
-        )}
-      </AnimatePresence>
+      <span className="max-w-[4.25rem] rounded-lg bg-black/70 px-1.5 py-0.5 text-center text-[10px] font-semibold leading-tight text-white ring-1 ring-white/15 backdrop-blur-sm">
+        {label}
+      </span>
     </div>
   );
 }

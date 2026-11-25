@@ -79,7 +79,7 @@ export function FaceFxDebug() {
   if (!enabled) return null;
   const d = faceFxDebug;
   return (
-    <pre className="pointer-events-none absolute start-3 top-32 z-30 max-w-[60%] whitespace-pre-wrap rounded-lg bg-black/80 p-2 font-mono text-[10px] leading-snug text-lime-300">
+    <pre className="pointer-events-none absolute left-1/2 top-28 z-30 max-w-[45%] -translate-x-1/2 whitespace-pre-wrap rounded-lg bg-black/80 p-2 font-mono text-[10px] leading-snug text-lime-300">
       {`delegate: ${d.delegate}
 status: ${d.status}
 detections: ${d.detections}
