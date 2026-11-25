@@ -1,8 +1,9 @@
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { Ban, PartyPopper, Glasses, Drama, Cat, Rabbit, Mic2, Crown, Check } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { FilterKind } from "@/lib/face-filters";
+import { loadFaceLandmarker, type FilterKind } from "@/lib/face-filters";
 
 // "none" plus every FilterKind face-filters.ts knows how to paint — generic props (hat, mask,
 // glasses, ears) alongside a couple of singer-styled ones (mic, crown) per the product ask for
@@ -36,6 +37,12 @@ export function OverlayPicker({
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
+  // The face model is several MB plus a WASM graph to spin up — seconds on a phone. Starting it the
+  // moment the tray opens (it's a shared singleton, so this is free if it's already loaded) means
+  // the prop shows up right after the tap instead of the pick looking like it did nothing.
+  useEffect(() => {
+    loadFaceLandmarker().catch(() => {});
+  }, []);
   return (
     <div className="no-scrollbar -mx-1 flex gap-2.5 overflow-x-auto px-1 pb-0.5 pt-1">
       {OVERLAY_OPTIONS.map(({ id, labelKey, Icon }) => {

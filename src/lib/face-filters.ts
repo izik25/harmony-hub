@@ -374,6 +374,19 @@ export function loadFaceLandmarker(): Promise<FaceLandmarker> {
   return landmarkerPromise;
 }
 
+// The landmarker is one shared VIDEO-mode graph, and MediaPipe requires every frame it's handed to
+// carry a strictly later timestamp than the last — a repeat doesn't just fail that one call, it
+// leaves the graph permanently in error ("Graph has errors") until a full reload. Two loops feed it
+// at once whenever a gift filter plays while a prop is pinned (playFaceFilter + camera-effects.ts),
+// and both get the same requestAnimationFrame time, so every caller goes through this instead:
+// one shared clock that always moves forward.
+let lastDetectTs = -1;
+export function detectFaceLandmarks(landmarker: FaceLandmarker, video: HTMLVideoElement) {
+  const ts = Math.max(lastDetectTs + 1, Math.round(performance.now()));
+  lastDetectTs = ts;
+  return landmarker.detectForVideo(video, ts);
+}
+
 // Ease-out-back style overshoot on the way in (lands slightly big, settles to 1) and a plain
 // ease-in fade on the way out — reads as a small "pop" rather than a flat linear scale.
 function envelope(elapsedMs: number, totalMs: number): { scale: number; alpha: number } {
@@ -435,7 +448,7 @@ export async function playFaceFilter(
     ctx.clearRect(0, 0, boxW, boxH);
     if (video.readyState < 2) return;
 
-    const result = landmarker.detectForVideo(video, Math.round(now));
+    const result = detectFaceLandmarks(landmarker, video);
     const face = result.faceLandmarks?.[0];
     if (!face) return;
 

@@ -18,6 +18,7 @@ import type { FilterKind } from "./face-filters";
 import {
   FILTER_SPECS,
   computeFaceAnchor,
+  detectFaceLandmarks,
   getFilterBitmap,
   loadFaceLandmarker,
 } from "./face-filters";
@@ -86,7 +87,7 @@ export async function startCameraEffects(
   }
   if (overlayKind) ensureOverlayAssets(overlayKind);
 
-  const drawFrame = (now: number) => {
+  const drawFrame = () => {
     if (!running) return;
     raf = requestAnimationFrame(drawFrame);
     if (video.readyState < 2) return;
@@ -97,7 +98,7 @@ export async function startCameraEffects(
 
     if (overlayKind && landmarker && overlayBitmap) {
       const spec = FILTER_SPECS[overlayKind];
-      const result = landmarker.detectForVideo(video, Math.round(now));
+      const result = detectFaceLandmarks(landmarker, video);
       const face = result.faceLandmarks?.[0];
       if (face) {
         // Canvas is sized exactly to the video's own native resolution and drawn 1:1 above (no
