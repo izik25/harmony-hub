@@ -354,18 +354,21 @@ export const faceFxDebug = {
   status: "idle",
   detections: 0,
   faces: 0,
+  errors: 0,
   lastError: "",
 };
 
-// The GPU delegate is the fast path and works on desktop, but on some Android GPUs (Samsung's
-// Mali/Xclipse among them) it starts fine and then silently returns no faces at all — no error,
-// just nothing to draw. So it gets a trial: the first time it runs for a while without ever
-// finding a face (or fails to load), every tracker drops to the CPU delegate for the rest of the
-// visit. Once GPU has found a face it's trusted, and later misses just mean nobody's in frame.
+// The GPU delegate is the fast path and works on desktop, but Android GPUs fail it in two ways:
+// silently returning no faces at all, or detecting fine for a second or two and then throwing a
+// GPU-side graph error that never clears. So the GPU is dropped — every tracker moves to the CPU
+// delegate for the rest of the visit — the moment it fails to load or throws, or if it runs for a
+// while without ever finding a face. Once it has found a face, later misses alone just mean
+// nobody's in frame.
 let gpuTrusted = false;
 let gpuRejected = false;
 
 const landmarkerPromises: Partial<Record<Delegate, Promise<FaceLandmarker>>> = {};
+const loadedLandmarkers: Partial<Record<Delegate, FaceLandmarker>> = {};
 function loadLandmarker(delegate: Delegate): Promise<FaceLandmarker> {
   let promise = landmarkerPromises[delegate];
   if (!promise) {
@@ -373,13 +376,15 @@ function loadLandmarker(delegate: Delegate): Promise<FaceLandmarker> {
     promise = import("@mediapipe/tasks-vision")
       .then(async ({ FilesetResolver, FaceLandmarker }) => {
         const fileset = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
-        return FaceLandmarker.createFromOptions(fileset, {
+        const landmarker = await FaceLandmarker.createFromOptions(fileset, {
           baseOptions: { modelAssetPath: "/models/face_landmarker.task", delegate },
           runningMode: "VIDEO",
           numFaces: 1,
           outputFaceBlendshapes: false,
           outputFacialTransformationMatrixes: false,
         });
+        loadedLandmarkers[delegate] = landmarker;
+        return landmarker;
       })
       .catch((err) => {
         // Not cached as a failure: a later attempt (or the CPU fallback) gets a fresh try.
@@ -390,6 +395,20 @@ function loadLandmarker(delegate: Delegate): Promise<FaceLandmarker> {
     landmarkerPromises[delegate] = promise;
   }
   return promise;
+}
+
+/** Forgets (and frees) an instance whose graph has failed, so the next load builds a new one.
+ * Only if it's still the cached one: a second tracker reporting the same failure late mustn't
+ * throw away the replacement the first one already loaded. */
+function discardLandmarker(delegate: Delegate, landmarker: FaceLandmarker | null) {
+  if (!landmarker || loadedLandmarkers[delegate] !== landmarker) return;
+  delete loadedLandmarkers[delegate];
+  delete landmarkerPromises[delegate];
+  try {
+    landmarker.close();
+  } catch {
+    // Already torn down along with its failed graph.
+  }
 }
 
 /** Whichever landmarker trackers should use now — GPU until it's been ruled out, else CPU. */
@@ -482,7 +501,23 @@ export function createFaceTracker(): FaceTracker {
           face = detectFaceLandmarks(landmarker, video).faceLandmarks?.[0] ?? null;
           faceFxDebug.detections++;
         } catch (err) {
+          faceFxDebug.errors++;
           faceFxDebug.lastError = `detect ${delegate}: ${err instanceof Error ? err.message : err}`;
+          // A graph that has thrown stays in error for good, so it's dropped on the spot. A
+          // GPU failure rules the GPU out (seen on Samsung: ~1.5s of good detections, then a
+          // GPU-side "Calculator::Process" failure); a CPU one gets a fresh instance shortly.
+          const broken = landmarker;
+          const brokenDelegate = delegate ?? "CPU";
+          landmarker = null;
+          discardLandmarker(brokenDelegate, broken);
+          if (brokenDelegate === "GPU") {
+            gpuRejected = true;
+            faceFxDebug.status = "GPU failed, switching to CPU";
+          } else {
+            retryAt = now + 1000;
+            faceFxDebug.status = "CPU failed, reloading";
+          }
+          return now - lastFaceAt <= HOLD_MS ? lastFace : null;
         }
         if (face) {
           lastFace = face;

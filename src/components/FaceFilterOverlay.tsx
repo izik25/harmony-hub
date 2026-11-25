@@ -83,7 +83,8 @@ export function FaceFxDebug() {
       {`delegate: ${d.delegate}
 status: ${d.status}
 detections: ${d.detections}
-faces: ${d.faces}${
+faces: ${d.faces}
+errors: ${d.errors}${
         d.lastError
           ? `
 error: ${d.lastError.slice(0, 160)}`
