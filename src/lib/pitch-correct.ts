@@ -338,8 +338,18 @@ export function analyzePitch(
   scale?: readonly number[],
   referenceA4 = 440,
 ): PitchProfile {
-  const track = trackPitch(buffer.getChannelData(0), buffer.sampleRate);
-  const notes = segmentNotes(track, buffer.sampleRate, scale, referenceA4);
+  return analyzePitchData(buffer.getChannelData(0), buffer.sampleRate, scale, referenceA4);
+}
+
+/** analyzePitch on one raw channel — the form a worker can run (no AudioBuffer there). */
+export function analyzePitchData(
+  data: Float32Array,
+  sampleRate: number,
+  scale?: readonly number[],
+  referenceA4 = 440,
+): PitchProfile {
+  const track = trackPitch(data, sampleRate);
+  const notes = segmentNotes(track, sampleRate, scale, referenceA4);
   const voicedHz = track.f0.filter((f): f is number => f != null).sort((a, b) => a - b);
   let weighted = 0;
   let frames = 0;
@@ -611,10 +621,23 @@ export function applyPitchCorrection(
   scale?: readonly number[],
   referenceA4 = 440,
 ): void {
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, ch) =>
+    buffer.getChannelData(ch),
+  );
+  correctPitchChannels(channels, buffer.sampleRate, strength, scale, referenceA4);
+}
+
+/** applyPitchCorrection on raw channels, in place — the form a worker can run. */
+export function correctPitchChannels(
+  channels: Float32Array[],
+  sampleRate: number,
+  strength: number,
+  scale?: readonly number[],
+  referenceA4 = 440,
+): void {
   const clampedStrength = Math.min(1, Math.max(0, strength));
-  if (clampedStrength <= 0) return;
-  const sampleRate = buffer.sampleRate;
-  const data = buffer.getChannelData(0);
+  if (clampedStrength <= 0 || channels.length === 0) return;
+  const data = channels[0];
   const track = trackPitch(data, sampleRate);
   const notes = segmentNotes(track, sampleRate, scale, referenceA4);
   if (notes.length === 0) return;
@@ -648,8 +671,7 @@ export function applyPitchCorrection(
     const hi = Math.min(n, i + radius + 1);
     mixAt[i] = (prefix[hi] - prefix[lo]) / (hi - lo);
   }
-  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-    const channel = buffer.getChannelData(ch);
+  for (const channel of channels) {
     const shifted = psola(channel, marks, periods, voiced, shiftAt, activeAt);
     for (let i = 0; i < n; i++) channel[i] += (shifted[i] - channel[i]) * mixAt[i];
   }
@@ -683,4 +705,115 @@ export function shiftPitchSemitones(buffer: AudioBuffer, semitones: number): voi
     }
     input.set(output);
   }
+}
+
+// ---- Off the main thread -----------------------------------------------------------------------
+// Detection + PSOLA is plain number crunching over the whole take: on a 3-minute stereo take it's
+// about a second per pass on a laptop and several on a phone, and AI mastering runs three passes
+// back to back. On the main thread that froze the whole Studio (buttons, playback position, the
+// step list) for that long. A GPU wouldn't buy much here — YIN's per-frame lag search and PSOLA's
+// pitch-synchronous grains are sequential, data-dependent loops, not the wide uniform math a
+// shader wants — so the win is a worker: same code, same result, the page stays responsive.
+
+type PitchJob =
+  | { op: "analyze"; data: Float32Array; sampleRate: number; scale?: number[]; referenceA4: number }
+  | {
+      op: "correct";
+      channels: Float32Array[];
+      sampleRate: number;
+      strength: number;
+      scale?: number[];
+      referenceA4: number;
+    };
+
+/** Worker side: runs one job and posts the result back (channels transferred, not copied). */
+export function runPitchJob(job: PitchJob): { result: unknown; transfer: Transferable[] } {
+  if (job.op === "analyze") {
+    return {
+      result: analyzePitchData(job.data, job.sampleRate, job.scale, job.referenceA4),
+      transfer: [],
+    };
+  }
+  correctPitchChannels(job.channels, job.sampleRate, job.strength, job.scale, job.referenceA4);
+  return { result: job.channels, transfer: job.channels.map((c) => c.buffer) };
+}
+
+function runOffThread<T>(job: PitchJob, transfer: Transferable[], fallback: () => T): Promise<T> {
+  let worker: Worker;
+  try {
+    worker = new Worker(new URL("./pitch-correct.worker.ts", import.meta.url), { type: "module" });
+  } catch {
+    return Promise.resolve(fallback());
+  }
+  return new Promise<T>((resolve) => {
+    worker.onmessage = (e: MessageEvent<T>) => {
+      worker.terminate();
+      resolve(e.data);
+    };
+    worker.onerror = () => {
+      worker.terminate();
+      resolve(fallback());
+    };
+    worker.postMessage(job, transfer);
+  });
+}
+
+/** analyzePitch on a worker thread (a copy of channel 0 goes over; `buffer` isn't touched). */
+export function analyzePitchOffThread(
+  buffer: AudioBuffer,
+  scale?: readonly number[],
+  referenceA4 = 440,
+): Promise<PitchProfile> {
+  const data = buffer.getChannelData(0).slice();
+  return runOffThread<PitchProfile>(
+    {
+      op: "analyze",
+      data,
+      sampleRate: buffer.sampleRate,
+      scale: scale ? [...scale] : undefined,
+      referenceA4,
+    },
+    [data.buffer],
+    () => analyzePitch(buffer, scale, referenceA4),
+  );
+}
+
+/**
+ * applyPitchCorrection on a worker thread. Works on copies and writes the corrected channels back
+ * into `buffer` only if `commit()` (checked on arrival) still says yes — so a result that's been
+ * overtaken (a newer slider value, AI mastering restarting, a different take loaded) never lands
+ * on top of newer audio. Resolves true when it wrote.
+ */
+export async function applyPitchCorrectionOffThread(
+  buffer: AudioBuffer,
+  strength: number,
+  scale?: readonly number[],
+  referenceA4 = 440,
+  commit: () => boolean = () => true,
+): Promise<boolean> {
+  if (Math.min(1, Math.max(0, strength)) <= 0) return commit();
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, ch) =>
+    buffer.getChannelData(ch).slice(),
+  );
+  const corrected = await runOffThread<Float32Array[]>(
+    {
+      op: "correct",
+      channels,
+      sampleRate: buffer.sampleRate,
+      strength,
+      scale: scale ? [...scale] : undefined,
+      referenceA4,
+    },
+    channels.map((c) => c.buffer),
+    () => {
+      const local = Array.from({ length: buffer.numberOfChannels }, (_, ch) =>
+        buffer.getChannelData(ch).slice(),
+      );
+      correctPitchChannels(local, buffer.sampleRate, strength, scale, referenceA4);
+      return local;
+    },
+  );
+  if (!commit()) return false;
+  corrected.forEach((c, ch) => buffer.getChannelData(ch).set(c));
+  return true;
 }

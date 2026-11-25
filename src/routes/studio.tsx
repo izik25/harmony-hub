@@ -35,7 +35,7 @@ import {
   applyNoiseGate,
   noiseGateThresholdFor,
 } from "@/lib/mix-recording";
-import { analyzePitch, applyPitchCorrection } from "@/lib/pitch-correct";
+import { analyzePitchOffThread, applyPitchCorrectionOffThread } from "@/lib/pitch-correct";
 import { analyzeSong, measureLoudness, NOTE_NAMES } from "@/lib/song-analysis";
 import {
   applyMix,
@@ -241,6 +241,12 @@ function StudioPage() {
   // Debounce handle for committing the Autotune slider's drag into the buffer — see
   // runPitchCorrection and the comment by the autotune state above.
   const autotuneCommitTimer = useRef<number | null>(null);
+  // Pitch correction runs on a worker (see applyPitchCorrectionOffThread). Every new pass — a
+  // newer slider value, AI mastering, a different take — bumps this, so an older pass still in
+  // flight is dropped instead of landing on top; pitchPendingRef is the newest one, awaited by
+  // publish so the upload never misses a correction that's still being computed.
+  const pitchRunRef = useRef(0);
+  const pitchPendingRef = useRef<Promise<unknown> | null>(null);
   // What the chain is playing — see the stems effect below. null while stems are being prepared.
   const [sources, setSources] = useState<Sources | null>(null);
   const stems = sources?.stems ?? false;
@@ -272,13 +278,20 @@ function StudioPage() {
     const chain = chainRef.current;
     const buffer = chain?.player.buffer.get();
     if (!chain || !buffer || !originalChannelsRef.current) return;
+    const run = ++pitchRunRef.current;
     restoreOriginalBuffer(buffer);
     if (gateAppliedRef.current) {
       applyNoiseGate(buffer, noiseGateThresholdFor(analyzeSignal(buffer)));
     }
     const clamped = Math.min(1, Math.max(0, strength));
     if (clamped > 0) {
-      applyPitchCorrection(buffer, clamped, pitchScaleRef.current, referenceA4Ref.current);
+      pitchPendingRef.current = applyPitchCorrectionOffThread(
+        buffer,
+        clamped,
+        pitchScaleRef.current,
+        referenceA4Ref.current,
+        () => run === pitchRunRef.current && chainRef.current === chain,
+      );
     }
   };
 
@@ -644,6 +657,8 @@ function StudioPage() {
     const chain = chainRef.current;
     const vocal = chain?.player.buffer.get();
     if (!chain || !ready || !vocal) throw new Error(t("studio.loadTrackFirst"));
+    // A slider correction still computing on the worker should be in what gets published.
+    await pitchPendingRef.current;
     const backing = chain.backingPlayer.loaded ? (chain.backingPlayer.buffer.get() ?? null) : null;
     try {
       return audioBufferToWavBlob(await renderMix(vocal, backing, mix, stems), 16);
@@ -714,7 +729,13 @@ function StudioPage() {
       return;
     }
     const run = ++masterRunRef.current;
-    const stale = () => run !== masterRunRef.current || chainRef.current !== chain;
+    // Mastering restores the original take and re-tunes it itself, so any slider pass still on the
+    // worker is now stale — this drops it.
+    const pitchRun = ++pitchRunRef.current;
+    const stale = () =>
+      run !== masterRunRef.current ||
+      chainRef.current !== chain ||
+      pitchRun !== pitchRunRef.current;
     const step = async (stage: MasterStage) => {
       setMasterStage(stage);
       // Let the step list repaint before the next (synchronous, heavy) stage.
@@ -771,11 +792,21 @@ function StudioPage() {
       if (tuning !== 0) {
         lines.push({ key: "studio.reportTuning", values: { cents: Math.round(Math.abs(tuning)) } });
       }
-      const pitchBefore = analyzePitch(buffer, scale, referenceA4);
+      const pitchBefore = await analyzePitchOffThread(buffer, scale, referenceA4);
+      if (stale()) return;
       const strength = pitchStrengthFor(pitchBefore);
       if (strength > 0) {
-        applyPitchCorrection(buffer, strength, scale, referenceA4);
-        const pitchAfter = analyzePitch(buffer, scale, referenceA4);
+        const tuned = applyPitchCorrectionOffThread(
+          buffer,
+          strength,
+          scale,
+          referenceA4,
+          () => !stale(),
+        );
+        pitchPendingRef.current = tuned;
+        if (!(await tuned)) return;
+        const pitchAfter = await analyzePitchOffThread(buffer, scale, referenceA4);
+        if (stale()) return;
         lines.push({
           key: "studio.reportPitchFixed",
           values: {
