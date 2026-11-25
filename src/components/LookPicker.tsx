@@ -106,9 +106,39 @@ function TileArt({ id }: { id: LookId }) {
         </svg>
       );
     case "eyesBlue":
-      return <EyeArt color="#4f9ae6" />;
+      return <EyeArt color="#5b88b4" />;
     case "eyesGreen":
-      return <EyeArt color="#4fae63" />;
+      return <EyeArt color="#5f8a52" />;
+    case "eyesHazel":
+      return <EyeArt color="#9a6a34" />;
+    case "glam":
+      return (
+        <svg
+          viewBox="0 0 64 40"
+          className="absolute inset-x-1 top-6 w-[calc(100%-0.5rem)]"
+          aria-hidden
+        >
+          <path
+            d="M6 22 Q30 0 56 18 Q60 14 62 9 Q58 20 56 22 Q30 38 6 22 Z"
+            fill="rgba(110,60,50,0.55)"
+          />
+          <path d="M6 22 Q32 6 56 20 Q32 34 6 22 Z" fill="#f6efe9" />
+          <circle cx="31" cy="21" r="8" fill="#5a3a26" />
+          <circle cx="31" cy="21" r="3.5" fill="#15161a" />
+          <circle cx="33.5" cy="18.5" r="1.6" fill="#fff" />
+          <path d="M5 21 Q32 4 57 19 L63 10 Q60 19 57 22 Q32 8 5 21 Z" fill="#141012" />
+        </svg>
+      );
+    case "glassSkin":
+      return (
+        <span
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse 22% 9% at 30% 44%, rgba(255,255,255,0.85), transparent), radial-gradient(ellipse 22% 9% at 70% 44%, rgba(255,255,255,0.85), transparent), radial-gradient(ellipse 5% 20% at 50% 40%, rgba(255,255,255,0.75), transparent), radial-gradient(circle at 50% 45%, rgba(255,255,255,0.25), transparent 60%)",
+          }}
+        />
+      );
     default:
       return null;
   }
