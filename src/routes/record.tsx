@@ -42,7 +42,7 @@ import { BackgroundPicker } from "@/components/BackgroundPicker";
 import { LookPicker } from "@/components/LookPicker";
 import { OverlayPicker } from "@/components/OverlayPicker";
 import { FilterShop, type FilterGift } from "@/components/FilterShop";
-import { FaceFilterOverlay } from "@/components/FaceFilterOverlay";
+import { FaceFilterOverlay, FaceFxDebug } from "@/components/FaceFilterOverlay";
 import type { FilterKind } from "@/lib/face-filters";
 import { type LookId } from "@/lib/video-filters";
 import { startCameraEffects, type CameraEffectsComposer } from "@/lib/camera-effects";
@@ -1623,6 +1623,8 @@ function RecordPage() {
               </div>
             </div>
           )}
+
+          {cameraEnabled && <FaceFxDebug />}
 
           {recording && (
             <span className="absolute start-3 top-20 z-20 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-sm">

@@ -345,46 +345,156 @@ export async function getFilterBitmap(kind: FilterKind): Promise<ImageBitmap> {
   return bitmap;
 }
 
-let landmarkerPromise: Promise<FaceLandmarker> | null = null;
-export function loadFaceLandmarker(): Promise<FaceLandmarker> {
-  if (!landmarkerPromise) {
-    landmarkerPromise = import("@mediapipe/tasks-vision").then(
-      async ({ FilesetResolver, FaceLandmarker }) => {
+type Delegate = "GPU" | "CPU";
+
+// What the face tracker is doing right now, for the ?fxdebug readout on /record (FaceFxDebug in
+// FaceFilterOverlay.tsx) — the one way to see on a real phone why a prop isn't showing.
+export const faceFxDebug = {
+  delegate: "-" as Delegate | "-",
+  status: "idle",
+  detections: 0,
+  faces: 0,
+  lastError: "",
+};
+
+// The GPU delegate is the fast path and works on desktop, but on some Android GPUs (Samsung's
+// Mali/Xclipse among them) it starts fine and then silently returns no faces at all — no error,
+// just nothing to draw. So it gets a trial: the first time it runs for a while without ever
+// finding a face (or fails to load), every tracker drops to the CPU delegate for the rest of the
+// visit. Once GPU has found a face it's trusted, and later misses just mean nobody's in frame.
+let gpuTrusted = false;
+let gpuRejected = false;
+
+const landmarkerPromises: Partial<Record<Delegate, Promise<FaceLandmarker>>> = {};
+function loadLandmarker(delegate: Delegate): Promise<FaceLandmarker> {
+  let promise = landmarkerPromises[delegate];
+  if (!promise) {
+    faceFxDebug.status = `loading ${delegate}`;
+    promise = import("@mediapipe/tasks-vision")
+      .then(async ({ FilesetResolver, FaceLandmarker }) => {
         const fileset = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
-        const options = {
-          runningMode: "VIDEO" as const,
+        return FaceLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: "/models/face_landmarker.task", delegate },
+          runningMode: "VIDEO",
           numFaces: 1,
           outputFaceBlendshapes: false,
           outputFacialTransformationMatrixes: false,
-        };
-        try {
-          return await FaceLandmarker.createFromOptions(fileset, {
-            baseOptions: { modelAssetPath: "/models/face_landmarker.task", delegate: "GPU" },
-            ...options,
-          });
-        } catch {
-          return FaceLandmarker.createFromOptions(fileset, {
-            baseOptions: { modelAssetPath: "/models/face_landmarker.task", delegate: "CPU" },
-            ...options,
-          });
-        }
-      },
-    );
+        });
+      })
+      .catch((err) => {
+        // Not cached as a failure: a later attempt (or the CPU fallback) gets a fresh try.
+        delete landmarkerPromises[delegate];
+        faceFxDebug.lastError = `load ${delegate}: ${err instanceof Error ? err.message : err}`;
+        throw err;
+      });
+    landmarkerPromises[delegate] = promise;
   }
-  return landmarkerPromise;
+  return promise;
 }
 
-// The landmarker is one shared VIDEO-mode graph, and MediaPipe requires every frame it's handed to
-// carry a strictly later timestamp than the last — a repeat doesn't just fail that one call, it
-// leaves the graph permanently in error ("Graph has errors") until a full reload. Two loops feed it
-// at once whenever a gift filter plays while a prop is pinned (playFaceFilter + camera-effects.ts),
-// and both get the same requestAnimationFrame time, so every caller goes through this instead:
-// one shared clock that always moves forward.
+/** Whichever landmarker trackers should use now — GPU until it's been ruled out, else CPU. */
+export async function loadFaceLandmarker(): Promise<{
+  landmarker: FaceLandmarker;
+  delegate: Delegate;
+}> {
+  if (!gpuRejected) {
+    try {
+      return { landmarker: await loadLandmarker("GPU"), delegate: "GPU" };
+    } catch {
+      gpuRejected = true;
+    }
+  }
+  return { landmarker: await loadLandmarker("CPU"), delegate: "CPU" };
+}
+
+// Every landmarker is a VIDEO-mode graph, and MediaPipe requires every frame it's handed to carry
+// a strictly later timestamp than the last — a repeat doesn't just fail that one call, it leaves
+// the graph permanently in error ("Graph has errors") until a full reload. Two loops feed it at
+// once whenever a gift filter plays while a prop is pinned (playFaceFilter + camera-effects.ts),
+// and both get the same requestAnimationFrame time, so every call goes through this one shared
+// clock that always moves forward.
 let lastDetectTs = -1;
-export function detectFaceLandmarks(landmarker: FaceLandmarker, video: HTMLVideoElement) {
+function detectFaceLandmarks(landmarker: FaceLandmarker, video: HTMLVideoElement) {
   const ts = Math.max(lastDetectTs + 1, Math.round(performance.now()));
   lastDetectTs = ts;
   return landmarker.detectForVideo(video, ts);
+}
+
+// Detection runs ~15 times a second rather than every display frame (60-120Hz on a phone), and
+// the last face found is held briefly in between — drawing still happens every frame, so a prop
+// moves smoothly while costing a fraction of the CPU (which matters once on the CPU delegate).
+const DETECT_INTERVAL_MS = 66;
+const HOLD_MS = 400;
+// ~1.5s of GPU detections without a single face before it's ruled out (see gpuTrusted above).
+const GPU_TRIAL_MISSES = 24;
+
+export interface FaceTracker {
+  /** The face to draw on this frame, or null. Call once per drawn frame. */
+  track(video: HTMLVideoElement, now: number): NormalizedLandmark[] | null;
+}
+
+export function createFaceTracker(): FaceTracker {
+  let landmarker: FaceLandmarker | null = null;
+  let delegate: Delegate | null = null;
+  let loading = false;
+  let retryAt = 0;
+  let misses = 0;
+  let lastDetectAt = -Infinity;
+  let lastFace: NormalizedLandmark[] | null = null;
+  let lastFaceAt = -Infinity;
+
+  const load = (now: number) => {
+    if (loading || now < retryAt) return;
+    loading = true;
+    loadFaceLandmarker()
+      .then((r) => {
+        landmarker = r.landmarker;
+        delegate = r.delegate;
+        misses = 0;
+        faceFxDebug.delegate = r.delegate;
+        faceFxDebug.status = "ready";
+      })
+      .catch(() => {
+        retryAt = performance.now() + 3000;
+        faceFxDebug.status = "load failed";
+      })
+      .finally(() => {
+        loading = false;
+      });
+  };
+
+  return {
+    track(video, now) {
+      // Another tracker already ruled the GPU out — follow it rather than repeat the trial.
+      if (delegate === "GPU" && gpuRejected) landmarker = null;
+      if (!landmarker) {
+        load(now);
+        return null;
+      }
+      if (video.readyState >= 2 && now - lastDetectAt >= DETECT_INTERVAL_MS) {
+        lastDetectAt = now;
+        let face: NormalizedLandmark[] | null = null;
+        try {
+          face = detectFaceLandmarks(landmarker, video).faceLandmarks?.[0] ?? null;
+          faceFxDebug.detections++;
+        } catch (err) {
+          faceFxDebug.lastError = `detect ${delegate}: ${err instanceof Error ? err.message : err}`;
+        }
+        if (face) {
+          lastFace = face;
+          lastFaceAt = now;
+          misses = 0;
+          faceFxDebug.faces++;
+          if (delegate === "GPU") gpuTrusted = true;
+        } else if (++misses >= GPU_TRIAL_MISSES && delegate === "GPU" && !gpuTrusted) {
+          gpuRejected = true;
+          landmarker = null;
+          faceFxDebug.status = "GPU found no face, switching to CPU";
+        }
+      }
+      return now - lastFaceAt <= HOLD_MS ? lastFace : null;
+    },
+  };
 }
 
 // Ease-out-back style overshoot on the way in (lands slightly big, settles to 1) and a plain
@@ -422,7 +532,9 @@ export async function playFaceFilter(
   kind: FilterKind,
   onDone: () => void,
 ): Promise<FaceFilterPlayer> {
-  const [landmarker, bitmap] = await Promise.all([loadFaceLandmarker(), getFilterBitmap(kind)]);
+  // Waits for the model before the clock starts, so a slow first load doesn't eat the effect.
+  const [, bitmap] = await Promise.all([loadFaceLandmarker(), getFilterBitmap(kind)]);
+  const tracker = createFaceTracker();
   const spec = FILTER_SPECS[kind];
   const ctx = canvas.getContext("2d")!;
 
@@ -448,8 +560,7 @@ export async function playFaceFilter(
     ctx.clearRect(0, 0, boxW, boxH);
     if (video.readyState < 2) return;
 
-    const result = detectFaceLandmarks(landmarker, video);
-    const face = result.faceLandmarks?.[0];
+    const face = tracker.track(video, now);
     if (!face) return;
 
     const vw = video.videoWidth || boxW;

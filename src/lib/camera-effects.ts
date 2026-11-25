@@ -18,9 +18,8 @@ import type { FilterKind } from "./face-filters";
 import {
   FILTER_SPECS,
   computeFaceAnchor,
-  detectFaceLandmarks,
+  createFaceTracker,
   getFilterBitmap,
-  loadFaceLandmarker,
 } from "./face-filters";
 import type { LookId } from "./video-filters";
 import { LOOK_FILTERS } from "./video-filters";
@@ -58,25 +57,14 @@ export async function startCameraEffects(
   let running = true;
   let raf = 0;
 
-  // Loaded lazily (and kept around once loaded — swapping props/looks shouldn't reload the
-  // landmarker) so picking a look without ever touching the overlay tray never pays for face
-  // tracking at all.
-  let landmarker: Awaited<ReturnType<typeof loadFaceLandmarker>> | null = null;
-  let landmarkerLoading = false;
+  // Created lazily (and kept around once created — swapping props/looks shouldn't reload the
+  // model) so picking a look without ever touching the overlay tray never pays for face tracking.
+  let tracker: ReturnType<typeof createFaceTracker> | null = null;
   let overlayBitmap: ImageBitmap | null = null;
   let bitmapFor: FilterKind | null = null;
 
   function ensureOverlayAssets(kind: FilterKind) {
-    if (!landmarker && !landmarkerLoading) {
-      landmarkerLoading = true;
-      loadFaceLandmarker()
-        .then((lm) => {
-          landmarker = lm;
-        })
-        .finally(() => {
-          landmarkerLoading = false;
-        });
-    }
+    if (!tracker) tracker = createFaceTracker();
     if (bitmapFor !== kind) {
       bitmapFor = kind;
       overlayBitmap = null;
@@ -87,7 +75,7 @@ export async function startCameraEffects(
   }
   if (overlayKind) ensureOverlayAssets(overlayKind);
 
-  const drawFrame = () => {
+  const drawFrame = (now: number) => {
     if (!running) return;
     raf = requestAnimationFrame(drawFrame);
     if (video.readyState < 2) return;
@@ -96,11 +84,10 @@ export async function startCameraEffects(
     ctx.drawImage(video, 0, 0, width, height);
     ctx.filter = "none";
 
-    if (overlayKind && landmarker && overlayBitmap) {
+    if (overlayKind && tracker) {
       const spec = FILTER_SPECS[overlayKind];
-      const result = detectFaceLandmarks(landmarker, video);
-      const face = result.faceLandmarks?.[0];
-      if (face) {
+      const face = tracker.track(video, now);
+      if (face && overlayBitmap) {
         // Canvas is sized exactly to the video's own native resolution and drawn 1:1 above (no
         // object-cover cropping happens here, unlike the DOM preview box in face-filters.ts) — so
         // vw/vh double as the "box" too, coverScale is 1 and there's no letterbox offset.
