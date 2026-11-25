@@ -44,7 +44,7 @@ import { OverlayPicker } from "@/components/OverlayPicker";
 import { FilterShop, type FilterGift } from "@/components/FilterShop";
 import { FaceFilterOverlay, FaceFxDebug } from "@/components/FaceFilterOverlay";
 import type { FilterKind } from "@/lib/face-filters";
-import { type LookId } from "@/lib/video-filters";
+import { LOOK_BEAUTY, type LookId } from "@/lib/video-filters";
 import { startCameraEffects, type CameraEffectsComposer } from "@/lib/camera-effects";
 import {
   AlertDialog,
@@ -842,6 +842,10 @@ function RecordPage() {
   // Which floating tray (if any) is open over the immersive full-screen stage below — the
   // TikTok-style icon rail opens one of these instead of the settings-card rows the idle/no-track
   // page still uses.
+  // Tap the selfie to blow it up — the corner thumbnail is far too small to judge eye color or a
+  // lip tint on. Also opens big on its own when a face filter is picked, and shrinks back when a
+  // take starts so it never sits over the lyrics while singing.
+  const [selfieExpanded, setSelfieExpanded] = useState(false);
   const [openPanel, setOpenPanel] = useState<
     "background" | "filters" | "pitch" | "looks" | "overlay" | null
   >(null);
@@ -1002,6 +1006,7 @@ function RecordPage() {
   };
   const chooseLook = (id: LookId) => {
     setLookId(id);
+    if (LOOK_BEAUTY[id]) setSelfieExpanded(true);
     localStorage.setItem("hh:lookId", id);
   };
   const chooseOverlay = (kind: FilterKind | null) => {
@@ -1341,6 +1346,7 @@ function RecordPage() {
     camVideoRef.current?.play().catch(() => {});
     setPhase("recording");
     setOpenPanel(null); // don't leave a background/filter tray crowding the controls mid-take
+    setSelfieExpanded(false);
   };
 
   // The big record button: a fresh take gets a full-screen 3-2-1 first. startOrResume() then runs
@@ -1582,9 +1588,17 @@ function RecordPage() {
           {cameraEnabled && (
             // A mic scene needs you to line your mouth up with the mic, so the preview grows a
             // size while one is picked — big enough to actually frame against.
-            <div
+            <button
+              type="button"
+              onClick={() => setSelfieExpanded((v) => !v)}
+              aria-label={t("record.selfieCameraLabel")}
+              aria-expanded={selfieExpanded}
               className={`absolute top-20 start-3 z-20 overflow-hidden rounded-2xl border-2 border-white shadow-lg transition-[width,height] duration-300 ${
-                MIC_BACKGROUNDS.has(backgroundId) ? "h-56 w-42" : "h-40 w-30"
+                selfieExpanded
+                  ? "h-[min(60dvh,30rem)] w-[min(68vw,22.5rem)]"
+                  : MIC_BACKGROUNDS.has(backgroundId)
+                    ? "h-56 w-42"
+                    : "h-40 w-30"
               }`}
             >
               {/* Mirrored like every selfie camera preview on social apps today (Instagram, TikTok,
@@ -1607,7 +1621,7 @@ function RecordPage() {
                   onDone={() => setActiveFilter(null)}
                 />
               </div>
-            </div>
+            </button>
           )}
 
           {cameraEnabled && <FaceFxDebug />}
