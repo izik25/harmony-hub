@@ -787,6 +787,9 @@ function RecordPage() {
   // 0 for "full song", or wherever the user trimmed the range to for "choose a part". Reset
   // alongside selectedTrack whenever the user backs out of the recording stage.
   const [segmentStart, setSegmentStart] = useState(0);
+  // Where a "choose a part" take ends on the song's timeline — recording stops itself there.
+  // null for the whole song, which instead stops when the backing video runs out.
+  const [segmentEnd, setSegmentEnd] = useState<number | null>(null);
   const search = Route.useSearch();
   // A sound page's "Use this sound" button (see routes/sound_.$id.tsx) sends the user here with
   // ?trackId=... instead of a full track object — fetch it once and drop straight into the
@@ -906,6 +909,13 @@ function RecordPage() {
   // value it started under, and a stop that lands after the bump is dropped — otherwise a stale
   // segment could fold itself into the next song's take, still in flight from the abandoned one.
   const takeRef = useRef(0);
+  // The sticky "couldn't save — try again" toast, dismissed once a new take or another song
+  // makes the failed take moot.
+  const saveErrorToastRef = useRef<string | number | undefined>(undefined);
+  const dismissSaveError = () => {
+    if (saveErrorToastRef.current !== undefined) toast.dismiss(saveErrorToastRef.current);
+    saveErrorToastRef.current = undefined;
+  };
   // Whether recording was actively running when a scrub gesture began, so releasing without a
   // real rewind (or answering "no" to the cut prompt) knows whether to resume or stay paused.
   const wasRecordingRef = useRef(false);
@@ -1181,10 +1191,22 @@ function RecordPage() {
       });
     },
     onSuccess: (draft) => navigate({ to: "/studio", search: { draftId: draft.id } }),
-    onError: (e: Error) => {
-      toast.error(translateServerError(e.message));
-      // Lets the processing overlay clear so a failed take can be retried (re-record) instead of
-      // staying stuck behind it.
+    onError: (e: Error, rawBlob) => {
+      // The take itself is still right here — keep it on a "try again" action instead of making
+      // the singer record the whole thing over because one upload failed.
+      saveErrorToastRef.current = toast.error(translateServerError(e.message), {
+        duration: Infinity,
+        action: {
+          label: t("error.tryAgain"),
+          onClick: () => {
+            saveErrorToastRef.current = undefined;
+            setFinishing(true);
+            finishMutation.mutate(rawBlob);
+          },
+        },
+      });
+      // Lets the processing overlay clear so a failed take can be retried instead of staying
+      // stuck behind it.
       setFinishing(false);
     },
   });
@@ -1362,6 +1384,7 @@ function RecordPage() {
   // play() immediately followed by pause() "blesses" the element for later scripted playback
   // without letting any audio out, and the seek shows the take's first frame behind the count.
   const beginCountdown = () => {
+    dismissSaveError();
     const video = videoRef.current;
     if (video) {
       video.currentTime = segmentStart;
@@ -1428,6 +1451,35 @@ function RecordPage() {
     }
     setPhase("finished");
   };
+
+  // The take ends itself where the song (or the chosen part of it) ends, the same as tapping ✓ —
+  // before, a "choose a part" take ran right on past its end, and a whole-song take kept recording
+  // silence after the backing video had finished.
+  const finishRecordingRef = useRef(finishRecording);
+  finishRecordingRef.current = finishRecording;
+  useEffect(() => {
+    const video = videoRef.current;
+    if (phase !== "recording" || !video) return;
+    let done = false;
+    const check = () => {
+      if (done) return;
+      const reachedEnd = segmentEnd != null ? video.currentTime >= segmentEnd : video.ended;
+      if (!reachedEnd) return;
+      done = true;
+      finishRecordingRef.current();
+    };
+    // Polled as well as on timeupdate, which some browsers only fire every ~250ms — the take
+    // shouldn't record a noticeable tail past the chosen end.
+    const id = setInterval(check, 50);
+    video.addEventListener("timeupdate", check);
+    video.addEventListener("ended", check);
+    return () => {
+      done = true;
+      clearInterval(id);
+      video.removeEventListener("timeupdate", check);
+      video.removeEventListener("ended", check);
+    };
+  }, [phase, segmentEnd, selectedTrack]);
 
   const resumeIfWasRecording = () => {
     if (wasRecordingRef.current) startOrResume();
@@ -1533,9 +1585,11 @@ function RecordPage() {
 
   const backToTrackPicker = () => {
     discardTake();
+    dismissSaveError();
     setCountdown(null);
     setSelectedTrack(null);
     setSegmentStart(0);
+    setSegmentEnd(null);
     setCameraEnabled(false);
     setOpenPanel(null);
     // The <video> element itself gets torn down and recreated for the next track (a fresh
@@ -1562,8 +1616,9 @@ function RecordPage() {
         <KaraokeSegmentPicker
           track={pendingTrack}
           onBack={() => setPendingTrack(null)}
-          onConfirm={(startSeconds) => {
+          onConfirm={(startSeconds, endSeconds) => {
             setSegmentStart(startSeconds);
+            setSegmentEnd(endSeconds);
             setSelectedTrack(pendingTrack);
             setPendingTrack(null);
             // The selfie camera opens with the stage; the rail's camera icon turns it off.
@@ -2396,7 +2451,7 @@ function KaraokeSegmentPicker({
 }: {
   track: KaraokeTrack;
   onBack: () => void;
-  onConfirm: (startSeconds: number) => void;
+  onConfirm: (startSeconds: number, endSeconds: number | null) => void;
 }) {
   const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -2591,7 +2646,7 @@ function KaraokeSegmentPicker({
 
         <div className="min-h-5 flex-1" />
         <button
-          onClick={() => onConfirm(mode === "part" ? rangeStart : 0)}
+          onClick={() => (mode === "part" ? onConfirm(rangeStart, rangeEnd) : onConfirm(0, null))}
           className="flex w-full shrink-0 items-center justify-center gap-2 rounded-full bg-brand-coral py-3 text-sm font-bold text-white shadow-pop-coral press-scale"
         >
           <Mic className="h-4 w-4" />
