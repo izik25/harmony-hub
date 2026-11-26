@@ -902,6 +902,10 @@ function RecordPage() {
   const scrubOriginRef = useRef<number | null>(null);
   const checkpointResolveRef = useRef<(() => void) | null>(null);
   const stopModeRef = useRef<"checkpoint" | "finish">("checkpoint");
+  // Bumped whenever a take is thrown away (backing out of the stage). Each recorder remembers the
+  // value it started under, and a stop that lands after the bump is dropped — otherwise a stale
+  // segment could fold itself into the next song's take, still in flight from the abandoned one.
+  const takeRef = useRef(0);
   // Whether recording was actively running when a scrub gesture began, so releasing without a
   // real rewind (or answering "no" to the cut prompt) knows whether to resume or stay paused.
   const wasRecordingRef = useRef(false);
@@ -1228,6 +1232,7 @@ function RecordPage() {
       // camera one (see that file). Captured once per recorder since cameraEnabled can't
       // change mid-take (the toggle is disabled once recording starts).
       const splice = usingCamera ? videoSplice : { commitCheckpoint, trimCheckpoint };
+      const take = takeRef.current;
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunks.push(e.data);
       };
@@ -1242,6 +1247,8 @@ function RecordPage() {
         // Queued behind any earlier commit still in flight (see commitChainRef), so
         // baseBlobRef is read only once every earlier segment has been folded into it.
         commitChainRef.current = commitChainRef.current.then(async () => {
+          // This take was discarded — drop its audio rather than leaking it into the next one.
+          if (takeRef.current !== take) return;
           if (mode === "finish") {
             if (baseBlobRef.current) {
               try {
@@ -1263,7 +1270,7 @@ function RecordPage() {
           if (newBlob.size > 0) {
             try {
               const { blob } = await splice.commitCheckpoint(baseBlobRef.current, newBlob);
-              baseBlobRef.current = blob;
+              if (takeRef.current === take) baseBlobRef.current = blob;
             } catch (err) {
               console.error(err); // keep the previous checkpoint rather than losing the take
             }
@@ -1502,7 +1509,30 @@ function RecordPage() {
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
 
+  // Throws the current take away completely: stops a live recorder (its audio is dropped via the
+  // takeRef check in onstop), clears everything already committed, and puts the stage back to
+  // "never recorded". Without this, backing out mid-take left phase on "recording"/"paused" — so
+  // picking a song again started recording on its own, with the old recorder still running
+  // underneath and the first song's audio still sitting in baseBlobRef to be appended to.
+  const discardTake = () => {
+    takeRef.current += 1;
+    const recorder = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    checkpointResolveRef.current?.();
+    checkpointResolveRef.current = null;
+    baseBlobRef.current = null;
+    commitChainRef.current = Promise.resolve();
+    checkpointPromiseRef.current = Promise.resolve();
+    videoRef.current?.pause();
+    setPhase("idle");
+    setSeconds(0);
+    setPreviewSeconds(null);
+    setCutConfirm(null);
+  };
+
   const backToTrackPicker = () => {
+    discardTake();
     setCountdown(null);
     setSelectedTrack(null);
     setSegmentStart(0);
