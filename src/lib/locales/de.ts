@@ -107,6 +107,9 @@ export const de = {
     eq: "Air (10 kHz+)",
     compression: "Kompression",
     delay: "Echo (Delay)",
+    leveler: "Leveler (2. Kompressor)",
+    throws: "Echo auf Zeilenenden",
+    width: "Breite (Doubler)",
     warmth: "Wärme (Sättigung)",
     deEsser: "De-Esser",
     presence: "Präsenz",
@@ -334,6 +337,15 @@ export const de = {
       "Kein Echo hinzugefügt – es verwischt fließenden Text; füge es bei Bedarf im Manuellen Mastering von Hand hinzu",
     reportDelay:
       "Leichtes Echo im Takt ({{ms}} ms), {{lu}} LU unter deiner Stimme – gibt Tiefe, ohne den Text zu verwischen",
+    reportLeveler:
+      "Zweiter, langsamer Kompressor für {{db}} dB mehr – gleicht ganze Phrasen aus, die zweistufige Pop-Vocal-Kette",
+    reportWidth:
+      "Doubler: zwei Kopien deiner Stimme ±7 Cent, links und rechts – breiter und voller, ohne gedoppelt zu klingen",
+    reportThrows:
+      "Echo auf dem letzten Wort jeder Zeile ({{ms}} ms), das in die Pause hallt – nicht auf jedem Wort",
+    reportRide:
+      "Phrasen-Riding: leise Zeilen angehoben, laute abgesenkt, bis {{db}} dB vor der Kompression",
+    reportBreaths: "{{count}} laute Atmer leiser gemacht (bleiben drin, nur leiser)",
     fixSection: "Abschnitt korrigieren",
     fixSectionDesc:
       "Irgendwo in der Mitte eine Zeile verpatzt? Markiere Anfang und Ende, nimm nur diesen Teil neu auf, und er wird nahtlos in den Rest deines Takes eingefügt – sonst ändert sich nichts.",

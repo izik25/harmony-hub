@@ -107,6 +107,9 @@ export const fr = {
     eq: "Air (10 kHz+)",
     compression: "Compression",
     delay: "Écho (delay)",
+    leveler: "Niveleur (2e compresseur)",
+    throws: "Écho en fin de phrase",
+    width: "Largeur (doubleur)",
     warmth: "Chaleur (saturation)",
     deEsser: "De-esser",
     presence: "Présence",
@@ -335,6 +338,15 @@ export const fr = {
       "Pas d'écho ajouté — il brouille les paroles rapides ; ajoute-le à la main dans le Mastering manuel si tu le veux",
     reportDelay:
       "Une touche d'écho en rythme ({{ms}} ms), {{lu}} LU sous ta voix — de la profondeur sans brouiller les paroles",
+    reportLeveler:
+      "Second compresseur lent pour {{db}} dB de plus — égalise des phrases entières, la chaîne à deux étages d'une voix pop",
+    reportWidth:
+      "Doubleur : deux copies de ta voix à ±7 cents, à gauche et à droite — plus large et plus pleine sans sonner doublée",
+    reportThrows:
+      "Écho sur le dernier mot de chaque phrase ({{ms}} ms), qui résonne dans la pause — pas sur chaque mot",
+    reportRide:
+      "Nivellement des phrases : les douces remontées, les fortes baissées, jusqu'à {{db}} dB avant compression",
+    reportBreaths: "{{count}} respirations fortes adoucies (gardées, juste plus discrètes)",
     fixSection: "Corriger un passage",
     fixSectionDesc:
       "Tu t'es trompé sur une phrase au milieu ? Marque le début et la fin, réenregistre seulement ce passage, et il sera recousu dans le reste de ta prise — rien d'autre ne change.",

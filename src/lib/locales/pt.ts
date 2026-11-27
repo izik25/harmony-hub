@@ -107,6 +107,9 @@ export const pt = {
     eq: "Ar (10 kHz+)",
     compression: "Compressão",
     delay: "Eco (delay)",
+    leveler: "Nivelador (2º compressor)",
+    throws: "Eco no fim das frases",
+    width: "Largura (dobrador)",
     warmth: "Calor (saturação)",
     deEsser: "De-esser",
     presence: "Presença",
@@ -332,6 +335,15 @@ export const pt = {
       "Nenhum eco adicionado — ele embaralha letras corridas; adicione à mão na Masterização manual se quiser",
     reportDelay:
       "Um toque de eco no tempo ({{ms}} ms), {{lu}} LU abaixo da sua voz — dá profundidade sem embaralhar a letra",
+    reportLeveler:
+      "Segundo compressor lento para mais {{db}} dB — iguala frases inteiras, a cadeia de dois estágios de um vocal pop",
+    reportWidth:
+      "Dobrador: duas cópias da sua voz a ±7 cents, esquerda e direita — mais larga e cheia sem soar dobrada",
+    reportThrows:
+      "Eco na última palavra de cada frase ({{ms}} ms), repetindo na pausa — não em cada palavra",
+    reportRide:
+      "Nivelamento de frases: as suaves subiram e as fortes desceram até {{db}} dB antes da compressão",
+    reportBreaths: "{{count}} respirações altas abaixadas (continuam lá, só mais baixas)",
     fixSection: "Corrigir um trecho",
     fixSectionDesc:
       "Errou um verso no meio? Marque onde começa e termina, regrave só essa parte e ela é costurada de volta no resto da gravação — nada mais muda.",

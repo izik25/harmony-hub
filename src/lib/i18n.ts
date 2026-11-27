@@ -150,6 +150,9 @@ const en = {
     eq: "Air (10 kHz+)",
     compression: "Compression",
     delay: "Echo (delay)",
+    leveler: "Leveler (2nd compressor)",
+    throws: "Echo on line endings",
+    width: "Width (doubler)",
     warmth: "Warmth (saturation)",
     deEsser: "De-esser",
     presence: "Presence",
@@ -370,6 +373,15 @@ const en = {
       "No echo added — it smears running lyrics; add it by hand in Manual Mastering if you want it",
     reportDelay:
       "Light echo on the beat ({{ms}} ms), {{lu}} LU under your voice — adds depth without smearing the words",
+    reportLeveler:
+      "Second, slow compressor for {{db}} dB more — evens out whole phrases, the two-stage pop-vocal chain",
+    reportWidth:
+      "Doubler: two copies of your voice ±7 cents, left and right — a wider, fuller lead without sounding doubled",
+    reportThrows:
+      "Echo on the last word of each line ({{ms}} ms), repeating into the pause — not on every word",
+    reportRide:
+      "Phrase riding: soft lines brought up and loud ones down by up to {{db}} dB before compression",
+    reportBreaths: "{{count}} loud breaths turned down (kept, just quieter)",
     fixSection: "Fix a Section",
     fixSectionDesc:
       "Sang a line wrong somewhere in the middle? Mark where it starts and ends, re-record just that part, and it gets stitched back into the rest of your take — nothing else changes.",
@@ -1030,6 +1042,9 @@ const he = {
     eq: "אוויר (10kHz+)",
     compression: "דחיסה",
     delay: "הד (דיליי)",
+    leveler: "מאזן (קומפרסור שני)",
+    throws: "הד על סופי שורות",
+    width: "רוחב (דאבלר)",
     warmth: "חום (סטורציה)",
     deEsser: "דה-אסר (ש/ס)",
     presence: "נוכחות",
@@ -1247,6 +1262,13 @@ const he = {
     reportNoDelay: "לא נוסף הד — הוא מורח מילים רצופות; אפשר להוסיף אותו ידנית במאסטרינג ידני",
     reportDelay:
       "נגיעה של הד על הקצב ({{ms}}ms), {{lu}}LU מתחת לקול שלך — מוסיף עומק בלי למרוח את המילים",
+    reportLeveler:
+      "קומפרסור שני, איטי, ל-{{db}}dB נוספים — מאזן משפטים שלמים, שרשרת שני השלבים של שירת פופ",
+    reportWidth:
+      "דאבלר: שני עותקים של הקול שלך ב-±7 סנט, שמאל וימין — קול רחב ומלא יותר בלי שיישמע כפול",
+    reportThrows: "הד על המילה האחרונה בכל שורה ({{ms}}ms), שחוזר אל ההפסקה — לא על כל מילה",
+    reportRide: "רכיבה על משפטים: שורות שקטות הורמו ורועשות הונמכו עד {{db}}dB לפני הקומפרסור",
+    reportBreaths: "{{count}} נשימות רועשות הונמכו (נשארו, רק שקטות יותר)",
     fixSection: "תקן קטע",
     fixSectionDesc:
       "שרת לא נכון איפשהו באמצע? סמן איפה זה מתחיל ואיפה זה נגמר, הקלט מחדש רק את הקטע הזה, והוא יתחבר בחזרה לשאר ההקלטה — כלום אחר לא משתנה.",
@@ -1903,6 +1925,9 @@ const ar = {
     eq: "هواء (10kHz+)",
     compression: "ضغط",
     delay: "صدى (ديلاي)",
+    leveler: "موازن (ضاغط ثانٍ)",
+    throws: "صدى على نهايات الأسطر",
+    width: "العرض (دَبلر)",
     warmth: "دفء (تشبّع)",
     deEsser: "مزيل السين",
     presence: "الحضور",
@@ -2124,6 +2149,13 @@ const ar = {
       "لم يُضَف صدى متكرر — فهو يطمس الكلمات المتتالية؛ أضفه يدوياً في الماسترينج اليدوي إن أردت",
     reportDelay:
       "لمسة صدى متكرر على الإيقاع ({{ms}}ms)، {{lu}}LU تحت صوتك — تضيف عمقاً دون طمس الكلمات",
+    reportLeveler:
+      "ضاغط ثانٍ بطيء لـ{{db}}dB إضافية — يوازن الجمل كاملة، سلسلة المرحلتين لغناء البوب",
+    reportWidth:
+      "دَبلر: نسختان من صوتك بفارق ±7 سنت يساراً ويميناً — صوت أعرض وأملأ دون أن يبدو مزدوجاً",
+    reportThrows: "صدى على الكلمة الأخيرة من كل سطر ({{ms}}ms) يتكرر في الوقفة — لا على كل كلمة",
+    reportRide: "موازنة الجمل: رُفعت الأسطر الهادئة وخُفضت الصاخبة حتى {{db}}dB قبل الضغط",
+    reportBreaths: "خُفضت {{count}} أنفاس عالية (باقية، لكن أهدأ)",
     fixSection: "إصلاح مقطع",
     fixSectionDesc:
       "غنّيت جملة بشكل خاطئ في مكان ما في المنتصف؟ حدّد أين تبدأ وأين تنتهي، أعد تسجيل هذا الجزء فقط، وسيتم دمجه مرة أخرى مع باقي التسجيل — لا شيء آخر يتغيّر.",

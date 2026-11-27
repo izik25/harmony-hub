@@ -37,6 +37,7 @@ import {
 } from "@/lib/mix-recording";
 import { analyzePitchOffThread, applyPitchCorrectionOffThread } from "@/lib/pitch-correct";
 import { analyzeSong, measureLoudness, NOTE_NAMES } from "@/lib/song-analysis";
+import { applyVocalPrep } from "@/lib/vocal-prep";
 import {
   applyMix,
   buildChain,
@@ -45,6 +46,7 @@ import {
   outputLatencySeconds,
   renderMix,
   seekChain,
+  setThrowEnvelope,
   startChain,
   stopChain,
   type MixSettings,
@@ -164,6 +166,10 @@ const MASTER_STEP_LABELS: Record<(typeof MASTER_STEPS)[number], string> = {
 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const channelsOf = (buffer: AudioBuffer) =>
+  Array.from({ length: buffer.numberOfChannels }, (_, ch) => buffer.getChannelData(ch));
+/** Every send off — the dry processed voice AI mastering measures each send against. */
+const NO_SENDS = { reverb: 0, delay: 0, width: 0, throws: 0 } satisfies Partial<MixSettings>;
 
 /** Loudness as it's actually heard on two speakers — a mono buffer plays in both. */
 function loudnessOf(buffer: AudioBuffer) {
@@ -204,6 +210,10 @@ function StudioPage() {
   // Whether AI mastering's noise gate is baked into the loaded buffer — runPitchCorrection
   // re-applies it after restoring the original, since gating changes what pitch detection sees.
   const gateAppliedRef = useRef(false);
+  // Whether AI mastering's vocal prep (phrase riding + breath softening, vocal-prep.ts) is baked
+  // in — like the gate, re-applied after every rebuild from the original, after pitch correction
+  // (it rides the level of what's actually heard).
+  const prepAppliedRef = useRef(false);
   // The song's scale (from analyzeSong) that pitch correction aims at — undefined until AI
   // mastering has detected a confident key for this take, which means "nearest semitone".
   const pitchScaleRef = useRef<number[] | undefined>(undefined);
@@ -284,14 +294,23 @@ function StudioPage() {
       applyNoiseGate(buffer, noiseGateThresholdFor(analyzeSignal(buffer)));
     }
     const clamped = Math.min(1, Math.max(0, strength));
+    const current = () => run === pitchRunRef.current && chainRef.current === chain;
+    const prep = () => {
+      if (prepAppliedRef.current) applyVocalPrep(channelsOf(buffer), buffer.sampleRate);
+    };
     if (clamped > 0) {
       pitchPendingRef.current = applyPitchCorrectionOffThread(
         buffer,
         clamped,
         pitchScaleRef.current,
         referenceA4Ref.current,
-        () => run === pitchRunRef.current && chainRef.current === chain,
-      );
+        current,
+      ).then((wrote) => {
+        if (wrote && current()) prep();
+        return wrote;
+      });
+    } else {
+      prep();
     }
   };
 
@@ -509,6 +528,7 @@ function StudioPage() {
     const chain = buildChain();
     chainRef.current = chain;
     gateAppliedRef.current = false;
+    prepAppliedRef.current = false;
     pitchScaleRef.current = undefined;
     referenceA4Ref.current = 440;
     masterRunRef.current++;
@@ -542,6 +562,7 @@ function StudioPage() {
             buf.getChannelData(ch).slice(),
           );
           setWavePeaks(computePeaks(buf, WAVE_BARS));
+          setThrowEnvelope(chain, buf);
         }
         // Gain staging: the take's loud passages to −18 dBFS before the chain (see vocal-chain.ts).
         const inputTrimDb = buf
@@ -750,6 +771,7 @@ function StudioPage() {
     setMasterReport([]);
     setMasterStage("analyzing");
     restoreOriginalBuffer(buffer);
+    prepAppliedRef.current = false;
     const isClean = !!sources?.cleanVocal;
     const lines: ReportLine[] = [];
 
@@ -821,6 +843,16 @@ function StudioPage() {
         lines.push({ key: "studio.reportPitchOk" });
       }
       setA(Math.round(strength * 100));
+
+      // Vocal prep on the tuned take, before the chain: phrase riding, then breaths turned down.
+      const prepped = applyVocalPrep(channelsOf(buffer), buffer.sampleRate);
+      prepAppliedRef.current = true;
+      if (prepped.rideDb >= 1) {
+        lines.push({ key: "studio.reportRide", values: { db: prepped.rideDb } });
+      }
+      if (prepped.breaths > 0) {
+        lines.push({ key: "studio.reportBreaths", values: { count: prepped.breaths } });
+      }
       if (!(await step("mastering"))) return;
 
       const {
@@ -846,7 +878,7 @@ function StudioPage() {
       const dryRender = await renderMix(
         buffer,
         null,
-        { ...processed, reverb: 0, delay: 0, vocalVolume: 100 },
+        { ...processed, ...NO_SENDS, vocalVolume: 100 },
         false,
       );
       if (stale()) return;
@@ -855,7 +887,7 @@ function StudioPage() {
         const render = await renderMix(
           buffer,
           null,
-          { ...processed, reverb: 0, delay: 0, vocalVolume: 100, ...probe },
+          { ...processed, ...NO_SENDS, vocalVolume: 100, ...probe },
           false,
         );
         const sendOnly = [0, 1].map((ch) => {
@@ -1375,6 +1407,11 @@ function StudioPage() {
                     onChange={setMixValue("compression")}
                   />
                   <Slider
+                    label={t("record.leveler")}
+                    v={mix.leveler}
+                    onChange={setMixValue("leveler")}
+                  />
+                  <Slider
                     label={t("record.presence")}
                     v={mix.presenceDb}
                     onChange={setMixValue("presenceDb")}
@@ -1408,6 +1445,12 @@ function StudioPage() {
                     onChange={setMixValue("reverbSize")}
                   />
                   <Slider label={t("record.delay")} v={mix.delay} onChange={setMixValue("delay")} />
+                  <Slider
+                    label={t("record.throws")}
+                    v={mix.throws}
+                    onChange={setMixValue("throws")}
+                  />
+                  <Slider label={t("record.width")} v={mix.width} onChange={setMixValue("width")} />
                   <Slider
                     label={t("record.speed")}
                     v={mix.speed}

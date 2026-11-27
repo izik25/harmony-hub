@@ -107,6 +107,9 @@ export const it = {
     eq: "Aria (10 kHz+)",
     compression: "Compressione",
     delay: "Eco (delay)",
+    leveler: "Livellatore (2° compressore)",
+    throws: "Eco a fine frase",
+    width: "Ampiezza (doubler)",
     warmth: "Calore (saturazione)",
     deEsser: "De-esser",
     presence: "Presenza",
@@ -335,6 +338,15 @@ export const it = {
       "Nessuna eco aggiunta: impasta il testo veloce; aggiungila a mano nel Mastering manuale se la vuoi",
     reportDelay:
       "Un tocco di eco a tempo ({{ms}} ms), {{lu}} LU sotto la tua voce: dà profondità senza impastare il testo",
+    reportLeveler:
+      "Secondo compressore lento per {{db}} dB in più: uniforma frasi intere, la catena a due stadi di una voce pop",
+    reportWidth:
+      "Doubler: due copie della tua voce a ±7 cent, sinistra e destra: più ampia e piena senza sembrare doppiata",
+    reportThrows:
+      "Eco sull'ultima parola di ogni frase ({{ms}} ms), che si ripete nella pausa, non su ogni parola",
+    reportRide:
+      "Livellamento delle frasi: le morbide alzate e le forti abbassate fino a {{db}} dB prima della compressione",
+    reportBreaths: "{{count}} respiri forti abbassati (restano, solo più leggeri)",
     fixSection: "Correggi una sezione",
     fixSectionDesc:
       "Hai sbagliato un verso a metà? Segna dove inizia e dove finisce, registra di nuovo solo quella parte e verrà ricucita nel resto della take: nient'altro cambia.",

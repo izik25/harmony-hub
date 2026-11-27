@@ -1,13 +1,14 @@
 import * as Tone from "tone";
 import { generateImpulseResponse } from "./impulse-response";
+import { phraseEndEnvelope } from "./vocal-prep";
 
 /**
  * Studio's vocal chain — one standard lead-vocal chain in the usual order, every stage set from
  * published engineering practice rather than taste:
  *
  *   trim (to −18 dBFS) → high-pass 24dB/oct → mud cut → de-esser (split-band) → compressor
- *   (3.5:1) → presence → air shelf → saturation → trim back → dry + plate reverb send + delay send
- *   → vocal level ─┐
+ *   (3.5:1, fast) → leveler (3:1, slow) → presence → air shelf → saturation → trim back → dry
+ *   + plate reverb send + delay send + doubler send + delay-throw send → vocal level ─┐
  *   backing → backing level ─┴→ master gain → limiter (−1 dB ceiling)
  *
  * Gain staging matters more than any single knob: the compressor and de-esser thresholds below are
@@ -34,6 +35,10 @@ export type MixSettings = {
   deEssHz: number;
   /** 0-100 → 0-9 dB of gain reduction on loud phrases, at 3.5:1. */
   compression: number;
+  /** 0-100 → 0-6 dB of gain reduction from a second, slow compressor after the first — the
+   * two-stage "fast catches the peaks, slow evens out the phrases" chain of a pop lead (an 1176
+   * into an LA-2A, classically). */
+  leveler: number;
   /** dB at ~3.2kHz, −6..6. */
   presenceDb: number;
   /** dB high shelf from 10kHz, −6..6. */
@@ -50,6 +55,15 @@ export type MixSettings = {
   delay: number;
   /** Delay time, seconds — a dotted eighth of the song's tempo when AI mastering found one. */
   delayTime: number;
+  /** 0-100 → doubler send: two copies of the voice micro-pitched ±7 cents and ~15-22ms late,
+   * panned left and right — the classic "micro-shift" that makes a lead sound wide and expensive
+   * without reading as an effect. */
+  width: number;
+  /** 0-100 → delay-throw send: an echo caught only on the last word of each sung line (see
+   * phraseEndEnvelope), repeating into the pause after it. */
+  throws: number;
+  /** Delay-throw time, seconds — a quarter note of the song's tempo when AI mastering found one. */
+  throwTime: number;
   /** Master gain into the limiter, dB. */
   gainDb: number;
   /** Mix balance, %. */
@@ -75,6 +89,12 @@ export const DEFAULT_MIX: MixSettings = {
   preDelay: 0.03,
   delay: 0,
   delayTime: 0.375,
+  // Off until AI mastering (or the user) turns them on, so a take that hasn't been mastered
+  // sounds exactly as before.
+  leveler: 0,
+  width: 0,
+  throws: 0,
+  throwTime: 0.5,
   gainDb: 0,
   // 115/95 match record.tsx's initial auto-mix.
   vocalVolume: 115,
@@ -83,9 +103,12 @@ export const DEFAULT_MIX: MixSettings = {
 
 export const reverbTailSeconds = (size: number) => 0.6 + (size / 100) * 1.8;
 export const compressionGrDb = (compression: number) => (compression / 100) * 9;
+export const levelerGrDb = (leveler: number) => (leveler / 100) * 6;
 export const deEssGrDb = (deEss: number) => (deEss / 100) * 8;
 
 const COMP_RATIO = 3.5;
+const LEVEL_RATIO = 3;
+const LEVEL_KNEE = 10;
 const DE_ESS_RATIO = 4;
 const STAGED_LEVEL_DB = -18;
 // The compressor's detector follows the signal's peaks, which on a staged vocal's loud phrases ride
@@ -114,6 +137,63 @@ const BUTTERWORTH_Q_DB = -3.0103;
 const butterworth = (type: "lowpass" | "highpass") =>
   new Tone.BiquadFilter({ type, frequency: 1000, Q: BUTTERWORTH_Q_DB });
 
+type Doubler = {
+  send: Tone.Gain;
+  highpass: Tone.Filter;
+  left: Tone.PitchShift;
+  right: Tone.PitchShift;
+  panLeft: Tone.Panner;
+  panRight: Tone.Panner;
+  wet: Tone.Gain;
+};
+
+/** Doubler: ±7 cents (0.07 semitones), each on a 30ms pitch-shift window, so the copies run ~15ms
+ * (left) and ~22ms (right) behind the voice — inside classic ADT's 10-25ms, short of where they'd
+ * read as a slap. High-passed so the doubles add width, not low-end mud. */
+function buildDoubler(): Doubler {
+  const send = new Tone.Gain(0);
+  const highpass = new Tone.Filter({ type: "highpass", frequency: 250 });
+  const left = new Tone.PitchShift({ pitch: 0.07, windowSize: 0.03, delayTime: 0, wet: 1 });
+  const right = new Tone.PitchShift({ pitch: -0.07, windowSize: 0.03, delayTime: 0.007, wet: 1 });
+  const panLeft = new Tone.Panner(-0.7);
+  const panRight = new Tone.Panner(0.7);
+  const wet = new Tone.Gain(1);
+  send.connect(highpass);
+  highpass.fan(left, right);
+  left.chain(panLeft, wet);
+  right.chain(panRight, wet);
+  return { send, highpass, left, right, panLeft, panRight, wet };
+}
+
+type ThrowFx = {
+  /** Plays phraseEndEnvelope on the vocal's timeline, into the send's gain. */
+  envelope: Tone.Player;
+  level: Tone.Gain;
+  send: Tone.Gain;
+  highpass: Tone.Filter;
+  lowpass: Tone.Filter;
+  delay: Tone.FeedbackDelay;
+  toReverb: Tone.Gain;
+};
+
+/** Delay throw: the send's gain is 0 except where the envelope player opens it (the end of each
+ * line). Dark and band-limited like a tape echo, with more feedback than the ambience delay so the
+ * word repeats into the pause; a little of it goes into the plate so the repeats sit in the same
+ * space as the voice. */
+function buildThrowFx(): ThrowFx {
+  const envelope = new Tone.Player();
+  const level = new Tone.Gain(0);
+  const send = new Tone.Gain(0);
+  const highpass = new Tone.Filter({ type: "highpass", frequency: 300 });
+  const lowpass = new Tone.Filter({ type: "lowpass", frequency: 3500 });
+  const delay = new Tone.FeedbackDelay({ delayTime: 0.5, feedback: 0.35, maxDelay: 2, wet: 1 });
+  const toReverb = new Tone.Gain(0.3);
+  envelope.connect(level);
+  level.connect(send.gain);
+  send.chain(highpass, lowpass, delay, toReverb);
+  return { envelope, level, send, highpass, lowpass, delay, toReverb };
+}
+
 export type VocalChain = {
   player: Tone.Player;
   backingPlayer: Tone.Player;
@@ -131,6 +211,8 @@ export type VocalChain = {
   deEssSum: Tone.Gain;
   compressor: Tone.Compressor;
   compMakeup: Tone.Gain;
+  leveler: Tone.Compressor;
+  levelerMakeup: Tone.Gain;
   presence: Tone.Filter;
   air: Tone.Filter;
   saturator: Tone.WaveShaper;
@@ -145,6 +227,9 @@ export type VocalChain = {
   delayHighpass: Tone.Filter;
   delayLowpass: Tone.Filter;
   delay: Tone.FeedbackDelay;
+  /** null when built without it — see buildChain. */
+  doubler: Doubler | null;
+  throwFx: ThrowFx | null;
   vocalBus: Tone.Gain;
   vocalLevel: Tone.Gain;
   backingDelay: Tone.Delay;
@@ -158,7 +243,7 @@ export type VocalChain = {
 // itself, since disposeChain disposes every field.
 const impulseKeys = new WeakMap<VocalChain, string>();
 
-export function buildChain(): VocalChain {
+export function buildChain(options: { doubler?: boolean; throws?: boolean } = {}): VocalChain {
   const latency = compressorLatency(Tone.getContext().sampleRate);
   const player = new Tone.Player();
   const backingPlayer = new Tone.Player();
@@ -195,6 +280,17 @@ export function buildChain(): VocalChain {
     threshold: 0,
   });
   const compMakeup = new Tone.Gain(1);
+  // The slow stage: an opto-style leveler — a 30ms attack leaves transients to the fast compressor
+  // above, a 500ms release rides the phrase rather than the syllable, and a wide knee keeps it
+  // gentle.
+  const leveler = new Tone.Compressor({
+    ratio: LEVEL_RATIO,
+    attack: 0.03,
+    release: 0.5,
+    knee: LEVEL_KNEE,
+    threshold: 0,
+  });
+  const levelerMakeup = new Tone.Gain(1);
   const presence = new Tone.Filter({ type: "peaking", frequency: 3200, Q: 0.9, gain: 0 });
   const air = new Tone.Filter({ type: "highshelf", frequency: 10000, gain: 0 });
 
@@ -218,11 +314,17 @@ export function buildChain(): VocalChain {
   const delayLowpass = new Tone.Filter({ type: "lowpass", frequency: 5000 });
   const delay = new Tone.FeedbackDelay({ delayTime: 0.375, feedback: 0.2, maxDelay: 2, wet: 1 });
 
+  // The doubler and throws run nodes (pitch-shift LFOs, a feedback delay) even with their sends at
+  // zero — over twice the render time on its own — so an offline render that doesn't use them
+  // leaves them out. The live chain always has them, for the sliders.
+  const doubler = options.doubler === false ? null : buildDoubler();
+  const throwFx = options.throws === false ? null : buildThrowFx();
+
   const vocalBus = new Tone.Gain(1);
   const vocalLevel = new Tone.Gain(1);
-  // The vocal path runs through two compressors' lookahead (de-esser, compressor); delaying the
-  // backing by the same keeps the take exactly on the beat it was sung to.
-  const backingDelay = new Tone.Delay(latency * 2);
+  // The vocal path runs through three compressors' lookahead (de-esser, compressor, leveler);
+  // delaying the backing by the same keeps the take exactly on the beat it was sung to.
+  const backingDelay = new Tone.Delay(latency * 3);
   const backingLevel = new Tone.Gain(1);
   const masterGain = new Tone.Gain(1);
   // A hard-knee limiter with a 100ms release. Tone's own Limiter hardcodes a 10ms release (tracks
@@ -244,7 +346,7 @@ export function buildChain(): VocalChain {
   mud.fan(deEssLow, deEssHigh);
   deEssLow.chain(deEssLow2, deEssLowDelay, deEssSum);
   deEssHigh.chain(deEssHigh2, deEssComp, deEssMakeupTrim, deEssSum);
-  deEssSum.chain(compressor, compMakeup, presence, air);
+  deEssSum.chain(compressor, compMakeup, leveler, levelerMakeup, presence, air);
   air.fan(saturationDry, saturator);
   saturator.connect(saturationWet);
   saturationDry.connect(outputTrim);
@@ -252,6 +354,15 @@ export function buildChain(): VocalChain {
   outputTrim.fan(vocalBus, reverbSendHighpass, delaySend);
   reverbSendHighpass.chain(reverbSendLowpass, reverbConvolver, reverbWet, vocalBus);
   delaySend.chain(delayHighpass, delayLowpass, delay, vocalBus);
+  if (doubler) {
+    outputTrim.connect(doubler.send);
+    doubler.wet.connect(vocalBus);
+  }
+  if (throwFx) {
+    outputTrim.connect(throwFx.send);
+    throwFx.delay.connect(vocalBus);
+    throwFx.toReverb.connect(reverbSendHighpass);
+  }
   vocalBus.chain(vocalLevel, masterGain);
   backingPlayer.chain(backingDelay, backingLevel, masterGain);
   masterGain.chain(limiter, limiterTrim);
@@ -273,6 +384,8 @@ export function buildChain(): VocalChain {
     deEssSum,
     compressor,
     compMakeup,
+    leveler,
+    levelerMakeup,
     presence,
     air,
     saturator,
@@ -287,6 +400,8 @@ export function buildChain(): VocalChain {
     delayHighpass,
     delayLowpass,
     delay,
+    doubler,
+    throwFx,
     vocalBus,
     vocalLevel,
     backingDelay,
@@ -302,6 +417,7 @@ export function buildChain(): VocalChain {
 export function applyMix(chain: VocalChain, s: MixSettings, stems: boolean) {
   chain.player.playbackRate = s.speed / 100;
   chain.backingPlayer.playbackRate = s.speed / 100;
+  if (chain.throwFx) chain.throwFx.envelope.playbackRate = s.speed / 100;
   chain.inputTrim.gain.value = Tone.dbToGain(s.inputTrimDb);
   chain.highpass.frequency.value = 50 + s.lowCut;
   chain.highpass2.frequency.value = 50 + s.lowCut;
@@ -327,6 +443,12 @@ export function applyMix(chain: VocalChain, s: MixSettings, stems: boolean) {
   chain.compMakeup.gain.value = Tone.dbToGain(
     compGr - makeupDb(compThreshold, COMP_RATIO, COMP_KNEE),
   );
+  const levelGr = levelerGrDb(s.leveler);
+  const levelThreshold = levelGr > 0 ? DETECTOR_LEVEL_DB - levelGr / (1 - 1 / LEVEL_RATIO) : 0;
+  chain.leveler.threshold.value = levelThreshold;
+  chain.levelerMakeup.gain.value = Tone.dbToGain(
+    levelGr - makeupDb(levelThreshold, LEVEL_RATIO, LEVEL_KNEE),
+  );
   chain.presence.gain.value = s.presenceDb;
   chain.air.gain.value = s.airDb;
   const sat = (s.warmth / 100) * 0.35;
@@ -347,6 +469,11 @@ export function applyMix(chain: VocalChain, s: MixSettings, stems: boolean) {
   }
   chain.delaySend.gain.value = (s.delay / 100) * 0.5;
   chain.delay.delayTime.value = s.delayTime;
+  if (chain.doubler) chain.doubler.send.gain.value = (s.width / 100) * 0.5;
+  if (chain.throwFx) {
+    chain.throwFx.level.gain.value = (s.throws / 100) * 0.6;
+    chain.throwFx.delay.delayTime.value = s.throwTime;
+  }
 
   chain.vocalLevel.gain.value = stems ? s.vocalVolume / 100 : 1;
   chain.backingLevel.gain.value = s.playbackVolume / 100;
@@ -361,12 +488,41 @@ export function startChain(chain: VocalChain, offset: number): number {
   const at = Tone.now() + 0.02;
   chain.player.start(at, offset);
   if (chain.backingPlayer.loaded) chain.backingPlayer.start(at, offset);
+  if (chain.throwFx?.envelope.loaded) chain.throwFx.envelope.start(at, offset);
   return at;
 }
 
 export function stopChain(chain: VocalChain) {
   chain.player.stop();
   if (chain.backingPlayer.loaded) chain.backingPlayer.stop();
+  if (chain.throwFx?.envelope.loaded) chain.throwFx.envelope.stop();
+}
+
+/** Envelope sample rate: the envelope only moves over tens of milliseconds, so a low rate keeps a
+ * 3-minute take's envelope a few MB instead of tens. */
+const ENVELOPE_RATE = 8000;
+
+/** Loads the delay-throw envelope (see phraseEndEnvelope) for `vocal` into the chain — on its own
+ * player, which startChain/seekChain keep on the vocal's timeline. */
+export function setThrowEnvelope(chain: VocalChain, vocal: AudioBuffer) {
+  if (!chain.throwFx) return;
+  const { envelope } = phraseEndEnvelope(vocal.getChannelData(0), vocal.sampleRate, ENVELOPE_RATE);
+  const context = Tone.getContext().rawContext as unknown as BaseAudioContext;
+  let buffer: AudioBuffer;
+  try {
+    buffer = context.createBuffer(1, envelope.length, ENVELOPE_RATE);
+    buffer.getChannelData(0).set(envelope);
+  } catch {
+    // A browser that won't make a buffer this far under its own rate: hold each value up to it.
+    const rate = context.sampleRate;
+    const length = Math.ceil((envelope.length / ENVELOPE_RATE) * rate);
+    buffer = context.createBuffer(1, length, rate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) {
+      data[i] = envelope[Math.min(envelope.length - 1, Math.floor((i / rate) * ENVELOPE_RATE))];
+    }
+  }
+  chain.throwFx.envelope.buffer = new Tone.ToneAudioBuffer(buffer);
 }
 
 /** A seek is a stop and a fresh start at the same instant, not Tone.Player.seek: that swaps the
@@ -376,8 +532,8 @@ export function stopChain(chain: VocalChain) {
  * for a chain that's playing — a paused one just starts from the new position on play. */
 export function seekChain(chain: VocalChain, offset: number): number {
   const at = Tone.now() + 0.02;
-  for (const player of [chain.player, chain.backingPlayer]) {
-    if (!player.loaded) continue;
+  for (const player of [chain.player, chain.backingPlayer, chain.throwFx?.envelope]) {
+    if (!player?.loaded) continue;
     player.stop(at);
     player.start(at, offset);
   }
@@ -394,7 +550,10 @@ export function outputLatencySeconds(): number {
 }
 
 export function disposeChain(chain: VocalChain) {
-  for (const node of Object.values(chain)) node.dispose();
+  for (const value of Object.values(chain)) {
+    if (value instanceof Tone.ToneAudioNode) value.dispose();
+    else if (value) for (const node of Object.values(value)) node.dispose();
+  }
 }
 
 const channelsOf = (buffer: AudioBuffer) =>
@@ -418,7 +577,7 @@ export async function renderMix(
   const duration = vocal.duration / (settings.speed / 100) + 0.3;
   const rendered = await Tone.Offline(
     () => {
-      const chain = buildChain();
+      const chain = buildChain({ doubler: settings.width > 0, throws: settings.throws > 0 });
       chain.player.buffer = Tone.ToneAudioBuffer.fromArray(
         vocalData.length === 1 ? vocalData[0] : vocalData,
       );
@@ -427,9 +586,12 @@ export async function renderMix(
           backingData.length === 1 ? backingData[0] : backingData,
         );
       }
+      const vocalBuffer = chain.player.buffer.get();
+      if (vocalBuffer) setThrowEnvelope(chain, vocalBuffer);
       applyMix(chain, settings, stems);
       chain.player.start(0);
       if (backingData) chain.backingPlayer.start(0);
+      if (chain.throwFx?.envelope.loaded) chain.throwFx.envelope.start(0);
     },
     duration,
     2,

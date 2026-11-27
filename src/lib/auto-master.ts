@@ -1,6 +1,6 @@
 import type { PitchProfile } from "./pitch-correct";
 import type { SongAnalysis } from "./song-analysis";
-import { compressionGrDb, deEssGrDb, type MixSettings } from "./vocal-chain";
+import { compressionGrDb, deEssGrDb, levelerGrDb, type MixSettings } from "./vocal-chain";
 
 /**
  * AI mastering's decisions, as pure functions of what was measured — Studio runs the analysis,
@@ -81,10 +81,15 @@ export function planProcessing({
   const deEssHz = lowHz && lowHz > 165 ? 7500 : 6000;
   report.push({ key: "studio.reportDeEss", values: { hz: deEssHz, db: round1(deEssGr) } });
 
-  // Compression: 3.5:1 for 3-6dB of gain reduction on loud phrases — more the more unevenly the
-  // take was sung (gap between loud and soft phrases).
-  const compGr = clamp(3 + (song.vocal.phraseSpreadDb - 8) * 0.2, 3, 6);
+  // Compression in two stages, the way a pop lead is compressed: a fast 3.5:1 for 3-5dB on the
+  // loud phrases (more the more unevenly the take was sung), then a slow opto-style leveler for a
+  // steady ~2.5dB more that evens out whole phrases — two moderate stages sound smoother than one
+  // working hard. The phrase riding in vocal prep (vocal-prep.ts) has already closed part of the
+  // gap between soft and loud lines before either.
+  const compGr = clamp(3 + (song.vocal.phraseSpreadDb - 8) * 0.2, 3, 5);
   report.push({ key: "studio.reportComp", values: { db: round1(compGr) } });
+  const levelerGr = 2.5;
+  report.push({ key: "studio.reportLeveler", values: { db: levelerGr } });
 
   // Presence (~3kHz): +1-3dB where the voice lacks it, plus a little more where the arrangement is
   // itself presence-heavy relative to the voice (that's where it would cover the words).
@@ -155,6 +160,22 @@ export function planProcessing({
     values: { ms: delayMs, lu: Math.round(-lu) },
   });
 
+  // Doubler: the micro-pitch-shift width of a produced lead. Both copies together ~17 LU under the
+  // voice (a raw take, room and all, ~21) — measured on a rendered phone take: 32 lands at −17.3,
+  // 20 at −21.4 — where the voice gets wider and fuller without the copies being heard as copies.
+  const width = isClean ? 32 : 20;
+  report.push({ key: "studio.reportWidth" });
+
+  // Delay throws: an echo on the last word of each line, a quarter note long, repeating into the
+  // pause after it — where pop mixes put their audible echo, instead of on every word. At 45 the
+  // repeats measure ~19 LU under the voice where they sound. Not on a raw take, whose room already
+  // echoes.
+  const throwTime = bpm ? clamp(60 / bpm, 0.3, 0.8) : base.throwTime;
+  const throws = isClean ? 45 : 0;
+  if (throws > 0) {
+    report.push({ key: "studio.reportThrows", values: { ms: Math.round(throwTime * 1000) } });
+  }
+
   return {
     settings: {
       ...base,
@@ -167,6 +188,7 @@ export function planProcessing({
       deEssRefDb: Math.max(song.vocal.sibilancePeakDb + 3, -18 - base.inputTrimDb - 28),
       deEssHz,
       compression: Math.round((compGr / compressionGrDb(100)) * 100),
+      leveler: Math.round((levelerGr / levelerGrDb(100)) * 100),
       presenceDb,
       airDb,
       warmth,
@@ -177,6 +199,9 @@ export function planProcessing({
       // A probe level when an echo is planned; the real send is measured in (reverbSendFor).
       delay: delayTargetLu == null ? 0 : REVERB_PROBE,
       delayTime: Math.round(delayTime * 1000) / 1000,
+      width,
+      throws,
+      throwTime: Math.round(throwTime * 1000) / 1000,
     },
     report,
     reverbTargetLu,
