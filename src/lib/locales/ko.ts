@@ -328,12 +328,7 @@ export const ko = {
     reportReverbRaw: "방 본연의 울림을 살렸어요 — 플레이트는 아주 살짝, 목소리보다 {{lu}} LU 아래",
     reportNoDelay:
       "에코는 넣지 않았어요 — 이어지는 가사를 뭉개기 때문이에요. 원하면 수동 마스터링에서 직접 추가하세요",
-    reportDelay:
-      "박자에 맞춘 가벼운 에코 ({{ms}} ms), 목소리보다 {{lu}} LU 아래 — 가사를 뭉개지 않고 깊이를 더해요",
     reportLeveler: "두 번째 느린 컴프로 {{db}} dB 더 — 소절 전체를 고르게, 팝 보컬의 2단 체인",
-    reportWidth:
-      "더블러: 목소리 복사본 두 개를 ±7센트로 좌우에 — 겹쳐 들리지 않으면서 더 넓고 꽉 찬 리드",
-    reportThrows: "각 소절 마지막 단어에 에코 ({{ms}} ms), 쉬는 구간으로 울림 — 모든 단어가 아니라",
     reportRide: "소절 볼륨 조정: 작은 소절은 올리고 큰 소절은 내림, 컴프 전에 최대 {{db}} dB",
     reportBreaths: "큰 숨소리 {{count}}개를 줄였어요 (지우지 않고 조용하게)",
     fixSection: "구간 수정",

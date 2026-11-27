@@ -332,14 +332,8 @@ export const tr = {
       "Odanın doğal ambiyansı korundu — sadece biraz plate, sesinin {{lu}} LU altında",
     reportNoDelay:
       "Eko eklenmedi — akan sözleri bulanıklaştırır; istersen Manuel mastering'den elle ekle",
-    reportDelay:
-      "Ritme oturan hafif eko ({{ms}} ms), sesinin {{lu}} LU altında — sözleri bulanıklaştırmadan derinlik katar",
     reportLeveler:
       "İkinci, yavaş kompresörle {{db}} dB daha — tüm cümleleri dengeler, pop vokalin iki aşamalı zinciri",
-    reportWidth:
-      "Doubler: sesinin ±7 sentlik iki kopyası, solda ve sağda — çift gibi duyulmadan daha geniş ve dolgun",
-    reportThrows:
-      "Her satırın son kelimesinde eko ({{ms}} ms), araya yankılanır — her kelimede değil",
     reportRide:
       "Cümle dengeleme: kısık satırlar yükseltildi, yüksekler kısıldı, kompresyondan önce {{db}} dB'ye kadar",
     reportBreaths: "{{count}} yüksek nefes kısıldı (silinmedi, sadece daha sessiz)",

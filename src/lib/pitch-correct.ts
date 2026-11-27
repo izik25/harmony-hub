@@ -263,6 +263,11 @@ type Note = {
   centerSemis: number;
   /** Where the note should be (see targetNoteFreq), semitones from A4. */
   targetSemis: number;
+  /** How far the note sits from its target once the singer's own steady offset is taken out
+   * (see retargetForSinger), semitones — near ±0.5 it's a coin toss which note was meant. */
+  residual: number;
+  /** 0.3-1: how sure the target is the note that was meant (see AMBIGUOUS_FROM). */
+  confidence: number;
 };
 
 /** Frame-to-frame detection jitter on a phone take runs ~30-40 cents per 10ms frame at the 90th
@@ -301,7 +306,7 @@ function segmentNotes(
   sampleRate: number,
   scale: readonly number[] | undefined,
   referenceA4: number,
-): Note[] {
+): { notes: Note[]; bias: number } {
   const frameSec = track.hop / sampleRate;
   const jitterRadius = Math.max(1, Math.round(JITTER_RADIUS_SEC / frameSec));
   const minFrames = Math.ceil(MIN_NOTE_SEC / frameSec);
@@ -336,10 +341,9 @@ function segmentNotes(
             end: a + k,
             semis,
             centerSemis,
-            targetSemis: toSemis(
-              targetNoteFreq(referenceA4 * 2 ** (centerSemis / 12), scale, referenceA4),
-              referenceA4,
-            ),
+            targetSemis: 0,
+            residual: 0,
+            confidence: 1,
           });
         }
         runStart = k;
@@ -349,7 +353,61 @@ function segmentNotes(
     }
     a = b;
   }
-  return notes;
+  const bias = retargetForSinger(notes, scale, referenceA4);
+  return { notes, bias };
+}
+
+/** Agreement (0-1, the circular mean's length) the singer's note offsets need before their mean
+ * counts as a steady offset rather than notes just landing all over. */
+const BIAS_MIN_AGREEMENT = 0.2;
+/** A note this close to halfway between two notes (after the singer's offset), semitones, starts
+ * losing confidence; by 0.48 it keeps only 30% of that part of its correction. */
+const AMBIGUOUS_FROM = 0.32;
+
+/**
+ * Picks each note's target the way an engineer does — from the note the singer meant, not the
+ * one nearest on the grid. Amateur singers often sit a steady amount flat or sharp of the track
+ * (measured on real takes here: a whole song ~45 cents flat, against a backing at A440). Rounding
+ * each note to the nearest semitone then flips a coin on every note near the halfway point —
+ * some pulled up, some down to the wrong note — which is exactly the "pulled", wrongly corrected
+ * words that sounded worse than no tuning. So the take's steady offset is measured first (the
+ * circular mean of every note's distance from the grid, length-weighted), each note's intended
+ * note is chosen with it taken out, and the target is that note on the track's own grid — the
+ * whole voice moves onto the track, each note to the note it was going for.
+ *
+ * What's left after the offset (`residual`) still says how sure that choice is: a note sitting
+ * near halfway on the singer's own grid could have been meant either way, and correcting it the
+ * wrong way is the worst thing tuning can do, so that part of its correction is mostly held back
+ * (see `confidence`). Returns the offset, semitones.
+ */
+function retargetForSinger(
+  notes: Note[],
+  scale: readonly number[] | undefined,
+  referenceA4: number,
+): number {
+  let sin = 0;
+  let cos = 0;
+  let weight = 0;
+  for (const note of notes) {
+    const offset = note.centerSemis - Math.round(note.centerSemis);
+    const w = note.end - note.start;
+    sin += w * Math.sin(2 * Math.PI * offset);
+    cos += w * Math.cos(2 * Math.PI * offset);
+    weight += w;
+  }
+  const agreement = weight > 0 ? Math.hypot(sin, cos) / weight : 0;
+  const bias = agreement >= BIAS_MIN_AGREEMENT ? Math.atan2(sin, cos) / (2 * Math.PI) : 0;
+  for (const note of notes) {
+    const meant = note.centerSemis - bias;
+    const intended = toSemis(
+      targetNoteFreq(referenceA4 * 2 ** (meant / 12), scale, referenceA4),
+      referenceA4,
+    );
+    note.targetSemis = intended;
+    note.residual = meant - intended;
+    note.confidence = 1 - 0.7 * smoothstep(AMBIGUOUS_FROM, 0.48, Math.abs(note.residual));
+  }
+  return bias;
 }
 
 export type PitchProfile = {
@@ -386,7 +444,7 @@ export function analyzePitchData(
   referenceA4 = 440,
 ): PitchProfile {
   const track = trackPitch(data, sampleRate);
-  const notes = segmentNotes(track, sampleRate, scale, referenceA4);
+  const { notes } = segmentNotes(track, sampleRate, scale, referenceA4);
   const voicedHz = track.f0.filter((f): f is number => f != null).sort((a, b) => a - b);
   let weighted = 0;
   let frames = 0;
@@ -454,6 +512,7 @@ function shiftTrack(
   sampleRate: number,
   scale: readonly number[] | undefined,
   referenceA4: number,
+  bias: number,
 ) {
   const n = track.f0.length;
   // `raw`: each note's center shift (and the fill between notes), which the retune speed below
@@ -473,9 +532,11 @@ function shiftTrack(
   for (const note of notes) {
     const { semis } = note;
     const error = note.targetSemis - note.centerSemis;
-    const lengthScale = 0.7 + 0.3 * smoothstep(0.06, 0.12, semis.length * frameSec);
+    const lengthScale = 0.5 + 0.5 * smoothstep(0.06, 0.15, semis.length * frameSec);
+    // An uncertain note keeps the singer's steady offset correction but only part of the rest.
+    const sureError = error + (1 - note.confidence) * note.residual;
     const centerShift =
-      error * centerAmount * lengthScale * smoothstep(0.01, 0.05, Math.abs(error));
+      sureError * centerAmount * lengthScale * smoothstep(0.01, 0.05, Math.abs(sureError));
     const slow = boxSmooth(semis, driftRadius);
     for (let i = 0; i < semis.length; i++) {
       const wander = slow[i] - note.centerSemis;
@@ -490,6 +551,8 @@ function shiftTrack(
     }
   }
 
+  const inNote = new Uint8Array(n);
+  for (const note of notes) inNote.fill(1, note.start, note.end);
   // Fill each voiced phrase between and around its notes (see above); phrases with nothing to
   // move stay untouched.
   for (let a = 0; a < n;) {
@@ -521,6 +584,22 @@ function shiftTrack(
     a = b;
   }
 
+  // ...but only near a note: further than ~40ms from one, the filled shift fades out by ~100ms, so
+  // a long glide or a stretch the notes don't explain isn't dragged along with the nearest note.
+  const distance = new Float64Array(n).fill(Infinity);
+  for (let i = 0, last = -Infinity; i < n; i++) {
+    if (inNote[i]) last = i;
+    distance[i] = i - last;
+  }
+  for (let i = n - 1, next = Infinity; i >= 0; i--) {
+    if (inNote[i]) next = i;
+    distance[i] = Math.min(distance[i], next - i);
+  }
+  const fadeFrom = 0.04 / frameSec;
+  const fadeTo = 0.1 / frameSec;
+  for (let i = 0; i < n; i++)
+    if (!inNote[i]) raw[i] *= 1 - smoothstep(fadeFrom, fadeTo, distance[i]);
+
   const hard = smoothstep(HARD_TUNE_FROM, 1, strength);
   if (hard > 0) {
     // Inside a note, the snap target is the note's own — a wide vibrato swings past the halfway
@@ -538,7 +617,7 @@ function shiftTrack(
       }
       const s = toSemis(f0, referenceA4);
       const candidate = Number.isNaN(noteTarget[i])
-        ? toSemis(targetNoteFreq(f0, scale, referenceA4), referenceA4)
+        ? toSemis(targetNoteFreq(f0 * 2 ** (-bias / 12), scale, referenceA4), referenceA4)
         : noteTarget[i];
       if (
         held == null ||
@@ -582,12 +661,11 @@ const DRIFT_MAX = 0.85;
 const FULL_DRIFT_AT = 0.8;
 const DRIFT_RADIUS_SEC = 0.1;
 /** How much of a note's fast movement (vibrato, wobble — what's left after drift) is taken out at
- * AI mastering's strength. Auto-Tune at a pop retune speed (~20ms) passes a 5-6Hz vibrato at
- * about half its width; this lands about there. That narrowing — notes that sit "locked" while
- * still moving like a voice — is most of what makes a tuned vocal sound produced rather than
- * merely in tune; on real phone takes, whose notes swing a lot (p90 ~75 cents), moving only their
- * centers left the tuning all but inaudible. Kept well short of 1, the flat, robotic hard-tune. */
-const TIGHT_MAX = 0.5;
+ * AI mastering's strength — notes that sit steadier while still moving like a voice. At 0.5
+ * (about what Auto-Tune at a ~20ms retune speed does to a vibrato) it also flattened the singer's
+ * deliberate ornaments, heard as words being "pulled"; 0.3 steadies the wobble and leaves the
+ * expression. Kept well short of 1, the flat, robotic hard-tune. */
+const TIGHT_MAX = 0.3;
 /** Drift and narrowing ease in over a note's first 50ms — its scoop/attack, the singer's own. */
 const ATTACK_SEC = 0.05;
 
@@ -774,7 +852,7 @@ export function correctPitchChannels(
   if (clampedStrength <= 0 || channels.length === 0) return;
   const data = channels[0];
   const track = trackPitch(data, sampleRate);
-  const notes = segmentNotes(track, sampleRate, scale, referenceA4);
+  const { notes, bias } = segmentNotes(track, sampleRate, scale, referenceA4);
   if (notes.length === 0) return;
   const { shifts, active } = shiftTrack(
     track,
@@ -783,6 +861,7 @@ export function correctPitchChannels(
     sampleRate,
     scale,
     referenceA4,
+    bias,
   );
   if (!active.includes(1)) return;
   const frameOf = (sample: number) =>

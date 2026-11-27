@@ -860,8 +860,6 @@ function StudioPage() {
         report,
         reverbTargetLu,
         reverbReport,
-        delayTargetLu,
-        delayReport,
       } = planProcessing({
         song,
         pitch: pitchBefore,
@@ -872,9 +870,9 @@ function StudioPage() {
       lines.push(...report);
       if (!(await step("verifying"))) return;
 
-      // Measure instead of guessing: the processed voice rendered dry, then with the reverb (and,
-      // separately, the echo) at a probe level — each difference is that send alone, so it can be
-      // set to land at its target under this voice.
+      // Measure instead of guessing: the processed voice rendered dry, then with the reverb at a
+      // probe level — the difference is the reverb alone, so the send can be set to land it at its
+      // target under this voice.
       const dryRender = await renderMix(
         buffer,
         null,
@@ -902,17 +900,7 @@ function StudioPage() {
       if (stale()) return;
       const reverb = reverbSendFor(probeLu, reverbTargetLu);
       lines.push(reverbReport(landedLu(probeLu, reverb)));
-      let delay = 0;
-      if (delayTargetLu != null) {
-        const delayProbeLu = await sendLu({ delay: REVERB_PROBE });
-        if (stale()) return;
-        // A take this can't measure (near-silent) gets no echo rather than a guessed one.
-        delay = Number.isFinite(delayProbeLu) ? reverbSendFor(delayProbeLu, delayTargetLu) : 0;
-        lines.push(
-          delay > 0 ? delayReport(landedLu(delayProbeLu, delay)) : { key: "studio.reportNoDelay" },
-        );
-      }
-      const spaced = { ...processed, reverb, delay };
+      const spaced = { ...processed, reverb };
       const backingLufs = backingBuffer ? loudnessOf(backingBuffer).lufs : null;
       const density = song.backing?.density ?? 0.5;
       const { settings: leveled, gapDb } = planLevels({

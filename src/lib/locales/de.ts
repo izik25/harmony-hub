@@ -335,14 +335,8 @@ export const de = {
       "Die natürliche Raumakustik wurde beibehalten – nur ein Hauch Plattenhall, {{lu}} LU unter deiner Stimme",
     reportNoDelay:
       "Kein Echo hinzugefügt – es verwischt fließenden Text; füge es bei Bedarf im Manuellen Mastering von Hand hinzu",
-    reportDelay:
-      "Leichtes Echo im Takt ({{ms}} ms), {{lu}} LU unter deiner Stimme – gibt Tiefe, ohne den Text zu verwischen",
     reportLeveler:
       "Zweiter, langsamer Kompressor für {{db}} dB mehr – gleicht ganze Phrasen aus, die zweistufige Pop-Vocal-Kette",
-    reportWidth:
-      "Doubler: zwei Kopien deiner Stimme ±7 Cent, links und rechts – breiter und voller, ohne gedoppelt zu klingen",
-    reportThrows:
-      "Echo auf dem letzten Wort jeder Zeile ({{ms}} ms), das in die Pause hallt – nicht auf jedem Wort",
     reportRide:
       "Phrasen-Riding: leise Zeilen angehoben, laute abgesenkt, bis {{db}} dB vor der Kompression",
     reportBreaths: "{{count}} laute Atmer leiser gemacht (bleiben drin, nur leiser)",

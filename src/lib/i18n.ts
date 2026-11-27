@@ -371,14 +371,8 @@ const en = {
       "Your room's own ambience kept — only a touch of plate, {{lu}} LU under your voice",
     reportNoDelay:
       "No echo added — it smears running lyrics; add it by hand in Manual Mastering if you want it",
-    reportDelay:
-      "Light echo on the beat ({{ms}} ms), {{lu}} LU under your voice — adds depth without smearing the words",
     reportLeveler:
       "Second, slow compressor for {{db}} dB more — evens out whole phrases, the two-stage pop-vocal chain",
-    reportWidth:
-      "Doubler: two copies of your voice ±7 cents, left and right — a wider, fuller lead without sounding doubled",
-    reportThrows:
-      "Echo on the last word of each line ({{ms}} ms), repeating into the pause — not on every word",
     reportRide:
       "Phrase riding: soft lines brought up and loud ones down by up to {{db}} dB before compression",
     reportBreaths: "{{count}} loud breaths turned down (kept, just quieter)",
@@ -1260,13 +1254,8 @@ const he = {
       "ריוורב פלייט — דעיכה {{tail}} שנ׳, pre-delay {{pre}}ms, נמדד {{lu}}LU מתחת לקול שלך כדי שירגישו אותו ולא ישמעו אותו",
     reportReverbRaw: "האווירה הטבעית של החדר נשמרה — רק נגיעה של פלייט, {{lu}}LU מתחת לקול שלך",
     reportNoDelay: "לא נוסף הד — הוא מורח מילים רצופות; אפשר להוסיף אותו ידנית במאסטרינג ידני",
-    reportDelay:
-      "נגיעה של הד על הקצב ({{ms}}ms), {{lu}}LU מתחת לקול שלך — מוסיף עומק בלי למרוח את המילים",
     reportLeveler:
       "קומפרסור שני, איטי, ל-{{db}}dB נוספים — מאזן משפטים שלמים, שרשרת שני השלבים של שירת פופ",
-    reportWidth:
-      "דאבלר: שני עותקים של הקול שלך ב-±7 סנט, שמאל וימין — קול רחב ומלא יותר בלי שיישמע כפול",
-    reportThrows: "הד על המילה האחרונה בכל שורה ({{ms}}ms), שחוזר אל ההפסקה — לא על כל מילה",
     reportRide: "רכיבה על משפטים: שורות שקטות הורמו ורועשות הונמכו עד {{db}}dB לפני הקומפרסור",
     reportBreaths: "{{count}} נשימות רועשות הונמכו (נשארו, רק שקטות יותר)",
     fixSection: "תקן קטע",
@@ -2147,13 +2136,8 @@ const ar = {
     reportReverbRaw: "حُفظت أجواء غرفتك الطبيعية — لمسة بليت فقط، {{lu}}LU تحت صوتك",
     reportNoDelay:
       "لم يُضَف صدى متكرر — فهو يطمس الكلمات المتتالية؛ أضفه يدوياً في الماسترينج اليدوي إن أردت",
-    reportDelay:
-      "لمسة صدى متكرر على الإيقاع ({{ms}}ms)، {{lu}}LU تحت صوتك — تضيف عمقاً دون طمس الكلمات",
     reportLeveler:
       "ضاغط ثانٍ بطيء لـ{{db}}dB إضافية — يوازن الجمل كاملة، سلسلة المرحلتين لغناء البوب",
-    reportWidth:
-      "دَبلر: نسختان من صوتك بفارق ±7 سنت يساراً ويميناً — صوت أعرض وأملأ دون أن يبدو مزدوجاً",
-    reportThrows: "صدى على الكلمة الأخيرة من كل سطر ({{ms}}ms) يتكرر في الوقفة — لا على كل كلمة",
     reportRide: "موازنة الجمل: رُفعت الأسطر الهادئة وخُفضت الصاخبة حتى {{db}}dB قبل الضغط",
     reportBreaths: "خُفضت {{count}} أنفاس عالية (باقية، لكن أهدأ)",
     fixSection: "إصلاح مقطع",

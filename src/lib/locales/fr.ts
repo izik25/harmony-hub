@@ -336,14 +336,8 @@ export const fr = {
       "L'ambiance naturelle de ta pièce est conservée — juste une touche de plaque, {{lu}} LU sous ta voix",
     reportNoDelay:
       "Pas d'écho ajouté — il brouille les paroles rapides ; ajoute-le à la main dans le Mastering manuel si tu le veux",
-    reportDelay:
-      "Une touche d'écho en rythme ({{ms}} ms), {{lu}} LU sous ta voix — de la profondeur sans brouiller les paroles",
     reportLeveler:
       "Second compresseur lent pour {{db}} dB de plus — égalise des phrases entières, la chaîne à deux étages d'une voix pop",
-    reportWidth:
-      "Doubleur : deux copies de ta voix à ±7 cents, à gauche et à droite — plus large et plus pleine sans sonner doublée",
-    reportThrows:
-      "Écho sur le dernier mot de chaque phrase ({{ms}} ms), qui résonne dans la pause — pas sur chaque mot",
     reportRide:
       "Nivellement des phrases : les douces remontées, les fortes baissées, jusqu'à {{db}} dB avant compression",
     reportBreaths: "{{count}} respirations fortes adoucies (gardées, juste plus discrètes)",

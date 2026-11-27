@@ -50,8 +50,6 @@ export function planProcessing({
   reverbTargetLu: number;
   reverbReport: (lu: number) => ReportLine;
   /** Where the echo should sit under the dry voice, LU — null for no echo. */
-  delayTargetLu: number | null;
-  delayReport: (lu: number) => ReportLine;
 } {
   const v = song.vocal.bands;
   const density = song.backing?.density ?? 0.5;
@@ -114,8 +112,9 @@ export function planProcessing({
   if (airDb >= 0.5) report.push({ key: "studio.reportAir", values: { db: airDb } });
   else if (airDb <= -0.5) report.push({ key: "studio.reportDarken", values: { db: -airDb } });
 
-  // Saturation: subtle, for density — more on a model-cleaned take, which comes back very clean.
-  const warmth = isClean ? 25 : 12;
+  // Saturation: subtle, for density. Kept low even on a model-cleaned take — it's distortion, and
+  // on a phone take it reads as grain before it reads as warmth; a clean studio vocal is clean.
+  const warmth = isClean ? 15 : 10;
   report.push({ key: "studio.reportWarmth" });
 
   // Plate reverb: short tails (≈1.6s for a slow song down to 1.0s for a fast one — the lower
@@ -133,9 +132,7 @@ export function planProcessing({
   // spreads to the sides around the voice instead of over it, so it carries more space at the same
   // clarity — −25 LU over a dense arrangement up to −22 over a sparse one, where it's most exposed
   // yet also most needed to fill the gaps.
-  // Set 1 LU wetter than that (−24 to −21) once the echo below was in, which adds its own depth,
-  // for a little more of a produced, studio sound without the voice losing its front.
-  const reverbTargetLu = isClean ? -24 + (1 - density) * 3 : -30;
+  const reverbTargetLu = isClean ? -25 + (1 - density) * 3 : -30;
   const tailText = tail.toFixed(1);
   const preMs = Math.round(preDelay * 1000);
   const reverbReport = (lu: number): ReportLine => {
@@ -146,35 +143,14 @@ export function planProcessing({
       : { key: "studio.reportReverb", values };
   };
 
-  // Echo: a delay loud enough to hear as echo smears running lyrics, so this is the engineer's
-  // "felt, not heard" ambience delay instead — a dotted eighth of the tempo (so its repeats land on
-  // the groove), filtered 200Hz-5kHz in the chain, and measured in like the reverb (see
-  // reverbSendFor) to sit ~30 LU under the voice, well below the reverb. A raw take already
-  // carries its own room, and anything added on it read as echo, so it gets none.
+  // No echo, delay throws or doubler from AI mastering — all three were tried here and heard as
+  // worse, not better: the ambience delay and the throws came back as a late repeat of each word's
+  // end, and the doubler's copies, 15-22ms behind the voice, blurred its consonants. A clean studio
+  // lead is dry, centered and focused; the space comes from the plate alone. Their times are still
+  // set to the tempo (a dotted eighth, a quarter), so turning them up by hand lands on the beat.
   const delayTime = bpm ? clamp((60 / bpm) * 0.75, 0.25, 0.6) : base.delayTime;
-  const delayTargetLu = isClean ? -30 + (1 - density) * 2 : null;
-  if (delayTargetLu == null) report.push({ key: "studio.reportNoDelay" });
-  const delayMs = Math.round(delayTime * 1000);
-  const delayReport = (lu: number): ReportLine => ({
-    key: "studio.reportDelay",
-    values: { ms: delayMs, lu: Math.round(-lu) },
-  });
-
-  // Doubler: the micro-pitch-shift width of a produced lead. Both copies together ~17 LU under the
-  // voice (a raw take, room and all, ~21) — measured on a rendered phone take: 32 lands at −17.3,
-  // 20 at −21.4 — where the voice gets wider and fuller without the copies being heard as copies.
-  const width = isClean ? 32 : 20;
-  report.push({ key: "studio.reportWidth" });
-
-  // Delay throws: an echo on the last word of each line, a quarter note long, repeating into the
-  // pause after it — where pop mixes put their audible echo, instead of on every word. At 45 the
-  // repeats measure ~19 LU under the voice where they sound. Not on a raw take, whose room already
-  // echoes.
   const throwTime = bpm ? clamp(60 / bpm, 0.3, 0.8) : base.throwTime;
-  const throws = isClean ? 45 : 0;
-  if (throws > 0) {
-    report.push({ key: "studio.reportThrows", values: { ms: Math.round(throwTime * 1000) } });
-  }
+  report.push({ key: "studio.reportNoDelay" });
 
   return {
     settings: {
@@ -196,18 +172,15 @@ export function planProcessing({
       reverb: REVERB_PROBE,
       reverbSize: Math.round(((tail - 0.6) / 1.8) * 100),
       preDelay: Math.round(preDelay * 1000) / 1000,
-      // A probe level when an echo is planned; the real send is measured in (reverbSendFor).
-      delay: delayTargetLu == null ? 0 : REVERB_PROBE,
+      delay: 0,
       delayTime: Math.round(delayTime * 1000) / 1000,
-      width,
-      throws,
+      width: 0,
+      throws: 0,
       throwTime: Math.round(throwTime * 1000) / 1000,
     },
     report,
     reverbTargetLu,
     reverbReport,
-    delayTargetLu,
-    delayReport,
   };
 }
 

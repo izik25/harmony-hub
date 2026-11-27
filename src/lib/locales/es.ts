@@ -335,14 +335,8 @@ export const es = {
       "Se mantuvo el ambiente natural de tu sala; solo un toque de placa, {{lu}} LU por debajo de tu voz",
     reportNoDelay:
       "No se añadió eco: emborrona la letra corrida; añádelo a mano en Masterización manual si lo quieres",
-    reportDelay:
-      "Un toque de eco a tempo ({{ms}} ms), {{lu}} LU bajo tu voz: da profundidad sin emborronar la letra",
     reportLeveler:
       "Segundo compresor lento para {{db}} dB más: iguala frases enteras, la cadena de dos etapas de una voz pop",
-    reportWidth:
-      "Doblador: dos copias de tu voz a ±7 cents, izquierda y derecha: más ancha y llena sin sonar doblada",
-    reportThrows:
-      "Eco en la última palabra de cada frase ({{ms}} ms), que se repite en la pausa, no en cada palabra",
     reportRide:
       "Nivelado de frases: las suaves subidas y las fuertes bajadas hasta {{db}} dB antes de comprimir",
     reportBreaths: "{{count}} respiraciones fuertes bajadas (siguen ahí, más suaves)",
