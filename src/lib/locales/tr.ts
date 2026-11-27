@@ -307,7 +307,7 @@ export const tr = {
     reportTuning:
       "Parça standart akorttan {{cents}} sent sapmış — notaların parçanın kendisine göre ayarlanır",
     reportPitchFixed:
-      "Perde: {{notes}} notadan {{off}} tanesi kaymıştı — ortalama {{before}} → {{after}} sent (tiz notalarda %{{pct}}, pesteyse daha hafif; vibrato ve atak korundu)",
+      "Perde: {{notes}} notadan {{off}} tanesi kaymıştı — ortalama {{before}} → {{after}} sent (her nota kendi perdesine oturtuldu, uzun notalardaki kaymalar düzeltildi; vibrato ve atak korundu)",
     reportPitchOk: "Perde doğru — dokunulmadı",
     reportLowCut: "{{hz}} Hz'de low cut — en pes notanın hemen altında",
     reportBalance: "Ses müziğin {{db}} LU üstüne yerleştirildi — {{arrangement}}",
@@ -329,6 +329,8 @@ export const tr = {
       "Odanın doğal ambiyansı korundu — sadece biraz plate, sesinin {{lu}} LU altında",
     reportNoDelay:
       "Eko eklenmedi — akan sözleri bulanıklaştırır; istersen Manuel mastering'den elle ekle",
+    reportDelay:
+      "Ritme oturan hafif eko ({{ms}} ms), sesinin {{lu}} LU altında — sözleri bulanıklaştırmadan derinlik katar",
     fixSection: "Bir bölümü düzelt",
     fixSectionDesc:
       "Ortalarda bir dizeyi yanlış mı söyledin? Başlangıcını ve bitişini işaretle, sadece o kısmı yeniden kaydet; kaydının geri kalanına eklenir — başka hiçbir şey değişmez.",

@@ -299,7 +299,7 @@ export const zh = {
     reportKeyScale: "检测到的调：{{key}}——音准将按歌曲音阶修正",
     reportTuning: "这首伴奏的调音偏离标准音高 {{cents}} 音分——你的音符会以伴奏本身为准调音",
     reportPitchFixed:
-      "音准：{{notes}} 个音中有 {{off}} 个跑调——平均 {{before}} → {{after}} 音分（高音修正 {{pct}}%，低音更轻；保留颤音和起音）",
+      "音准：{{notes}} 个音中有 {{off}} 个跑调——平均 {{before}} → {{after}} 音分（每个音都校到正确音高，长音中的跑偏也已拉回；保留颤音和起音）",
     reportPitchOk: "音准很好——未做改动",
     reportLowCut: "在 {{hz}} Hz 低切——就在你最低音的下方",
     reportBalance: "人声比伴奏高 {{db}} LU——{{arrangement}}",
@@ -318,6 +318,7 @@ export const zh = {
       "板式混响——衰减 {{tail}} 秒，预延迟 {{pre}} 毫秒，比人声低 {{lu}} LU，让人感受到而非听出来",
     reportReverbRaw: "保留了房间本身的氛围——只加了一点板式混响，比人声低 {{lu}} LU",
     reportNoDelay: "未添加回声——它会让连贯的歌词变糊；如需要，可在手动母带中自行添加",
+    reportDelay: "合拍的轻微回声（{{ms}} ms），比人声低 {{lu}} LU——增加纵深，又不让歌词变糊",
     fixSection: "修正片段",
     fixSectionDesc:
       "中间某句唱错了？标记开始和结束位置，只重录那一段，它就会被无缝接回整段录音——其他部分不变。",

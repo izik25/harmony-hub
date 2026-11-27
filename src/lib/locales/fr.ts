@@ -311,7 +311,7 @@ export const fr = {
     reportTuning:
       "Le morceau est accordé à {{cents}} cents du diapason standard — tes notes sont accordées sur le morceau lui-même",
     reportPitchFixed:
-      "Justesse : {{off}} notes sur {{notes}} étaient fausses — moyenne {{before}} → {{after}} cents ({{pct}} % sur les aigus, plus léger en dessous ; vibrato et attaques conservés)",
+      "Justesse : {{off}} notes sur {{notes}} étaient fausses — moyenne {{before}} → {{after}} cents (chaque note ramenée sur sa hauteur, les dérives dans les notes tenues corrigées ; vibrato et attaques conservés)",
     reportPitchOk: "La justesse est précise — rien n'a été touché",
     reportLowCut: "Coupe-bas à {{hz}} Hz — juste sous ta note la plus grave",
     reportBalance: "Voix placée {{db}} LU au-dessus de la musique — {{arrangement}}",
@@ -333,6 +333,8 @@ export const fr = {
       "L'ambiance naturelle de ta pièce est conservée — juste une touche de plaque, {{lu}} LU sous ta voix",
     reportNoDelay:
       "Pas d'écho ajouté — il brouille les paroles rapides ; ajoute-le à la main dans le Mastering manuel si tu le veux",
+    reportDelay:
+      "Une touche d'écho en rythme ({{ms}} ms), {{lu}} LU sous ta voix — de la profondeur sans brouiller les paroles",
     fixSection: "Corriger un passage",
     fixSectionDesc:
       "Tu t'es trompé sur une phrase au milieu ? Marque le début et la fin, réenregistre seulement ce passage, et il sera recousu dans le reste de ta prise — rien d'autre ne change.",

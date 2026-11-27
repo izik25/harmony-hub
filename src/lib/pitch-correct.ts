@@ -386,18 +386,17 @@ const smoothstep = (lo: number, hi: number, x: number) => {
  * Per-frame pitch shift (semitones) for a take, the way an engineer tunes a lead vocal by hand in
  * a pitch editor — transparent, not "snap every frame to the grid," which is what flattens a voice
  * into the robotic effect:
- *  - each note's center is moved toward its target (Melodyne's "pitch center"). The full `strength`
- *    goes on the top of the singer's range, where pitch slips most (strained, usually flat high
- *    notes) and where it's most exposed; the middle and bottom of the range get 65% of it;
- *  - a note already within ~6 cents is left exactly where it was sung (nobody hears that; moving it
- *    only costs naturalness), with correction phased in fully by ~15 cents off;
- *  - short notes (under ~150ms — passing tones, runs, melisma) are eased off: correcting them hard
- *    is what makes fast singing sound stepped;
- *  - slow wandering within a note (drift, smoothed over ±150ms, wider than one 5-6Hz vibrato
- *    cycle) is pulled back toward the note's center by 60% of the note's strength ("pitch drift"),
- *    only the part beyond ±10 cents — any held note wanders that much, and whatever vibrato leaks
- *    through the smoothing stays under it — and not over its first 80ms, the scoop/attack into the
- *    note, which is the singer's own phrasing;
+ *  - each note's center is moved onto its target (Melodyne's "pitch center") — all the way from
+ *    FULL_CENTER_AT strength up, proportionally below it;
+ *  - even a note only slightly off is tuned — phased in from ~1 cent off, fully by ~5 — so every
+ *    take comes out sitting on the grid; only a note within ~1 cent (already on it) is left alone;
+ *  - short notes (under ~150ms — passing tones, runs, melisma) get half: correcting them hard is
+ *    what makes fast singing sound stepped;
+ *  - slow wandering within a note (drift, smoothed over ±100ms — about one 5-6Hz vibrato cycle,
+ *    so vibrato averages out of it) is pulled back toward the note's center ("pitch drift", up to
+ *    DRIFT_MAX of it), phased in between ~6 and ~15 cents of wander so small natural movement is
+ *    left alone — and not over its first 80ms, the scoop/attack into the note, which is the
+ *    singer's own phrasing;
  *  - anything faster than that — vibrato, the singer's own expression — is left exactly as sung;
  *  - the shift moves between notes with a retune-speed time constant (~35ms at the 0.8-0.9 AI
  *    mastering uses, slower below), so note changes glide instead of snapping.
@@ -421,22 +420,18 @@ function shiftTrack(
   const raw = new Float32Array(n);
   const active = new Uint8Array(n);
   const frameSec = track.hop / sampleRate;
-  const driftRadius = Math.max(1, Math.round(0.15 / frameSec));
+  const driftRadius = Math.max(1, Math.round(DRIFT_RADIUS_SEC / frameSec));
   const attackFrames = 0.08 / frameSec;
-
-  // The singer's range, from every sung frame: the median and the 90th percentile.
-  const all = notes.flatMap((note) => note.semis).sort((a, b) => a - b);
-  const mid = all[Math.floor(all.length * 0.5)] ?? 0;
-  const top = Math.max(mid + 1, all[Math.floor(all.length * 0.9)] ?? 0);
+  const centerAmount = Math.min(1, strength / FULL_CENTER_AT);
+  const driftAmount = DRIFT_MAX * Math.min(1, strength / FULL_DRIFT_AT);
 
   for (const note of notes) {
     const { semis } = note;
     const error = note.targetSemis - note.centerSemis;
-    const noteStrength =
-      strength *
-      (0.65 + 0.35 * smoothstep(mid, top, note.centerSemis)) *
-      smoothstep(0.06, 0.15, semis.length * frameSec);
-    const centerShift = error * noteStrength * smoothstep(0.06, 0.15, Math.abs(error));
+    // Short notes (runs, melisma) get half, phased up to full by ~150ms.
+    const lengthScale = 0.5 + 0.5 * smoothstep(0.06, 0.15, semis.length * frameSec);
+    const centerShift =
+      error * centerAmount * lengthScale * smoothstep(0.01, 0.05, Math.abs(error));
     let largest = 0;
     for (let i = 0; i < semis.length; i++) {
       let sum = 0;
@@ -449,10 +444,14 @@ function shiftTrack(
         sum += semis[j];
         count++;
       }
+      // Wander that's left of the center once the center itself is corrected: a soft deadband, so
+      // a few cents of natural movement (and whatever vibrato leaks through the smoothing) is left
+      // alone while a real slip — a held note sagging flat, a pitch escape mid-word — is pulled
+      // back almost entirely.
       const wander = sum / count - note.centerSemis;
-      const drift = Math.sign(wander) * Math.max(0, Math.abs(wander) - 0.1);
+      const drift = wander * smoothstep(0.06, 0.15, Math.abs(wander));
       const attack = smoothstep(0, attackFrames, i);
-      const shift = centerShift - drift * noteStrength * 0.6 * attack;
+      const shift = centerShift - drift * driftAmount * lengthScale * attack;
       raw[note.start + i] = shift;
       largest = Math.max(largest, Math.abs(shift));
     }
@@ -506,6 +505,20 @@ function shiftTrack(
 /** Semitones (2 cents): a note that would move less than this anywhere is left as sung — nobody
  * hears it, and resynthesizing it would only cost naturalness. */
 const MIN_CORRECTION = 0.02;
+
+/** Strength at which each note's center lands fully on its target (see shiftTrack). Under it the
+ * center is moved proportionally. Tuning a note's center all the way is not what makes a voice
+ * robotic — flattening its vibrato and snapping between notes is — and stopping short of it is
+ * what left notes audibly off: a note sung 40 cents flat that still lands 15-20 off sounds just as
+ * out of tune to a listener, so the correction never registered. */
+const FULL_CENTER_AT = 0.7;
+/** Drift: how much of a note's slow wander away from its center is pulled back (DRIFT_MAX, reached
+ * at FULL_DRIFT_AT strength), smoothed over ±100ms — a ~200ms window spans about one cycle of a
+ * 5-6Hz vibrato, so vibrato averages out of it while a slip that lasts a fifth of a second or more
+ * shows up nearly in full. */
+const DRIFT_MAX = 0.85;
+const FULL_DRIFT_AT = 0.8;
+const DRIFT_RADIUS_SEC = 0.1;
 
 /** Strength where hard-tune starts fading in (see shiftTrack). Above AI mastering's 0.8-0.9, so its
  * correction stays transparent; the slider's last stretch is the effect. */

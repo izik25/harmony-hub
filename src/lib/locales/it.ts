@@ -311,7 +311,7 @@ export const it = {
     reportTuning:
       "Il brano è accordato a {{cents}} cent dal diapason standard: le tue note vengono intonate sul brano stesso",
     reportPitchFixed:
-      "Intonazione: {{off}} note su {{notes}} erano stonate; media {{before}} → {{after}} cent ({{pct}}% sulle note alte, più leggero sotto; vibrato e attacchi mantenuti)",
+      "Intonazione: {{off}} note su {{notes}} erano stonate; media {{before}} → {{after}} cent (ogni nota portata sulla sua altezza, le derive nelle note tenute corrette; vibrato e attacchi mantenuti)",
     reportPitchOk: "L'intonazione è precisa: nessuna modifica",
     reportLowCut: "Taglio bassi a {{hz}} Hz, appena sotto la tua nota più grave",
     reportBalance: "Voce collocata {{db}} LU sopra la musica: {{arrangement}}",
@@ -333,6 +333,8 @@ export const it = {
       "Mantenuto l'ambiente naturale della stanza: solo un tocco di piastra, {{lu}} LU sotto la voce",
     reportNoDelay:
       "Nessuna eco aggiunta: impasta il testo veloce; aggiungila a mano nel Mastering manuale se la vuoi",
+    reportDelay:
+      "Un tocco di eco a tempo ({{ms}} ms), {{lu}} LU sotto la tua voce: dà profondità senza impastare il testo",
     fixSection: "Correggi una sezione",
     fixSectionDesc:
       "Hai sbagliato un verso a metà? Segna dove inizia e dove finisce, registra di nuovo solo quella parte e verrà ricucita nel resto della take: nient'altro cambia.",

@@ -309,7 +309,7 @@ export const de = {
     reportTuning:
       "Der Track ist {{cents}} Cent von der Standardstimmung entfernt gestimmt – deine Töne werden auf den Track selbst gestimmt",
     reportPitchFixed:
-      "Intonation: {{off}} von {{notes}} Tönen lagen daneben – Durchschnitt {{before}} → {{after}} Cent ({{pct}} % bei hohen Tönen, darunter leichter; Vibrato und Toneinsätze bleiben erhalten)",
+      "Intonation: {{off}} von {{notes}} Tönen lagen daneben – Durchschnitt {{before}} → {{after}} Cent (jeder Ton auf seine Tonhöhe gebracht, Abweichungen in gehaltenen Tönen zurückgeholt; Vibrato und Toneinsätze bleiben erhalten)",
     reportPitchOk: "Die Intonation ist sauber – unverändert gelassen",
     reportLowCut: "Low Cut bei {{hz}} Hz – knapp unter deinem tiefsten Ton",
     reportBalance: "Stimme {{db}} LU über der Musik platziert – {{arrangement}}",
@@ -332,6 +332,8 @@ export const de = {
       "Die natürliche Raumakustik wurde beibehalten – nur ein Hauch Plattenhall, {{lu}} LU unter deiner Stimme",
     reportNoDelay:
       "Kein Echo hinzugefügt – es verwischt fließenden Text; füge es bei Bedarf im Manuellen Mastering von Hand hinzu",
+    reportDelay:
+      "Leichtes Echo im Takt ({{ms}} ms), {{lu}} LU unter deiner Stimme – gibt Tiefe, ohne den Text zu verwischen",
     fixSection: "Abschnitt korrigieren",
     fixSectionDesc:
       "Irgendwo in der Mitte eine Zeile verpatzt? Markiere Anfang und Ende, nimm nur diesen Teil neu auf, und er wird nahtlos in den Rest deines Takes eingefügt – sonst ändert sich nichts.",

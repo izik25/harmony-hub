@@ -305,7 +305,7 @@ export const ko = {
     reportTuning:
       "트랙이 표준 피치에서 {{cents}}센트 벗어나 있어요 — 음정은 트랙 자체에 맞춰 조율해요",
     reportPitchFixed:
-      "음정: {{notes}}개 음 중 {{off}}개가 어긋났어요 — 평균 {{before}} → {{after}}센트 (고음은 {{pct}}%, 낮은 음은 더 가볍게; 비브라토와 어택은 유지)",
+      "음정: {{notes}}개 음 중 {{off}}개가 어긋났어요 — 평균 {{before}} → {{after}}센트 (모든 음을 제 음정에 맞추고 긴 음의 흔들림도 보정; 비브라토와 어택은 유지)",
     reportPitchOk: "음정이 정확해요 — 손대지 않았어요",
     reportLowCut: "{{hz}} Hz 로우 컷 — 가장 낮은 음 바로 아래",
     reportBalance: "목소리를 음악보다 {{db}} LU 위에 배치 — {{arrangement}}",
@@ -325,6 +325,8 @@ export const ko = {
     reportReverbRaw: "방 본연의 울림을 살렸어요 — 플레이트는 아주 살짝, 목소리보다 {{lu}} LU 아래",
     reportNoDelay:
       "에코는 넣지 않았어요 — 이어지는 가사를 뭉개기 때문이에요. 원하면 수동 마스터링에서 직접 추가하세요",
+    reportDelay:
+      "박자에 맞춘 가벼운 에코 ({{ms}} ms), 목소리보다 {{lu}} LU 아래 — 가사를 뭉개지 않고 깊이를 더해요",
     fixSection: "구간 수정",
     fixSectionDesc:
       "중간에 한 소절을 틀렸나요? 시작과 끝을 표시하고 그 부분만 다시 녹음하면 나머지 테이크에 자연스럽게 이어 붙여요 — 다른 부분은 그대로예요.",

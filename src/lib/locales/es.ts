@@ -310,7 +310,7 @@ export const es = {
     reportTuning:
       "La pista está afinada {{cents}} cents lejos de la afinación estándar; tus notas se afinan a la propia pista",
     reportPitchFixed:
-      "Afinación: {{off}} de {{notes}} notas estaban desafinadas — promedio {{before}} → {{after}} cents ({{pct}}% en las notas agudas, más suave abajo; se conservan el vibrato y los ataques)",
+      "Afinación: {{off}} de {{notes}} notas estaban desafinadas — promedio {{before}} → {{after}} cents (cada nota llevada a su altura, los desvíos en notas largas corregidos; se conservan el vibrato y los ataques)",
     reportPitchOk: "La afinación es precisa; no se tocó",
     reportLowCut: "Corte de graves a {{hz}} Hz, justo por debajo de tu nota más grave",
     reportBalance: "Voz colocada {{db}} LU por encima de la música — {{arrangement}}",
@@ -332,6 +332,8 @@ export const es = {
       "Se mantuvo el ambiente natural de tu sala; solo un toque de placa, {{lu}} LU por debajo de tu voz",
     reportNoDelay:
       "No se añadió eco: emborrona la letra corrida; añádelo a mano en Masterización manual si lo quieres",
+    reportDelay:
+      "Un toque de eco a tempo ({{ms}} ms), {{lu}} LU bajo tu voz: da profundidad sin emborronar la letra",
     fixSection: "Corregir una sección",
     fixSectionDesc:
       "¿Cantaste mal una frase en medio? Marca dónde empieza y dónde termina, vuelve a grabar solo esa parte y se integrará en el resto de tu toma; nada más cambia.",

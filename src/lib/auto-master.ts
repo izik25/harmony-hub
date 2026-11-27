@@ -20,10 +20,13 @@ const round1 = (v: number) => Math.round(v * 10) / 10;
 
 /** Pitch-editor guidance is to start around 80% correction and adjust by ear — enough that every
  * note lands in tune, not so much that the voice turns robotic. A clearly pitchy take gets 90%.
- * This is what the top of the singer's range gets; lower notes, short notes and notes already in
- * tune get less or none (see shiftTrack in pitch-correct.ts). */
+ * At these strengths every note's center lands on its target and most of its drift is pulled in,
+ * while vibrato and note attacks stay as sung; short notes get half, notes already within a few
+ * cents get nothing (see shiftTrack in pitch-correct.ts). Every sung take gets it, however well it
+ * measured — no take is dead-on everywhere, and whatever it did measure lands exactly on the note.
+ * Only a take with little sustained pitch (spoken word, rap) is left alone. */
 export function pitchStrengthFor(pitch: PitchProfile): number {
-  if (pitch.voicedRatio < 0.15 || pitch.noteCount < 3 || pitch.avgAbsCents < 5) return 0;
+  if (pitch.voicedRatio < 0.15 || pitch.noteCount < 3) return 0;
   return pitch.avgAbsCents > 30 ? 0.9 : 0.8;
 }
 
@@ -46,6 +49,9 @@ export function planProcessing({
   /** Where the reverb should sit under the dry voice, LU. */
   reverbTargetLu: number;
   reverbReport: (lu: number) => ReportLine;
+  /** Where the echo should sit under the dry voice, LU — null for no echo. */
+  delayTargetLu: number | null;
+  delayReport: (lu: number) => ReportLine;
 } {
   const v = song.vocal.bands;
   const density = song.backing?.density ?? 0.5;
@@ -122,7 +128,9 @@ export function planProcessing({
   // spreads to the sides around the voice instead of over it, so it carries more space at the same
   // clarity — −25 LU over a dense arrangement up to −22 over a sparse one, where it's most exposed
   // yet also most needed to fill the gaps.
-  const reverbTargetLu = isClean ? -25 + (1 - density) * 3 : -30;
+  // Set 1 LU wetter than that (−24 to −21) once the echo below was in, which adds its own depth,
+  // for a little more of a produced, studio sound without the voice losing its front.
+  const reverbTargetLu = isClean ? -24 + (1 - density) * 3 : -30;
   const tailText = tail.toFixed(1);
   const preMs = Math.round(preDelay * 1000);
   const reverbReport = (lu: number): ReportLine => {
@@ -133,11 +141,19 @@ export function planProcessing({
       : { key: "studio.reportReverb", values };
   };
 
-  // No echo from AI mastering: a delay on every word smears running lyrics — engineers use it as
-  // a throw on chosen words, which only a person can pick. Its time is still set to a dotted
-  // eighth of the tempo, so turning it up in Manual Mastering lands on the beat.
-  const delayTime = bpm ? (60 / bpm) * 0.75 : base.delayTime;
-  report.push({ key: "studio.reportNoDelay" });
+  // Echo: a delay loud enough to hear as echo smears running lyrics, so this is the engineer's
+  // "felt, not heard" ambience delay instead — a dotted eighth of the tempo (so its repeats land on
+  // the groove), filtered 200Hz-5kHz in the chain, and measured in like the reverb (see
+  // reverbSendFor) to sit ~30 LU under the voice, well below the reverb. A raw take already
+  // carries its own room, and anything added on it read as echo, so it gets none.
+  const delayTime = bpm ? clamp((60 / bpm) * 0.75, 0.25, 0.6) : base.delayTime;
+  const delayTargetLu = isClean ? -30 + (1 - density) * 2 : null;
+  if (delayTargetLu == null) report.push({ key: "studio.reportNoDelay" });
+  const delayMs = Math.round(delayTime * 1000);
+  const delayReport = (lu: number): ReportLine => ({
+    key: "studio.reportDelay",
+    values: { ms: delayMs, lu: Math.round(-lu) },
+  });
 
   return {
     settings: {
@@ -158,12 +174,15 @@ export function planProcessing({
       reverb: REVERB_PROBE,
       reverbSize: Math.round(((tail - 0.6) / 1.8) * 100),
       preDelay: Math.round(preDelay * 1000) / 1000,
-      delay: 0,
+      // A probe level when an echo is planned; the real send is measured in (reverbSendFor).
+      delay: delayTargetLu == null ? 0 : REVERB_PROBE,
       delayTime: Math.round(delayTime * 1000) / 1000,
     },
     report,
     reverbTargetLu,
     reverbReport,
+    delayTargetLu,
+    delayReport,
   };
 }
 
