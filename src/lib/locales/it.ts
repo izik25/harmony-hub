@@ -311,7 +311,7 @@ export const it = {
     reportTuning:
       "Il brano è accordato a {{cents}} cent dal diapason standard: le tue note vengono intonate sul brano stesso",
     reportPitchFixed:
-      "Intonazione: {{off}} note su {{notes}} erano stonate; media {{before}} → {{after}} cent (ogni nota portata sulla sua altezza, le derive nelle note tenute corrette; vibrato e attacchi mantenuti)",
+      "Intonazione: {{off}} note su {{notes}} erano stonate; media {{before}} → {{after}} cent (ogni nota portata sulla sua altezza, derive corrette, vibrato più stretto ma mantenuto: l'intonazione pop rifinita)",
     reportPitchOk: "L'intonazione è precisa: nessuna modifica",
     reportLowCut: "Taglio bassi a {{hz}} Hz, appena sotto la tua nota più grave",
     reportBalance: "Voce collocata {{db}} LU sopra la musica: {{arrangement}}",

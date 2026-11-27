@@ -20,9 +20,9 @@ const round1 = (v: number) => Math.round(v * 10) / 10;
 
 /** Pitch-editor guidance is to start around 80% correction and adjust by ear — enough that every
  * note lands in tune, not so much that the voice turns robotic. A clearly pitchy take gets 90%.
- * At these strengths every note's center lands on its target and most of its drift is pulled in,
- * while vibrato and note attacks stay as sung; short notes get half, notes already within a few
- * cents get nothing (see shiftTrack in pitch-correct.ts). Every sung take gets it, however well it
+ * At these strengths every note's center lands on its target, most of its drift is pulled in and
+ * its vibrato is narrowed to about half — a pop retune speed — while note attacks stay as sung
+ * (see shiftTrack in pitch-correct.ts). Every sung take gets it, however well it
  * measured — no take is dead-on everywhere, and whatever it did measure lands exactly on the note.
  * Only a take with little sustained pitch (spoken word, rap) is left alone. */
 export function pitchStrengthFor(pitch: PitchProfile): number {

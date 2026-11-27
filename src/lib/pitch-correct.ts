@@ -256,7 +256,8 @@ type Note = {
   /** Frame range [start, end). */
   start: number;
   end: number;
-  /** Sung pitch per frame, semitones from A4. */
+  /** Sung pitch per frame (detection jitter smoothed out, see JITTER_RADIUS_SEC), semitones from
+   * A4. */
   semis: number[];
   /** Median sung pitch over the note, semitones from A4. */
   centerSemis: number;
@@ -264,12 +265,36 @@ type Note = {
   targetSemis: number;
 };
 
+/** Frame-to-frame detection jitter on a phone take runs ~30-40 cents per 10ms frame at the 90th
+ * percentile — far faster than any voice actually moves (a wide vibrato peaks around 10). A ±30ms
+ * triangular smoothing takes it out while passing a 5-6Hz vibrato at over 90%. */
+const JITTER_RADIUS_SEC = 0.03;
+/** A run shorter than this is a passing pitch (a glide through it, a scoop), not a note. */
+const MIN_NOTE_SEC = 0.06;
+
+/** Moving average over ±radius, clipped at the ends. */
+function boxSmooth(values: ArrayLike<number>, radius: number): Float64Array {
+  const n = values.length;
+  const prefix = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) prefix[i + 1] = prefix[i] + values[i];
+  const out = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const lo = Math.max(0, i - radius);
+    const hi = Math.min(n, i + radius + 1);
+    out[i] = (prefix[hi] - prefix[lo]) / (hi - lo);
+  }
+  return out;
+}
+
 /**
  * Splits the pitch track into notes the way a pitch editor's "blobs" do: a run of voiced frames
  * that stays near its own center. Vibrato (a fast swing of up to about a semitone around the
- * note) stays inside one note; a jump to a new pitch, or drifting more than ~0.9 semitone from
- * where the run has been, starts the next one. Runs under 50ms (scoops, consonant blips) aren't
- * notes and are never corrected.
+ * note) stays inside one note; a jump to a new pitch (over half a semitone in one frame), or
+ * drifting more than ~0.9 semitone from where the run has been, starts the next one. That's read
+ * on the pitch with detection jitter smoothed out (see JITTER_RADIUS_SEC) — on the raw track,
+ * jitter alone crossed the half-semitone line often enough to cut a phone take's singing into
+ * ~130ms pieces, too short for any correction to settle on. Runs under MIN_NOTE_SEC are passing
+ * pitches, not notes.
  */
 function segmentNotes(
   track: PitchTrack,
@@ -277,41 +302,53 @@ function segmentNotes(
   scale: readonly number[] | undefined,
   referenceA4: number,
 ): Note[] {
-  const minFrames = Math.ceil((0.05 * sampleRate) / track.hop);
+  const frameSec = track.hop / sampleRate;
+  const jitterRadius = Math.max(1, Math.round(JITTER_RADIUS_SEC / frameSec));
+  const minFrames = Math.ceil(MIN_NOTE_SEC / frameSec);
   const notes: Note[] = [];
-  let run: number[] = [];
-  let runStart = 0;
-  let runSum = 0;
-  const flush = (end: number) => {
-    if (run.length >= minFrames) {
-      const sorted = [...run].sort((a, b) => a - b);
-      const centerSemis = sorted[Math.floor(sorted.length / 2)];
-      const targetSemis = toSemis(
-        targetNoteFreq(referenceA4 * 2 ** (centerSemis / 12), scale, referenceA4),
-        referenceA4,
-      );
-      notes.push({ start: runStart, end, semis: run, centerSemis, targetSemis });
+  const n = track.f0.length;
+  for (let a = 0; a < n;) {
+    if (track.f0[a] == null) {
+      a++;
+      continue;
     }
-    run = [];
-    runSum = 0;
-  };
-  track.f0.forEach((f0, i) => {
-    if (f0 == null) {
-      flush(i);
-      return;
+    let b = a;
+    while (b < n && track.f0[b] != null) b++;
+    const raw = track.f0.slice(a, b).map((f) => toSemis(f as number, referenceA4));
+    // Triangular = a box of a box.
+    const half = Math.max(1, Math.round(jitterRadius / 2));
+    const smooth = boxSmooth(boxSmooth(raw, half), half);
+    let runStart = 0;
+    let runSum = 0;
+    for (let k = 0; k <= smooth.length; k++) {
+      const ends =
+        k === smooth.length ||
+        (k > runStart &&
+          (Math.abs(smooth[k] - smooth[k - 1]) > 0.5 ||
+            Math.abs(smooth[k] - runSum / (k - runStart)) > 0.9));
+      if (ends) {
+        if (k - runStart >= minFrames) {
+          const semis = Array.from(smooth.subarray(runStart, k));
+          const sorted = [...semis].sort((x, y) => x - y);
+          const centerSemis = sorted[Math.floor(sorted.length / 2)];
+          notes.push({
+            start: a + runStart,
+            end: a + k,
+            semis,
+            centerSemis,
+            targetSemis: toSemis(
+              targetNoteFreq(referenceA4 * 2 ** (centerSemis / 12), scale, referenceA4),
+              referenceA4,
+            ),
+          });
+        }
+        runStart = k;
+        runSum = 0;
+      }
+      if (k < smooth.length) runSum += smooth[k];
     }
-    const s = toSemis(f0, referenceA4);
-    if (
-      run.length > 0 &&
-      (Math.abs(s - run[run.length - 1]) > 0.5 || Math.abs(s - runSum / run.length) > 0.9)
-    ) {
-      flush(i);
-    }
-    if (run.length === 0) runStart = i;
-    run.push(s);
-    runSum += s;
-  });
-  flush(track.f0.length);
+    a = b;
+  }
   return notes;
 }
 
@@ -383,25 +420,27 @@ const smoothstep = (lo: number, hi: number, x: number) => {
 };
 
 /**
- * Per-frame pitch shift (semitones) for a take, the way an engineer tunes a lead vocal by hand in
- * a pitch editor — transparent, not "snap every frame to the grid," which is what flattens a voice
- * into the robotic effect:
- *  - each note's center is moved onto its target (Melodyne's "pitch center") — all the way from
- *    FULL_CENTER_AT strength up, proportionally below it;
- *  - even a note only slightly off is tuned — phased in from ~1 cent off, fully by ~5 — so every
- *    take comes out sitting on the grid; only a note within ~1 cent (already on it) is left alone;
- *  - short notes (under ~150ms — passing tones, runs, melisma) get half: correcting them hard is
- *    what makes fast singing sound stepped;
+ * Per-frame pitch shift (semitones) for a take — the tight, polished tuning of a modern pop lead
+ * (an Auto-Tune retune speed of ~20-40ms with the singer's vibrato kept, or Melodyne with pitch
+ * center at 100% and drift pulled in), not "snap every frame to the grid," which is the robotic
+ * effect:
+ *  - each note's center is moved onto its target — all the way from FULL_CENTER_AT strength up,
+ *    proportionally below it — phased in from ~1 cent off, fully by ~5, so every take comes out on
+ *    the grid;
+ *  - short notes (runs, melisma, ~60-120ms) get 70-100%: a fast passage left out of tune is what
+ *    kept a phone take sounding untuned;
  *  - slow wandering within a note (drift, smoothed over ±100ms — about one 5-6Hz vibrato cycle,
- *    so vibrato averages out of it) is pulled back toward the note's center ("pitch drift", up to
- *    DRIFT_MAX of it), phased in between ~6 and ~15 cents of wander so small natural movement is
- *    left alone — and not over its first 80ms, the scoop/attack into the note, which is the
- *    singer's own phrasing;
- *  - anything faster than that — vibrato, the singer's own expression — is left exactly as sung;
- *  - the shift moves between notes with a retune-speed time constant (~35ms at the 0.8-0.9 AI
- *    mastering uses, slower below), so note changes glide instead of snapping.
- * A note whose shift never reaches MIN_CORRECTION isn't touched at all. `active` marks the frames
- * that are being moved: corrected notes, plus the glide back to zero after each one.
+ *    so vibrato averages out of it) is pulled back toward the note's center (up to DRIFT_MAX);
+ *  - what's faster than that — vibrato, wobble — is narrowed by TIGHT_MAX (the "locked" sound of a
+ *    tuned pop vocal) but kept, so the voice still moves like a voice;
+ *  - drift and narrowing are eased in over each note's first ATTACK_SEC, the scoop into it;
+ *  - voiced frames between notes in one phrase (glides, passing pitches) take a shift interpolated
+ *    from the notes either side, and the ends of a phrase hold its nearest note's — so a phrase
+ *    is moved as one continuous line, with no jump back to the untouched voice mid-word;
+ *  - the shift moves between notes with a retune-speed time constant (~25ms at the 0.8-0.9 AI
+ *    mastering uses, slower below), so note changes are quick but still glide.
+ * A phrase whose shift never reaches MIN_CORRECTION isn't touched at all. `active` marks the
+ * frames being moved.
  *
  * Over the top of the slider (HARD_TUNE_FROM → 1) all of that crossfades into hard-tune, the
  * deliberate robotic effect: every voiced frame — vibrato, scoops, glides, short notes, notes
@@ -417,46 +456,69 @@ function shiftTrack(
   referenceA4: number,
 ) {
   const n = track.f0.length;
-  const raw = new Float32Array(n);
+  // `raw`: each note's center shift (and the fill between notes), which the retune speed below
+  // glides between. `detail`: the in-note drift/narrowing, added after — already smooth, and
+  // running it through the retune smoothing too delayed it by a good part of a vibrato cycle, so
+  // it landed late and narrowed far less than it should.
+  const raw = new Float32Array(n).fill(NaN);
+  const detail = new Float32Array(n);
   const active = new Uint8Array(n);
   const frameSec = track.hop / sampleRate;
   const driftRadius = Math.max(1, Math.round(DRIFT_RADIUS_SEC / frameSec));
-  const attackFrames = 0.08 / frameSec;
+  const attackFrames = ATTACK_SEC / frameSec;
   const centerAmount = Math.min(1, strength / FULL_CENTER_AT);
   const driftAmount = DRIFT_MAX * Math.min(1, strength / FULL_DRIFT_AT);
+  const tight = TIGHT_MAX * smoothstep(0.4, FULL_DRIFT_AT, strength);
 
   for (const note of notes) {
     const { semis } = note;
     const error = note.targetSemis - note.centerSemis;
-    // Short notes (runs, melisma) get half, phased up to full by ~150ms.
-    const lengthScale = 0.5 + 0.5 * smoothstep(0.06, 0.15, semis.length * frameSec);
+    const lengthScale = 0.7 + 0.3 * smoothstep(0.06, 0.12, semis.length * frameSec);
     const centerShift =
       error * centerAmount * lengthScale * smoothstep(0.01, 0.05, Math.abs(error));
-    let largest = 0;
+    const slow = boxSmooth(semis, driftRadius);
     for (let i = 0; i < semis.length; i++) {
-      let sum = 0;
-      let count = 0;
-      for (
-        let j = Math.max(0, i - driftRadius);
-        j <= Math.min(semis.length - 1, i + driftRadius);
-        j++
-      ) {
-        sum += semis[j];
-        count++;
-      }
-      // Wander that's left of the center once the center itself is corrected: a soft deadband, so
-      // a few cents of natural movement (and whatever vibrato leaks through the smoothing) is left
-      // alone while a real slip — a held note sagging flat, a pitch escape mid-word — is pulled
-      // back almost entirely.
-      const wander = sum / count - note.centerSemis;
-      const drift = wander * smoothstep(0.06, 0.15, Math.abs(wander));
+      const wander = slow[i] - note.centerSemis;
+      const drift = wander * smoothstep(0.03, 0.08, Math.abs(wander));
+      const fast = semis[i] - slow[i];
       const attack = smoothstep(0, attackFrames, i);
-      const shift = centerShift - drift * driftAmount * lengthScale * attack;
-      raw[note.start + i] = shift;
-      largest = Math.max(largest, Math.abs(shift));
+      // Eased back out over the note's last ~30ms, so the shift doesn't step where it ends.
+      const release = smoothstep(0, attackFrames * 0.6, semis.length - 1 - i);
+      raw[note.start + i] = centerShift;
+      detail[note.start + i] =
+        -(drift * driftAmount + fast * tight) * lengthScale * attack * release;
     }
-    if (largest < MIN_CORRECTION) raw.fill(0, note.start, note.end);
-    else active.fill(1, note.start, note.end);
+  }
+
+  // Fill each voiced phrase between and around its notes (see above); phrases with nothing to
+  // move stay untouched.
+  for (let a = 0; a < n;) {
+    if (track.f0[a] == null) {
+      raw[a] = 0;
+      a++;
+      continue;
+    }
+    let b = a;
+    while (b < n && track.f0[b] != null) b++;
+    let prev = -1;
+    let largest = 0;
+    for (let i = a; i < b; i++) {
+      if (Number.isNaN(raw[i])) continue;
+      largest = Math.max(largest, Math.abs(raw[i]), Math.abs(detail[i]));
+      if (prev < 0) raw.fill(raw[i], a, i);
+      else
+        for (let k = prev + 1; k < i; k++)
+          raw[k] = raw[prev] + ((raw[i] - raw[prev]) * (k - prev)) / (i - prev);
+      prev = i;
+    }
+    if (prev < 0 || largest < MIN_CORRECTION) {
+      raw.fill(0, a, b);
+      detail.fill(0, a, b);
+    } else {
+      raw.fill(raw[prev], prev + 1, b);
+      active.fill(1, a, b);
+    }
+    a = b;
   }
 
   const hard = smoothstep(HARD_TUNE_FROM, 1, strength);
@@ -490,13 +552,13 @@ function shiftTrack(
     }
   }
 
-  const retuneMs = (80 - 50 * strength) * (1 - hard) + 0.5 * hard;
+  const retuneMs = (60 - 45 * strength) * (1 - hard) + 0.5 * hard;
   const alpha = 1 - Math.exp(-(frameSec * 1000) / retuneMs);
   const shifts = new Float32Array(n);
   let state = 0;
   for (let i = 0; i < n; i++) {
     state += (raw[i] - state) * alpha;
-    shifts[i] = state;
+    shifts[i] = state + detail[i] * (1 - hard);
     if (!active[i] && i > 0 && active[i - 1] && Math.abs(state) > 0.002) active[i] = 1;
   }
   return { shifts, active };
@@ -519,6 +581,15 @@ const FULL_CENTER_AT = 0.7;
 const DRIFT_MAX = 0.85;
 const FULL_DRIFT_AT = 0.8;
 const DRIFT_RADIUS_SEC = 0.1;
+/** How much of a note's fast movement (vibrato, wobble — what's left after drift) is taken out at
+ * AI mastering's strength. Auto-Tune at a pop retune speed (~20ms) passes a 5-6Hz vibrato at
+ * about half its width; this lands about there. That narrowing — notes that sit "locked" while
+ * still moving like a voice — is most of what makes a tuned vocal sound produced rather than
+ * merely in tune; on real phone takes, whose notes swing a lot (p90 ~75 cents), moving only their
+ * centers left the tuning all but inaudible. Kept well short of 1, the flat, robotic hard-tune. */
+const TIGHT_MAX = 0.5;
+/** Drift and narrowing ease in over a note's first 50ms — its scoop/attack, the singer's own. */
+const ATTACK_SEC = 0.05;
 
 /** Strength where hard-tune starts fading in (see shiftTrack). Above AI mastering's 0.8-0.9, so its
  * correction stays transparent; the slider's last stretch is the effect. */
@@ -573,9 +644,24 @@ function psola(
   return out;
 }
 
-/** Pitch marks: one per glottal pulse through voiced stretches (each locked to the low-passed
- * waveform's peak nearest one period on from the last, so grains line up in phase), and a fixed
- * ~6ms step through unvoiced ones. */
+/**
+ * Pitch marks: one per glottal pulse through voiced stretches, and a fixed ~6ms step through
+ * unvoiced ones. The first pulse of a stretch is the low-passed waveform's peak within one period;
+ * each one after is wherever the waveform best matches the previous pulse's (normalized
+ * cross-correlation, searched a quarter period either side of one period on) — so every grain is
+ * cut at the same point of its cycle. Picking the highest peak there instead, as this used to, let
+ * marks hop between the near-equal peaks a voice's harmonics put in each period, and each hop came
+ * out as a jolt in the resynthesized pitch.
+ *
+ * The period each mark carries — what PSOLA spaces the output grains by — is the marks' own local
+ * spacing (over ±MARK_PERIOD_SPAN pulses), not the pitch track's frame estimate: that estimate
+ * jitters by tens of cents frame to frame on a phone take, and spacing grains by it wrote the
+ * jitter into the output as a rough warble on every corrected note. Measured on real phone takes
+ * shifted by a constant 30 cents: frames landing within ±10 cents of the shift went from 49-65% to
+ * 81-89%.
+ */
+const MARK_PERIOD_SPAN = 2;
+
 function pitchMarks(data: Float32Array, sampleRate: number, track: PitchTrack) {
   const marks: number[] = [];
   const periods: number[] = [];
@@ -586,9 +672,10 @@ function pitchMarks(data: Float32Array, sampleRate: number, track: PitchTrack) {
     const f0 = track.f0[Math.min(track.f0.length - 1, Math.max(0, frame))];
     return f0 ? sampleRate / f0 : null;
   };
+  const n = data.length;
   let t = 0;
   let lastVoiced = false;
-  while (t < data.length) {
+  while (t < n) {
     const period = periodAt(t);
     if (period == null) {
       marks.push(t);
@@ -598,18 +685,53 @@ function pitchMarks(data: Float32Array, sampleRate: number, track: PitchTrack) {
       lastVoiced = false;
       continue;
     }
-    // First pulse of a voiced stretch: the peak within one period; after that, the peak within a
-    // quarter of a period either side of where the next pulse should be.
-    const lo = lastVoiced ? Math.round(t - period / 4) : t;
-    const hi = Math.min(data.length - 1, Math.round(lastVoiced ? t + period / 4 : t + period));
-    let peak = Math.max(0, lo);
-    for (let i = peak; i <= hi; i++) if (data[i] > data[peak]) peak = i;
-    if (marks.length > 0 && peak <= marks[marks.length - 1]) peak = marks[marks.length - 1] + 1;
-    marks.push(peak);
+    let mark: number;
+    if (!lastVoiced) {
+      const hi = Math.min(n - 1, Math.round(t + period));
+      mark = t;
+      for (let i = t; i <= hi; i++) if (data[i] > data[mark]) mark = i;
+    } else {
+      const prev = marks[marks.length - 1];
+      const half = Math.round(period / 2);
+      const lo = Math.max(prev + 1, Math.round(t - period / 4));
+      const hi = Math.min(n - 1 - half, Math.round(t + period / 4));
+      mark = Math.max(lo, Math.min(t, hi));
+      let best = -Infinity;
+      for (let c = lo; c <= hi; c++) {
+        let xy = 0;
+        let yy = 0;
+        for (let j = -half; j <= half; j++) {
+          const p = prev + j;
+          const x = p >= 0 ? data[p] : 0;
+          const y = data[c + j] ?? 0;
+          xy += x * y;
+          yy += y * y;
+        }
+        const score = yy > 0 ? xy / Math.sqrt(yy) : -Infinity;
+        if (score > best) {
+          best = score;
+          mark = c;
+        }
+      }
+    }
+    if (marks.length > 0 && mark <= marks[marks.length - 1]) mark = marks[marks.length - 1] + 1;
+    marks.push(mark);
     periods.push(period);
     voiced.push(1);
     lastVoiced = true;
-    t = peak + Math.round(period);
+    t = mark + Math.round(period);
+  }
+
+  const span = MARK_PERIOD_SPAN;
+  const trackPeriods = periods.slice();
+  for (let k = span; k + span < marks.length; k++) {
+    let allVoiced = true;
+    for (let j = k - span; j <= k + span; j++) if (!voiced[j]) allVoiced = false;
+    if (!allVoiced) continue;
+    const local = (marks[k + span] - marks[k - span]) / (2 * span);
+    // A mark that slipped a whole period (a missed or doubled pulse) would make this wildly off;
+    // the track's estimate stands in there.
+    if (Math.abs(local / trackPeriods[k] - 1) < 0.2) periods[k] = local;
   }
   return {
     marks: Int32Array.from(marks),

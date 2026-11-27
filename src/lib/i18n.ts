@@ -347,7 +347,7 @@ const en = {
     reportTuning:
       "The track is tuned {{cents}} cents away from standard pitch — your notes are tuned to the track itself",
     reportPitchFixed:
-      "Pitch: {{off}} of {{notes}} notes were off — average {{before}} → {{after}} cents (every note brought onto its pitch, slips inside held notes pulled back; vibrato and note attacks kept)",
+      "Pitch: {{off}} of {{notes}} notes were off — average {{before}} → {{after}} cents (every note brought onto its pitch, slips pulled back, vibrato tightened but kept — the polished pop tuning)",
     reportPitchOk: "Pitch is accurate — left untouched",
     reportLowCut: "Low cut at {{hz}} Hz — just under your lowest note",
     reportBalance: "Voice placed {{db}} LU above the music — {{arrangement}}",
@@ -1226,7 +1226,7 @@ const he = {
     reportKeyScale: "סולם שזוהה: {{key}} — הגובה מתוקן לפי הסולם של השיר",
     reportTuning: "הפלייבק מכוון {{cents}} סנט מהכיוון הסטנדרטי — התווים שלך מכוונים לפלייבק עצמו",
     reportPitchFixed:
-      "גובה: {{off}} מתוך {{notes}} תווים היו לא מדויקים — ממוצע {{before}} → {{after}} סנט (כל תו הונח על הצליל שלו, בריחות בתוך תווים ארוכים תוקנו; הוויברטו וכניסות התווים נשמרו)",
+      "גובה: {{off}} מתוך {{notes}} תווים היו לא מדויקים — ממוצע {{before}} → {{after}} סנט (כל תו הונח על הצליל שלו, בריחות תוקנו, הוויברטו הודק אבל נשמר — הכיוון המלוטש של פופ)",
     reportPitchOk: "הגובה מדויק — לא נגענו",
     reportLowCut: "חיתוך נמוכים ב-{{hz}}Hz — ממש מתחת לתו הכי נמוך שלך",
     reportBalance: "הקול הוצב {{db}}LU מעל המוזיקה — {{arrangement}}",
@@ -2102,7 +2102,7 @@ const ar = {
     reportTuning:
       "المقطع الموسيقي مضبوط على بُعد {{cents}} سنت من الطبقة القياسية — نغماتك تُضبط على المقطع نفسه",
     reportPitchFixed:
-      "الطبقة: {{off}} من {{notes}} نغمات كانت غير دقيقة — المتوسط {{before}} → {{after}} سنت (كل نغمة وُضعت على طبقتها، والانزلاقات داخل النغمات الطويلة صُحِّحت؛ الفيبراتو وبدايات النغمات محفوظة)",
+      "الطبقة: {{off}} من {{notes}} نغمات كانت غير دقيقة — المتوسط {{before}} → {{after}} سنت (كل نغمة وُضعت على طبقتها، والانزلاقات صُحِّحت، والفيبراتو أُحكِم مع الحفاظ عليه — ضبط البوب المصقول)",
     reportPitchOk: "الطبقة دقيقة — لم نلمسها",
     reportLowCut: "قطع الترددات المنخفضة عند {{hz}}Hz — أسفل أخفض نغمة لديك مباشرة",
     reportBalance: "وُضع الصوت {{db}}LU فوق الموسيقى — {{arrangement}}",

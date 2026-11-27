@@ -305,7 +305,7 @@ export const ko = {
     reportTuning:
       "트랙이 표준 피치에서 {{cents}}센트 벗어나 있어요 — 음정은 트랙 자체에 맞춰 조율해요",
     reportPitchFixed:
-      "음정: {{notes}}개 음 중 {{off}}개가 어긋났어요 — 평균 {{before}} → {{after}}센트 (모든 음을 제 음정에 맞추고 긴 음의 흔들림도 보정; 비브라토와 어택은 유지)",
+      "음정: {{notes}}개 음 중 {{off}}개가 어긋났어요 — 평균 {{before}} → {{after}}센트 (모든 음을 제 음정에 맞추고 흔들림도 보정, 비브라토는 다듬되 유지 — 매끈한 팝 튜닝)",
     reportPitchOk: "음정이 정확해요 — 손대지 않았어요",
     reportLowCut: "{{hz}} Hz 로우 컷 — 가장 낮은 음 바로 아래",
     reportBalance: "목소리를 음악보다 {{db}} LU 위에 배치 — {{arrangement}}",

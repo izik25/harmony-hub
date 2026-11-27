@@ -308,7 +308,7 @@ export const pt = {
     reportTuning:
       "A faixa está afinada {{cents}} cents fora do padrão — suas notas são afinadas pela própria faixa",
     reportPitchFixed:
-      "Afinação: {{off}} de {{notes}} notas estavam desafinadas — média {{before}} → {{after}} cents (cada nota levada à sua altura, desvios em notas longas corrigidos; vibrato e ataques preservados)",
+      "Afinação: {{off}} de {{notes}} notas estavam desafinadas — média {{before}} → {{after}} cents (cada nota levada à sua altura, desvios corrigidos, vibrato mais firme mas preservado — a afinação pop polida)",
     reportPitchOk: "A afinação está precisa — nada foi mexido",
     reportLowCut: "Corte de graves em {{hz}} Hz — logo abaixo da sua nota mais grave",
     reportBalance: "Voz posicionada {{db}} LU acima da música — {{arrangement}}",

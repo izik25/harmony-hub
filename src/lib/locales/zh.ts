@@ -299,7 +299,7 @@ export const zh = {
     reportKeyScale: "检测到的调：{{key}}——音准将按歌曲音阶修正",
     reportTuning: "这首伴奏的调音偏离标准音高 {{cents}} 音分——你的音符会以伴奏本身为准调音",
     reportPitchFixed:
-      "音准：{{notes}} 个音中有 {{off}} 个跑调——平均 {{before}} → {{after}} 音分（每个音都校到正确音高，长音中的跑偏也已拉回；保留颤音和起音）",
+      "音准：{{notes}} 个音中有 {{off}} 个跑调——平均 {{before}} → {{after}} 音分（每个音都校到正确音高，跑偏已拉回，颤音收紧但保留——精致的流行修音）",
     reportPitchOk: "音准很好——未做改动",
     reportLowCut: "在 {{hz}} Hz 低切——就在你最低音的下方",
     reportBalance: "人声比伴奏高 {{db}} LU——{{arrangement}}",

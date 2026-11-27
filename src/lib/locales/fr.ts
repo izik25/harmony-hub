@@ -311,7 +311,7 @@ export const fr = {
     reportTuning:
       "Le morceau est accordé à {{cents}} cents du diapason standard — tes notes sont accordées sur le morceau lui-même",
     reportPitchFixed:
-      "Justesse : {{off}} notes sur {{notes}} étaient fausses — moyenne {{before}} → {{after}} cents (chaque note ramenée sur sa hauteur, les dérives dans les notes tenues corrigées ; vibrato et attaques conservés)",
+      "Justesse : {{off}} notes sur {{notes}} étaient fausses — moyenne {{before}} → {{after}} cents (chaque note ramenée sur sa hauteur, dérives corrigées, vibrato resserré mais conservé — l'accordage pop poli)",
     reportPitchOk: "La justesse est précise — rien n'a été touché",
     reportLowCut: "Coupe-bas à {{hz}} Hz — juste sous ta note la plus grave",
     reportBalance: "Voix placée {{db}} LU au-dessus de la musique — {{arrangement}}",

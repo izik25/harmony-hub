@@ -310,7 +310,7 @@ export const es = {
     reportTuning:
       "La pista está afinada {{cents}} cents lejos de la afinación estándar; tus notas se afinan a la propia pista",
     reportPitchFixed:
-      "Afinación: {{off}} de {{notes}} notas estaban desafinadas — promedio {{before}} → {{after}} cents (cada nota llevada a su altura, los desvíos en notas largas corregidos; se conservan el vibrato y los ataques)",
+      "Afinación: {{off}} de {{notes}} notas estaban desafinadas — promedio {{before}} → {{after}} cents (cada nota llevada a su altura, desvíos corregidos, vibrato más firme pero conservado: la afinación pulida del pop)",
     reportPitchOk: "La afinación es precisa; no se tocó",
     reportLowCut: "Corte de graves a {{hz}} Hz, justo por debajo de tu nota más grave",
     reportBalance: "Voz colocada {{db}} LU por encima de la música — {{arrangement}}",

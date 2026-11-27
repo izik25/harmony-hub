@@ -305,7 +305,7 @@ export const ja = {
     reportTuning:
       "トラックは標準ピッチから{{cents}}セントずれてチューニングされています — 音程はトラック自体に合わせます",
     reportPitchFixed:
-      "ピッチ：{{notes}}音中{{off}}音がずれていました — 平均 {{before}} → {{after}} セント（すべての音を正しい音程に合わせ、伸ばす音の揺れも補正。ビブラートと音の立ち上がりは維持）",
+      "ピッチ：{{notes}}音中{{off}}音がずれていました — 平均 {{before}} → {{after}} セント（すべての音を正しい音程に合わせ、揺れも補正、ビブラートは引き締めつつ維持 — 磨かれたポップのチューニング）",
     reportPitchOk: "ピッチは正確です — 手を加えていません",
     reportLowCut: "{{hz}} Hzでローカット — いちばん低い音のすぐ下",
     reportBalance: "声を音楽より{{db}} LU上に配置 — {{arrangement}}",

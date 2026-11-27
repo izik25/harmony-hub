@@ -307,7 +307,7 @@ export const tr = {
     reportTuning:
       "Parça standart akorttan {{cents}} sent sapmış — notaların parçanın kendisine göre ayarlanır",
     reportPitchFixed:
-      "Perde: {{notes}} notadan {{off}} tanesi kaymıştı — ortalama {{before}} → {{after}} sent (her nota kendi perdesine oturtuldu, uzun notalardaki kaymalar düzeltildi; vibrato ve atak korundu)",
+      "Perde: {{notes}} notadan {{off}} tanesi kaymıştı — ortalama {{before}} → {{after}} sent (her nota kendi perdesine oturtuldu, kaymalar düzeltildi, vibrato sıkılaştırıldı ama korundu — cilalı pop akordu)",
     reportPitchOk: "Perde doğru — dokunulmadı",
     reportLowCut: "{{hz}} Hz'de low cut — en pes notanın hemen altında",
     reportBalance: "Ses müziğin {{db}} LU üstüne yerleştirildi — {{arrangement}}",

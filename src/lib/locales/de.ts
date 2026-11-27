@@ -309,7 +309,7 @@ export const de = {
     reportTuning:
       "Der Track ist {{cents}} Cent von der Standardstimmung entfernt gestimmt – deine Töne werden auf den Track selbst gestimmt",
     reportPitchFixed:
-      "Intonation: {{off}} von {{notes}} Tönen lagen daneben – Durchschnitt {{before}} → {{after}} Cent (jeder Ton auf seine Tonhöhe gebracht, Abweichungen in gehaltenen Tönen zurückgeholt; Vibrato und Toneinsätze bleiben erhalten)",
+      "Intonation: {{off}} von {{notes}} Tönen lagen daneben – Durchschnitt {{before}} → {{after}} Cent (jeder Ton auf seine Tonhöhe gebracht, Abweichungen zurückgeholt, Vibrato gestrafft, aber erhalten – das polierte Pop-Tuning)",
     reportPitchOk: "Die Intonation ist sauber – unverändert gelassen",
     reportLowCut: "Low Cut bei {{hz}} Hz – knapp unter deinem tiefsten Ton",
     reportBalance: "Stimme {{db}} LU über der Musik platziert – {{arrangement}}",
